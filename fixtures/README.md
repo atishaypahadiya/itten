@@ -30,6 +30,7 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 | d14 | `hairline-subpixel` | a 1 px rule moved down half a pixel. | The rule sits on a whole pixel. |
 | d16 | `type-scale` | a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported. | The lead is set at 16 px. |
 | d17 | `text-resize` | a caption set at 14px, which stays 14 px when the reader doubles the browser text size. | The caption is set at 0.875rem, so it follows the setting. |
+| d18 | `type-scale` | a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither. | The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well. |
 
 d10 only shows at 320 px wide, d12 and d17 only when the browser text size is doubled, and d14 only at a device pixel ratio of 1. They test that the sweep, the 200% text pass and the pixel-ratio pass each run.
 

@@ -11,6 +11,7 @@
     "scale": [
       { "name": "small", "size": 14, "lineHeight": 20, "weight": 400 },
       { "name": "body", "size": 16, "lineHeight": 24, "weight": 400 },
+      { "name": "label", "size": 16, "lineHeight": 20, "weight": 600 },
       { "name": "title", "size": 24, "lineHeight": 32, "weight": 600 },
       { "name": "display", "fluid": { "min": 32, "max": 40, "minWidth": 320, "maxWidth": 960 }, "lineHeight": 48, "weight": 600 }
     ]

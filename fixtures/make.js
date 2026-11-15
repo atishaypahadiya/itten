@@ -25,6 +25,7 @@ const S = [
   ['d14', 'hairline-subpixel', 'Hairline off the pixel grid', 'Planted: a 1 px rule moved down half a pixel.', 'The rule sits on a whole pixel.', `<div class="rule"></div>`, `.rule { transform: translateY(0.5px); }`],
   ['d16', 'type-scale', 'Undeclared fluid size', 'Planted: a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported.', 'The lead is set at 16 px.', `<p class="lead">A lead paragraph that grows with the window.</p>`, `#d16 .lead { font-size: clamp(1rem, 0.875rem + 0.625vw, 1.125rem); line-height: 24px; }`],
   ['d17', 'text-resize', 'Text locked in px', 'Planted: a caption set at 14px, which stays 14 px when the reader doubles the browser text size.', 'The caption is set at 0.875rem, so it follows the setting.', `<p class="fine-print">Set in pixels, deaf to the reader.</p>`, `#d17 .fine-print { font-size: 14px; }`],
+  ['d18', 'type-scale', 'Two steps at one size', 'Planted: a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.', 'The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well.', `<p class="label">A label at the body size, set tighter</p>`, `#d18 .label { line-height: 1.375rem; }`],
 ];
 const canvasScript = `<script>
   for (const c of document.querySelectorAll('.photo canvas')) {

@@ -44,6 +44,8 @@
 #d16 .lead { font-size: clamp(1rem, 0.875rem + 0.625vw, 1.125rem); line-height: 24px; }
 /* d17 text-resize */
 #d17 .fine-print { font-size: 14px; }
+/* d18 type-scale */
+#d18 .label { line-height: 1.375rem; }
 </style>
 </head>
 <body>
@@ -141,6 +143,11 @@
     <h2>Text locked in px</h2>
     <p class="small">Planted: a caption set at 14px, which stays 14 px when the reader doubles the browser text size.</p>
     <p class="fine-print">Set in pixels, deaf to the reader.</p>
+  </section>
+  <section id="d18">
+    <h2>Two steps at one size</h2>
+    <p class="small">Planted: a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.</p>
+    <p class="label">A label at the body size, set tighter</p>
   </section>
 </main>
 <script>

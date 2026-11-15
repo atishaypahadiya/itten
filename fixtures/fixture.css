@@ -78,3 +78,5 @@ figure { display: flex; flex-direction: column; gap: 8px; }
 #d17 .fine-print { font-size: 0.875rem; line-height: 1.42858; }
 /* d14 hairline */
 .rule { height: 24px; border-top: 1px solid var(--edge); }
+/* d18 two steps at one size */
+#d18 .label { font-weight: 600; line-height: 1.25rem; }

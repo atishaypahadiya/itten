@@ -547,28 +547,35 @@ function scaleFindings(obs, system, widths, distinct) {
   // it declares at that width, within FLUID_TOLERANCE px, fractions included.
   const steps = system?.type?.scale;
   const tyEntries = [...obs.type].map(([sel, byW]) => ({ sel, prop: null, byW: new Map([...byW].map(([w, [fs]]) => [w, fs])) }));
-  const stepAt = (fs, w) => steps?.find((x) => (x.fluid ? Math.abs(fluidAt(x.fluid, w) - fs) <= FLUID_TOLERANCE : Math.abs(x.size - fs) < 0.05));
+  // Several steps can give the same size at a width: two fixed steps that
+  // share a size, or two fluid steps whose ranges cross. Each is a candidate.
+  const stepsAt = (fs, w) => (steps || []).filter((x) => (x.fluid ? Math.abs(fluidAt(x.fluid, w) - fs) <= FLUID_TOLERANCE : Math.abs(x.size - fs) < 0.05));
   const tyOn = (v) => !steps || steps.some((x) => x.size && Math.abs(x.size - v) < 0.05);
-  judge('type-scale', tyEntries, (v, w) => (steps ? !!stepAt(v, w) && (!frac(v) || !!stepAt(v, w).fluid) : !frac(v)), tyOn, 'type scale', 'type');
+  judge('type-scale', tyEntries, (v, w) => { if (!steps) return !frac(v); const c = stepsAt(v, w); return c.length > 0 && (!frac(v) || c.some((x) => x.fluid)); }, tyOn, 'type scale', 'type');
 
-  // Line heights of sizes that are steps.
+  // Line heights of sizes that are steps. The text passes when any step that
+  // gives its size at that width also gives its line height.
   if (steps) {
     const lh = new Map();
+    const lhOf = (st, fs) => st.lineHeight ?? fs * st.leading;
     for (const [sel, byW] of obs.type) {
       for (const [w, [fs, l]] of byW) {
-        const st = stepAt(fs, w);
-        const want = st && (st.lineHeight ?? fs * st.leading);
-        if (!st || (l !== 'normal' && Math.abs(l - want) <= 0.5)) continue;
+        const cands = stepsAt(fs, w);
+        if (!cands.length || (l !== 'normal' && cands.some((st) => Math.abs(l - lhOf(st, fs)) <= 0.5))) continue;
         const k = `${fs}/${l}`;
         let g = lh.get(k);
-        if (!g) lh.set(k, (g = { st, fs, l, want: Math.round(want * 100) / 100, sels: [], ws: [] }));
+        if (!g) lh.set(k, (g = { cands, fs, l, sels: [], ws: [] }));
         if (!g.sels.includes(sel)) g.sels.push(sel);
         g.ws.push(w);
       }
     }
     for (const [k, g] of lh) {
+      const sets = (st) => `${Math.round(lhOf(st, g.fs) * 100) / 100} px${st.leading && !st.lineHeight ? ` (${st.leading} × size)` : ''}`;
+      const which = g.cands.length === 1
+        ? `the "${g.cands[0].name}" step sets ${sets(g.cands[0])}`
+        : `the ${g.cands.length} steps at this size set ${g.cands.map((st) => `${sets(st)} ("${st.name}")`).join(', ')}`;
       out.push({ check: 'type-scale', severity: 'warning', key: 'lh|' + k, count: g.sels.length, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })),
-        message: `Line height ${g.l}${g.l === 'normal' ? '' : ' px'} at ${g.fs} px; the "${g.st.name}" step sets ${g.want} px${g.st.leading && !g.st.lineHeight ? ` (${g.st.leading} × size)` : ''}; on ${plural(g.sels.length, 'text element')}.` });
+        message: `Line height ${g.l}${g.l === 'normal' ? '' : ' px'} at ${g.fs} px; ${which}; on ${plural(g.sels.length, 'text element')}.` });
     }
   }
 

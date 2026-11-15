@@ -139,6 +139,14 @@
       "planted": "a caption set at 14px, which stays 14 px when the reader doubles the browser text size.",
       "css": "#d17 .fine-print { font-size: 14px; }",
       "fixedInTwin": "The caption is set at 0.875rem, so it follows the setting."
+    },
+    {
+      "id": "d18",
+      "check": "type-scale",
+      "title": "Two steps at one size",
+      "planted": "a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.",
+      "css": "#d18 .label { line-height: 1.375rem; }",
+      "fixedInTwin": "The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well."
     }
   ]
 }
