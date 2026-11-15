@@ -5,8 +5,9 @@
 //
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
-//        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--no-engines] [--fail-on error|warning]
+//        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
 //        [--wait-for <selector>] [--settle <ms>]
+//        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -18,10 +19,12 @@ import { typography } from './typography.js';
 import { motionInit, motionReport } from './motion.js';
 import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
+import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
 import { validate } from '../scripts/lib/schema.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = JSON.parse(readFileSync(join(HERE, '..', 'schema', 'system.schema.json'), 'utf8'));
+export const VERSION = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8')).version;
 
 export const CHECKS = {
   'page-load': { title: 'Page load', rule: 'CRF-15 · FBK-04' },
@@ -258,7 +261,7 @@ export async function inspect(url, o = {}) {
     let it = issues.get(k);
     const isNew = !it;
     if (!it) {
-      it = { id: `i${String(++idCount).padStart(3, '0')}`, check: raw.check, severity: raw.severity, message: raw.message, count: raw.count, elements: [], seen: {}, crops: [], first: pass.label };
+      it = { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint: k, check: raw.check, severity: raw.severity, message: raw.message, count: raw.count, elements: [], seen: {}, crops: [], first: pass.label };
       issues.set(k, it);
     }
     const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
@@ -293,8 +296,8 @@ export async function inspect(url, o = {}) {
   const addFinding = async (page, f) => {
     const w = f.widths[0];
     const mode = f.mode || 'light';
-    const it = { id: `i${String(++idCount).padStart(3, '0')}`, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
-    issues.set(f.check + '|' + f.key, it);
+    const it = { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
+    issues.set(it.fingerprint, it);
     await page.setViewportSize({ width: w, height: VIEW_H });
     await settle(page);
     const rects = await page.evaluate((sels) => sels.map((s) => {
@@ -574,7 +577,7 @@ export async function inspect(url, o = {}) {
     // Arrays of [value, count]: objects with numeric keys do not keep their order.
     const sortNum = (o) => Object.entries(o).map(([k, v]) => [parseFloat(k), v]).sort((a, b) => a[0] - b[0]);
     const report = {
-      tool: 'itten-inspector', url, date: new Date().toISOString(),
+      tool: 'itten-inspector', version: VERSION, url, date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
       sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths },
@@ -605,6 +608,9 @@ export async function inspect(url, o = {}) {
       load: { networkIdle: loaded.networkIdle, waitFor: o.waitFor ?? null, waited: loaded.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()] },
       issues: list,
     };
+    // Against a committed baseline: what this run adds and what it fixes.
+    if (o.baseline) report.baseline = compare(report, readBaseline(o.baseline), o.baseline, o.page);
+    if (o.writeBaseline) writeBaseline(o.writeBaseline, report, o.page);
     if (outDir) {
       writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 2));
       writeFileSync(join(outDir, 'report.html'), renderHtml(report));
@@ -1380,12 +1386,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     system, systemPath: args.system || null, out, full: !!args.full,
     widths: args.widths ? parseWidths(args.widths) : undefined,
     keyWidths: args['key-widths'] ? parseWidths(args['key-widths']) : undefined,
-    engines: args['no-engines'] ? [] : undefined,
+    engines: args['no-engines'] ? [] : typeof args.engines === 'string' ? args.engines.split(',').filter(Boolean) : undefined,
     waitFor: typeof args['wait-for'] === 'string' ? args['wait-for'] : undefined,
     settle: args.settle ? Number(args.settle) : undefined,
+    baseline: typeof args.baseline === 'string' ? args.baseline : undefined,
+    page: typeof args.page === 'string' ? args.page : undefined,
+    writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
   });
   const s = report.summary;
   console.log(`\n${s.error} errors, ${s.warning} warnings, ${s.info} info. Report: ${join(out, 'report.html')}`);
-  const failOn = args['fail-on'];
-  if ((failOn === 'error' && s.error) || (failOn === 'warning' && (s.error || s.warning))) process.exit(1);
+  const b = report.baseline;
+  if (b) console.log(b.found ? `Against ${b.file}: ${b.new.length} new, ${b.fixed.length} fixed.` : `${b.file} has no entry for ${b.page}.`);
+  if (args['write-baseline']) console.log(`Baseline written for this page to ${typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json'}.`);
+  // With --baseline, only new findings and findings that got worse fail the run.
+  if (failing(report, args['fail-on']).length) process.exit(1);
 }

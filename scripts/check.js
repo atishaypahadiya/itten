@@ -12,7 +12,9 @@
 //   anything on fixtures/clean.html, and the same for the distinct-value
 //   pair fixtures/distinct.html and distinct-clean.html (four widths;
 //   --full sweeps 41);
-// - a library asset has no licence beside it.
+// - a library asset has no licence beside it;
+// - an action or workflow uses a third-party action not pinned by a full
+//   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -124,6 +126,24 @@ for (const dir of ['library/assets/fonts', 'library/assets/icons']) {
     const names = readdirSync(join(full, sub));
     if (!names.some((n) => /^(OFL|LICEN[CS]E)/i.test(n))) fail('Licence', `${dir}/${sub} has no licence file`);
   }
+}
+
+// ----------------------------------------------------------------- Action
+// Third-party actions run with the job's token, so each is pinned to a
+// commit, not to a tag that can move.
+const workflows = ['action.yml', ...(existsSync(join(ROOT, '.github', 'workflows')) ? readdirSync(join(ROOT, '.github', 'workflows')).map((f) => `.github/workflows/${f}`) : [])];
+for (const f of workflows) {
+  if (!existsSync(join(ROOT, f))) { fail('Action', `${f} is missing`); continue; }
+  readFileSync(join(ROOT, f), 'utf8').split('\n').forEach((l, i) => {
+    const m = l.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
+    if (m && !m[1].startsWith('./') && !/@[0-9a-f]{40}$/.test(m[1])) fail('Action', `${f}:${i + 1} uses ${m[1]}, not pinned by a full commit SHA`);
+  });
+}
+try {
+  const { run: actionTest } = await import('./action-test.js');
+  for (const f of await actionTest()) fail('Action', f);
+} catch (e) {
+  fail('Action', `the action tests could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ---------------------------------------------------------------- Report

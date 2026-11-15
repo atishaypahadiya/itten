@@ -31,6 +31,26 @@ function engineSection(r) {
   </section>`;
 }
 
+// What this run adds and fixes against the committed baseline.
+function baselineSection(r) {
+  const b = r.baseline;
+  if (!b) return '';
+  if (!b.found) return `<section><h2>Against the baseline</h2><p><code>${esc(b.file)}</code> has no entry for <code>${esc(b.page)}</code>, so every finding below is counted as it stands. Write one with <code>--write-baseline</code>.</p></section>`;
+  const link = (id) => {
+    const it = r.issues.find((i) => i.id === id);
+    const where = it.elements[0]?.sel ?? it.resources?.[0];
+    return `<li><a href="#${id}">${id}</a> ${esc(it.title)}, ${esc(it.severity)}${where ? `: <code>${esc(where)}</code>` : ''}</li>`;
+  };
+  const list = (title, items) => items.length ? `<h3>${title}</h3><ul>${items.join('')}</ul>` : '';
+  return `<section>
+    <h2>Against the baseline</h2>
+    <p>Compared with <code>${esc(b.file)}</code>, written ${esc(b.date.slice(0, 10))}: ${plural(b.new.length, 'new finding')}, ${b.fixed.length} fixed${b.worse.length ? `, ${b.worse.length} more severe` : ''}${b.better.length ? `, ${b.better.length} less severe` : ''}.${b.sameWidths ? '' : ` The baseline was taken at ${esc(b.widths)} px and this run at ${esc(r.sweep.widths)} px, so some differences come from the widths.`}</p>
+    ${list('New', b.new.map(link))}
+    ${list('More severe', b.worse.map((w) => link(w.id).replace('</li>', ` (was ${esc(w.was)})</li>`)))}
+    ${list('Fixed', b.fixed.map((f) => `<li>${esc(f.message.split('. ')[0])}, ${esc(f.severity)}${f.elements[0] ? `: <code>${esc(f.elements[0])}</code>` : ''}</li>`))}
+  </section>`;
+}
+
 function motionSection(r) {
   const m = r.motion;
   if (!m) return '';
@@ -56,7 +76,7 @@ export function renderHtml(r) {
     <article id="${it.id}">
       <h3>${esc(it.title)}</h3>
       <p>${esc(it.message)}</p>
-      <p class="meta">${esc(it.rule)} · ${it.id} · seen at ${Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ')}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
+      <p class="meta">${r.baseline?.found && r.baseline.new.includes(it.id) ? 'New since the baseline · ' : ''}${esc(it.rule)} · ${it.id} · seen at ${Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ')}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
       <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}</span></li>`).join('')}${(it.resources || []).map((u) => `<li><code>${esc(u)}</code></li>`).join('')}</ul>
       ${it.crops.map((c) => `<figure><img src="${esc(c.path)}" alt="Crop of ${esc(it.title.toLowerCase())} at ${esc(c.at)}, zoomed ${c.zoom} times" loading="lazy"><figcaption>${esc(c.at)}, ${c.zoom}×. Magenta: the elements involved. Blue: the edges compared.</figcaption></figure>`).join('')}
     </article>`;
@@ -111,6 +131,7 @@ export function renderHtml(r) {
   <p class="meta">${esc(r.date)} · ${esc(r.environment.browser)} on ${esc(r.environment.platform)} · ${r.mode === 'system' ? `checked against <code>${esc(r.system)}</code>` : 'no system file: distinct-value mode'}</p>
   <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×; motion at the last key width, with and without reduced motion.</p>
   ${table}
+  ${baselineSection(r)}
   ${sections}
   <section>
     <h2>Values in use</h2>

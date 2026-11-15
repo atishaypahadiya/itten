@@ -4,10 +4,14 @@
 // The pair fixtures/distinct.html and distinct-clean.html is inspected the
 // same way without a system file (distinct-value mode).
 // Usage: node scripts/fixture-test.js [--full]   (--full: the 41-width sweep instead of four widths)
+//        node scripts/fixture-test.js --from <report dir> [--from <report dir>]
+//          scores reports the ITTEN action wrote (its summary.json and one
+//          folder per page) instead of running the inspector; the self-test
+//          workflow uses this to check the action against the fixtures.
 // Exports run() for scripts/check.js.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
@@ -35,45 +39,62 @@ export async function run({ full = false, quiet = true } = {}) {
     const dOpts = { ...opts, system: null, systemPath: null, engines: [] };
     const dPage = await inspect(url(spec.distinct.page), { ...dOpts, out: join(OUT, 'distinct-test-print') });
     const dTwin = await inspect(url(spec.distinct.twin), { ...dOpts, out: join(OUT, 'distinct-clean-twin') });
-
-    const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity);
-    const rows = [
-      ...spec.defects.map((d) => ({ d, on: page })),
-      ...spec.distinct.defects.map((d) => ({ d, on: dPage, mode: 'distinct' })),
-    ].map(({ d, on, mode }) => {
-      const hits = on.issues.filter((i) => hit(i, d));
-      return { ...d, ...(mode ? { mode } : {}), caught: hits.length > 0, issues: hits.map((i) => i.id) };
-    });
-    const tp = (issues, defects) => issues.filter((i) => defects.some((d) => hit(i, d)));
-    const truePos = [...tp(page.issues, spec.defects), ...tp(dPage.issues, spec.distinct.defects)];
-    const falsePos = [
-      ...page.issues.filter((i) => !spec.defects.some((d) => hit(i, d))), ...twin.issues,
-      ...dPage.issues.filter((i) => !spec.distinct.defects.some((d) => hit(i, d))), ...dTwin.issues,
-    ];
-    // A fluid range counts as one value, as the fixed size that replaces it does.
-    const totals = (r) => r.distinct.sweep;
-    const sweepEqual = JSON.stringify(totals(dPage)) === JSON.stringify(totals(dTwin));
-    const caught = rows.filter((r) => r.caught).length;
-    const result = {
-      defects: rows.length, caught, missed: rows.filter((r) => !r.caught).map((r) => r.id),
-      findingsOnTestPrint: page.issues.length + dPage.issues.length, truePositives: truePos.length,
-      falsePositivesOnTestPrint: page.issues.length + dPage.issues.length - truePos.length, findingsOnTwin: twin.issues.length + dTwin.issues.length,
-      distinctSweep: { testPrint: totals(dPage), twin: totals(dTwin), equal: sweepEqual },
-      precision: truePos.length / (truePos.length + falsePos.length || 1),
-      recall: caught / rows.length,
-      rows,
-      falsePositives: falsePos.map((i) => ({ id: i.id, check: i.check, severity: i.severity, message: i.message, elements: i.elements.map((e) => e.sel) })),
-    };
-    mkdirSync(OUT, { recursive: true });
-    writeFileSync(join(OUT, 'result.json'), JSON.stringify(result, null, 2));
-    return result;
+    return score(spec, { page, twin, dPage, dTwin });
   } finally {
     server.close();
   }
 }
 
+// Reads the reports the action wrote for the four fixture pages.
+export function fromAction(dirs) {
+  const spec = JSON.parse(readFileSync(join(ROOT, 'fixtures', 'defects.json'), 'utf8'));
+  const byPage = new Map();
+  for (const d of dirs) {
+    const s = JSON.parse(readFileSync(join(resolve(d), 'summary.json'), 'utf8'));
+    if (s.problems?.length) throw new Error(`the action run in ${d} did not finish: ${s.problems.join('; ')}`);
+    for (const p of s.pages) byPage.set(p.page.replace(/^\//, ''), JSON.parse(readFileSync(join(resolve(d), p.dir, 'report.json'), 'utf8')));
+  }
+  const get = (p) => { const r = byPage.get(p); if (!r) throw new Error(`no report for ${p} in ${dirs.join(', ')}`); return r; };
+  return score(spec, { page: get(spec.page), twin: get(spec.twin), dPage: get(spec.distinct.page), dTwin: get(spec.distinct.twin) });
+}
+
+export function score(spec, { page, twin, dPage, dTwin }) {
+  const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity);
+  const rows = [
+    ...spec.defects.map((d) => ({ d, on: page })),
+    ...spec.distinct.defects.map((d) => ({ d, on: dPage, mode: 'distinct' })),
+  ].map(({ d, on, mode }) => {
+    const hits = on.issues.filter((i) => hit(i, d));
+    return { ...d, ...(mode ? { mode } : {}), caught: hits.length > 0, issues: hits.map((i) => i.id) };
+  });
+  const tp = (issues, defects) => issues.filter((i) => defects.some((d) => hit(i, d)));
+  const truePos = [...tp(page.issues, spec.defects), ...tp(dPage.issues, spec.distinct.defects)];
+  const falsePos = [
+    ...page.issues.filter((i) => !spec.defects.some((d) => hit(i, d))), ...twin.issues,
+    ...dPage.issues.filter((i) => !spec.distinct.defects.some((d) => hit(i, d))), ...dTwin.issues,
+  ];
+  // A fluid range counts as one value, as the fixed size that replaces it does.
+  const totals = (r) => r.distinct.sweep;
+  const sweepEqual = JSON.stringify(totals(dPage)) === JSON.stringify(totals(dTwin));
+  const caught = rows.filter((r) => r.caught).length;
+  const result = {
+    defects: rows.length, caught, missed: rows.filter((r) => !r.caught).map((r) => r.id),
+    findingsOnTestPrint: page.issues.length + dPage.issues.length, truePositives: truePos.length,
+    falsePositivesOnTestPrint: page.issues.length + dPage.issues.length - truePos.length, findingsOnTwin: twin.issues.length + dTwin.issues.length,
+    distinctSweep: { testPrint: totals(dPage), twin: totals(dTwin), equal: sweepEqual },
+    precision: truePos.length / (truePos.length + falsePos.length || 1),
+    recall: caught / rows.length,
+    rows,
+    falsePositives: falsePos.map((i) => ({ id: i.id, check: i.check, severity: i.severity, message: i.message, elements: i.elements.map((e) => e.sel) })),
+  };
+  mkdirSync(OUT, { recursive: true });
+  writeFileSync(join(OUT, 'result.json'), JSON.stringify(result, null, 2));
+  return result;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const r = await run({ full: process.argv.includes('--full'), quiet: false });
+  const from = process.argv.flatMap((a, i) => (process.argv[i - 1] === '--from' ? [a] : []));
+  const r = from.length ? fromAction(from) : await run({ full: process.argv.includes('--full'), quiet: false });
   for (const row of r.rows) console.log(`${row.caught ? 'caught' : 'MISSED'}  ${row.id}  ${row.check.padEnd(18)} ${row.title}  ${row.issues.join(' ')}`);
   for (const f of r.falsePositives) console.log(`false positive  ${f.check}  ${f.message}  [${f.elements.join(', ')}]`);
   const ds = r.distinctSweep;

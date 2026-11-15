@@ -22,8 +22,8 @@ SOFTWARE.
 
 ---
 
-This MIT licence covers the code: inspector/, scripts/, schema/, fixtures/
-and package.json. The documents are licensed under CC BY 4.0: ITTEN.md and
+This MIT licence covers the code: inspector/, scripts/, schema/, fixtures/,
+action.yml, .github/ and package.json. The documents are licensed under CC BY 4.0: ITTEN.md and
 README.md, and the folders reference/, protocol/, library/ and
 research/baselines/, each with its own LICENSE file. The fonts and icons
 in library/assets/ keep their own licences (SIL Open Font License 1.1 and

@@ -25,13 +25,21 @@ node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.jso
 | `--full` | Sweep every 40 px from 320 to 1920 px (41 widths) instead of the default four: 320, 768, 1440 and 1920 px. Use it before a release, and to find the widths where a finding starts and stops. |
 | `--widths a:b:step` or `a,b,c` | Any other set of widths. |
 | `--key-widths a,b,c` | Widths for the contrast and font passes. Default `320,768,1440`. |
+| `--engines webkit,firefox` | The engines for the second pass on layout. Default both. |
 | `--no-engines` | Skip the WebKit and Firefox pass. |
 | `--wait-for <selector>` | After the network goes quiet, wait up to 30 s for an element matching the selector before measuring, on every load. Use it for pages that draw from data or on a timer: name what appears last. |
 | `--settle <ms>` | Wait this much longer before measuring, on every load. |
-| `--fail-on error` or `warning` | Exit with code 1 when findings of that severity or worse exist, for CI. |
+| `--fail-on error` or `warning` | Exit with code 1 when findings of that severity or worse exist, for CI. With `--baseline`, only findings that are new or more severe than in the baseline count. |
+| `--baseline <path>` | Compare with a baseline file, usually `itten-baseline.json`: the report lists findings that are new, fixed, or changed in severity. |
+| `--write-baseline [path]` | Write this page's findings into a baseline file (default `itten-baseline.json`), keeping the other pages' entries. Put the URL first, before this flag. |
+| `--page <key>` | The page's key in the baseline. Default the URL's path and query, so a local run and a deployed one share an entry. |
 | `--validate <path>` | Only validate a system file against `schema/system.schema.json`. |
 
 A default run on a typical page takes under a minute; `--full` takes one to three.
+
+### The baseline
+
+A project with findings it has accepted for now (each logged as an override) commits them as `itten-baseline.json`, so a change is judged by what it adds. Each finding is identified by its check and what it is grouped by: an element's selector, a value, or a fluid curve, not by its id or its wording, which change between runs. A finding is new when that pair is not in the baseline, and fixed when a pair in the baseline is not found. Renaming an element's id or classes therefore shows as one fix and one new finding. Write the baseline where the checks run (in CI, with the action's `write-baseline` input), since fonts and line breaks differ between platforms.
 
 ## What a run does
 
