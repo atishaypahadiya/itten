@@ -46,6 +46,22 @@
 #d17 .fine-print { font-size: 14px; }
 /* d18 type-scale */
 #d18 .label { line-height: 1.375rem; }
+/* d23 widow */
+#d23 .note { max-width: 220px; }
+/* d24 orphan */
+#d24 .cols p { orphans: 1; widows: 1; }
+/* d25 rag */
+#d25 .measure { hyphens: manual; }
+/* d26 text-wrap-balance */
+#d26 h3 { text-wrap: wrap; }
+/* d27 text-wrap-pretty */
+#d27 .measure { text-wrap: wrap; }
+/* d28 hyphenation */
+#d28 .justified { hyphens: manual; }
+/* d29 hanging-punctuation */
+#d29 .quote { text-indent: 0; }
+/* d30 optical-margin */
+#d30 .hero { text-indent: 0; }
 </style>
 </head>
 <body>
@@ -166,6 +182,47 @@
     <script>
       addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));
     </script>
+  </section>
+  <section id="d23">
+    <h2>Widow</h2>
+    <p class="small">Planted: a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.</p>
+    <p class="note">Short notes end on one word sometimes.</p>
+  </section>
+  <section id="d24">
+    <h2>Orphan across columns</h2>
+    <p class="small">Planted: orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column.</p>
+    <div class="cols"><p>The first paragraph runs to four lines in its column here.</p><p>The second runs on longer, and breaks across the two columns of the box below the first.</p></div>
+  </section>
+  <section id="d25">
+    <h2>Hole in the rag</h2>
+    <p class="small">Planted: hyphenation is off, so a long word leaves a line far short of the measure.</p>
+    <p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its maintenance.</p>
+  </section>
+  <section id="d26">
+    <h2>Unbalanced heading</h2>
+    <p class="small">Planted: text-wrap is plain wrap, so the heading leaves a short second line.</p>
+    <h3 class="measure">A heading that wraps onto a short second line</h3>
+  </section>
+  <section id="d27">
+    <h2>Plain wrapping</h2>
+    <p class="small">Planted: text-wrap is plain wrap, so the last line holds one word; text-wrap: pretty would bring a second word down.</p>
+    <p class="measure">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</p>
+  </section>
+  <section id="d28">
+    <h2>Justified without hyphenation</h2>
+    <p class="small">Planted: justified text in a narrow measure with hyphenation off, so the word spaces stretch.</p>
+    <p class="measure justified">Justification spreads the words across the measure, and without hyphenation the narrow column opens wide rivers between them.</p>
+  </section>
+  <section id="d29">
+    <h2>Punctuation that should hang</h2>
+    <p class="small">Planted: the opening quote sits inside the text edge, though the system hangs punctuation.</p>
+    <p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters align.</p>
+  </section>
+  <section id="d30">
+    <h2>Optical edge of display type</h2>
+    <p class="small">Planted: the large O sits on the box edge, so its ink starts inside the edge of the text below.</p>
+    <p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
+    <p>Hold the edge of this line against the round letter above.</p>
   </section>
 </main>
 <script>

@@ -14,6 +14,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platform, release } from 'node:os';
 import { collect } from './collect.js';
+import { typography } from './typography.js';
 import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { validate } from '../scripts/lib/schema.js';
@@ -37,6 +38,14 @@ export const CHECKS = {
   'radius': { title: 'Radii outside the set', rule: 'CRF-11 · SHP-02' },
   'radius-concentric': { title: 'Non-concentric corners', rule: 'CRF-12 · SHP-01' },
   'hairline-subpixel': { title: 'Hairlines off the pixel grid', rule: 'CRF-08' },
+  'widow': { title: 'Widows', rule: 'CRF-21' },
+  'orphan': { title: 'Orphans across columns', rule: 'CRF-21' },
+  'rag': { title: 'Holes in the rag', rule: 'CRF-22 · TYP-04' },
+  'hyphenation': { title: 'Justified text without hyphenation', rule: 'CRF-22' },
+  'text-wrap-balance': { title: 'Headings that would balance', rule: 'CRF-23' },
+  'text-wrap-pretty': { title: 'Short last lines', rule: 'CRF-23' },
+  'hanging-punctuation': { title: 'Punctuation that should hang', rule: 'CRF-24' },
+  'optical-margin': { title: 'Display type off its optical edge', rule: 'CRF-25 · CRF-04' },
 };
 const SEVERITY = ['error', 'warning', 'info'];
 const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
@@ -45,6 +54,10 @@ const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox
 const ENGINE_CHECKS = ['near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'hairline-subpixel'];
 const LAYOUT = ['spacing-scale', 'type-scale', 'near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'hairline-subpixel'];
 const TEXT200 = ['overflow', 'clipping', 'overlap'];
+// Typographic checks run in Chromium at every width of the sweep: line
+// breaking differs between engines, and these judge Chromium's lines. The
+// optical edge is measured from pixels at the key widths.
+const TYPO = ['widow', 'orphan', 'rag', 'hyphenation', 'text-wrap-balance', 'text-wrap-pretty', 'hanging-punctuation'];
 const VIEW_H = 900;
 export const DEFAULT_WIDTHS = [320, 768, 1440, 1920];
 export const FULL_WIDTHS = Array.from({ length: 41 }, (_, i) => 320 + i * 40);
@@ -408,7 +421,9 @@ export async function inspect(url, o = {}) {
       for (const [sel, fs, lh] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, [fs, lh]); }
       for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
       for (const raw of res.issues) await merge(page, raw, pass);
-      log(`  ${pass.label}: ${res.issues.length} findings, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      const ty = await page.evaluate(typography, { checks: TYPO, system });
+      for (const raw of ty.issues) await merge(page, raw, pass);
+      log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     }
     for (const f of scaleFindings(obs, system, widths, distinct)) await addFinding(page, f);
 
@@ -421,6 +436,10 @@ export async function inspect(url, o = {}) {
         for (const raw of await fontIssues(cdp, page, res, system, renderedFonts)) await merge(page, raw, pass);
         coverage.fontGroups = Math.max(coverage.fontGroups, new Set(res.data.fontReps.map((r) => r.group)).size);
         for (const raw of await contrastIssues(page, res, coverage)) await merge(page, raw, pass);
+        if (scheme === 'light') {
+          const ty = await page.evaluate(typography, { checks: ['optical-margin'], system });
+          for (const raw of await opticalIssues(page, ty.optical)) await merge(page, raw, pass);
+        }
         log(`  ${pass.label}: contrast and fonts`);
       }
     }
@@ -552,6 +571,7 @@ export async function inspect(url, o = {}) {
         'Moving backgrounds are sampled in two frames 400 ms apart, not at their worst frame.',
         `Fonts are judged against the fonts installed on this machine (${platform()}); another platform can fall back differently.`,
         'Layout checks run in the light scheme only; the dark scheme is checked for contrast and fonts.',
+        'Typographic checks judge the lines Chromium draws; WebKit and Firefox break lines a little differently. Printed pages are not paginated, so orphans and widows across pages are not judged.',
       ],
       summary: {
         error: list.filter((i) => i.severity === 'error').length,
@@ -799,6 +819,73 @@ async function fontIssues(cdp, page, res, system, renderedFonts) {
       }
     }
   }
+  return out;
+}
+
+// ------------------------------------------------------------ optical edge
+// Where the ink of a display line's first glyph starts, against the ink of
+// the first glyph of the text it aligns with. Each glyph is screenshotted
+// with the page's text drawn and again with all text transparent; the first
+// column that differs is where the ink starts. Round and pointed letters
+// carry side bearings that grow with size, so at display sizes their ink
+// sits visibly inside an edge that the boxes share.
+async function opticalIssues(page, cands) {
+  if (!cands.length) return [];
+  cands = cands.slice(0, 12);
+  const clipOf = (g, fs) => {
+    const x = Math.max(0, Math.floor(g[0] - fs * 0.3)), y = Math.max(0, Math.floor(g[1]));
+    return { x, y, width: Math.ceil(g[0] + g[2] - x) + 1, height: Math.max(4, Math.ceil(g[3])) };
+  };
+  const shots = async () => {
+    const out = [];
+    for (const c of cands) {
+      const pair = [];
+      for (const [g, fs] of [[c.glyph, c.fs], [c.refGlyph, c.fs]]) {
+        const clip = clipOf(g, fs);
+        try { pair.push({ clip, img: decodePng(await page.screenshot({ clip, fullPage: true })) }); } catch { pair.push(null); }
+      }
+      out.push(pair);
+    }
+    return out;
+  };
+  const shown = await shots();
+  await page.evaluate(() => {
+    const s = document.createElement('style');
+    s.id = 'itten-hide-text';
+    s.textContent = '*, *::before, *::after { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; text-decoration-color: transparent !important; }';
+    document.head.append(s);
+  });
+  let hidden;
+  try { await settle(page); hidden = await shots(); } finally {
+    await page.evaluate(() => document.getElementById('itten-hide-text')?.remove());
+    await settle(page);
+  }
+  const inkLeft = (a, b) => {
+    if (!a || !b || a.img.width !== b.img.width || a.img.height !== b.img.height) return null;
+    const { width, height, channels } = a.img;
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const o = (y * width + x) * channels;
+        let d = 0;
+        for (let k = 0; k < 3; k++) d += Math.abs(a.img.data[o + k] - b.img.data[o + k]);
+        if (d > 96) return a.clip.x + x;
+      }
+    }
+    return null;
+  };
+  const out = [];
+  cands.forEach((c, i) => {
+    const ink = inkLeft(shown[i][0], hidden[i][0]), ref = inkLeft(shown[i][1], hidden[i][1]);
+    if (ink === null || ref === null) return;
+    // A round or pointed letter whose ink only meets the edge already looks
+    // indented; one whole pixel short of it, at display size, is reported.
+    const d = ink - ref;
+    if (d < 1) return;
+    const y = c.glyph[1], h = c.glyph[3];
+    out.push({ check: 'optical-margin', severity: 'warning', key: c.el.sel, count: 1, elements: [c.el], crop: 'marks',
+      marks: [{ x1: ref, y1: y, x2: ink, y2: y + h }],
+      message: `The ink of the "${c.letter}" at ${c.fs} px starts ${d} px to the right of the ink of the "${c.refLetter}" in ${c.ref.label}, though their boxes share an edge. Round and pointed letters at display sizes need to reach past that edge to look aligned: pull the line left until the ink passes the edge slightly, about ${Math.round(((d + 0.015 * c.fs) / c.fs) * 100) / 100}em with text-indent, and log it as an optical adjustment (CRF-04).` });
+  });
   return out;
 }
 

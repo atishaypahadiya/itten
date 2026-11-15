@@ -164,6 +164,70 @@
       "planted": "the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.",
       "markup": "<div class=\"d20-figure\"></div>\n    <script>\n      addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));\n    </script>",
       "fixedInTwin": "The figure draws as the page is read, before the load event."
+    },
+    {
+      "id": "d23",
+      "check": "widow",
+      "title": "Widow",
+      "planted": "a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.",
+      "css": "#d23 .note { max-width: 220px; }",
+      "fixedInTwin": "At 288 px the note sets on one line."
+    },
+    {
+      "id": "d24",
+      "check": "orphan",
+      "title": "Orphan across columns",
+      "planted": "orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column.",
+      "css": "#d24 .cols p { orphans: 1; widows: 1; }",
+      "fixedInTwin": "Orphans and widows of 2, the default, so the second paragraph breaks two lines and three."
+    },
+    {
+      "id": "d25",
+      "check": "rag",
+      "title": "Hole in the rag",
+      "planted": "hyphenation is off, so a long word leaves a line far short of the measure.",
+      "css": "#d25 .measure { hyphens: manual; }",
+      "fixedInTwin": "hyphens: auto, as on every paragraph, fills the line."
+    },
+    {
+      "id": "d26",
+      "check": "text-wrap-balance",
+      "title": "Unbalanced heading",
+      "planted": "text-wrap is plain wrap, so the heading leaves a short second line.",
+      "css": "#d26 h3 { text-wrap: wrap; }",
+      "fixedInTwin": "text-wrap: balance, as on every heading, evens the two lines."
+    },
+    {
+      "id": "d27",
+      "check": "text-wrap-pretty",
+      "title": "Plain wrapping",
+      "planted": "text-wrap is plain wrap, so the last line holds one word; text-wrap: pretty would bring a second word down.",
+      "css": "#d27 .measure { text-wrap: wrap; }",
+      "fixedInTwin": "text-wrap: pretty, as on every paragraph, closes on two words."
+    },
+    {
+      "id": "d28",
+      "check": "hyphenation",
+      "title": "Justified without hyphenation",
+      "planted": "justified text in a narrow measure with hyphenation off, so the word spaces stretch.",
+      "css": "#d28 .justified { hyphens: manual; }",
+      "fixedInTwin": "The same text with hyphens: auto, as on every paragraph."
+    },
+    {
+      "id": "d29",
+      "check": "hanging-punctuation",
+      "title": "Punctuation that should hang",
+      "planted": "the opening quote sits inside the text edge, though the system hangs punctuation.",
+      "css": "#d29 .quote { text-indent: 0; }",
+      "fixedInTwin": "A negative text-indent pulls the quote into the margin."
+    },
+    {
+      "id": "d30",
+      "check": "optical-margin",
+      "title": "Optical edge of display type",
+      "planted": "the large O sits on the box edge, so its ink starts inside the edge of the text below.",
+      "css": "#d30 .hero { text-indent: 0; }",
+      "fixedInTwin": "The line is pulled left until the ink of the O meets the text edge, an optical adjustment."
     }
   ],
   "distinct": {

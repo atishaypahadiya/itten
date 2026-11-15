@@ -215,6 +215,45 @@ Use curly quotes and apostrophes, the ellipsis character, an en dash for ranges,
 
 *Why:* these are cheap signals of care, and screen readers handle the correct characters better. Cites: TYP-11, TYP-10.
 
+## Lines and paragraphs
+
+These rules judge the lines as the browser breaks them, at every width. Line breaking differs between engines, so the inspector judges Chromium's lines; check WebKit by eye where the brief cares.
+
+### CRF-21 · No widows, no orphans
+Strength: SHOULD · Verified by: `widow`, `orphan` (inspector); manual: printed pages
+
+A paragraph does not end on a line holding a single word. Set paragraphs with `text-wrap: pretty`; where a one-word last line remains, change the measure or the copy, or join the last two words with a no-break space. A paragraph split across columns or pages keeps at least two lines on each side of the break (`orphans` and `widows` of 2 or more, or `break-inside: avoid` for short blocks).
+
+*Why:* a stranded word or line reads as a gap in the text block and pulls the eye. Cites: TYP-04; Bringhurst, *The Elements of Typographic Style*; [Butterick, "Widow and orphan control"](https://practicaltypography.com/widow-and-orphan-control.html); [CSS Fragmentation Level 3](https://www.w3.org/TR/css-break-3/) (`orphans`, `widows`).
+
+### CRF-22 · An even rag; justified text is hyphenated
+Strength: SHOULD · Verified by: `rag`, `hyphenation` (inspector)
+
+In ragged text no line other than the last, or one ended by a forced break, stops more than a quarter of the measure short, where hyphenation would fill it: set `hyphens: auto` with a `lang` on the page. Justified text is hyphenated; in a measure too narrow for that to keep word spaces under about one and a half times their natural width, set it ragged.
+
+*Why:* deep holes in the rag break the shape of the paragraph, and stretched word spaces open rivers down justified text. Cites: TYP-04; [Knuth and Plass, "Breaking Paragraphs into Lines", 1981](https://doi.org/10.1002/spe.4380111102); [Butterick, "Hyphenation"](https://practicaltypography.com/hyphenation.html) and ["Justified text"](https://practicaltypography.com/justified-text.html).
+
+### CRF-23 · Headings balance; paragraphs close well
+Strength: SHOULD · Verified by: `text-wrap-balance`, `text-wrap-pretty` (inspector)
+
+Headings that run to two or more lines are set with `text-wrap: balance`, so their lines are of similar length. Paragraphs are set with `text-wrap: pretty`, so their last line is not one short word. The inspector sets each property on an element for a moment and reports it where the lines would improve.
+
+*Why:* a long first line over a one-word second line makes a heading read as two unequal parts; both properties fix it for every width at once, where manual breaks fix one. Cites: [CSS Text Module Level 4](https://www.w3.org/TR/css-text-4/) (`text-wrap-style`).
+
+### CRF-24 · Punctuation hangs where the system says so
+Strength: SHOULD, where `type.hangingPunctuation` is true · Verified by: `hanging-punctuation` (inspector)
+
+An opening quotation mark or bracket at the start of a block sits outside the text edge, so the letters align. `hanging-punctuation` is not implemented in every engine; a negative `text-indent` of the mark's width does the same everywhere.
+
+*Why:* a quote mark inside the edge makes the first line look indented. Cites: Bringhurst, *The Elements of Typographic Style*; [CSS Text Module Level 4](https://www.w3.org/TR/css-text-4/) (`hanging-punctuation`).
+
+### CRF-25 · Display type aligns by its ink
+Strength: SHOULD · Verified by: `optical-margin` (inspector); manual: 400% crop of each display line against the column edge
+
+A line of display type (32 px and up) that starts with a round or pointed letter (O, C, G, A, V and the like) is pulled left until the letter's ink reaches slightly past the edge that the text below it starts at. The inspector measures where the ink starts in pixels, not where the box does. Log each adjustment as an optical exception (CRF-04).
+
+*Why:* round and pointed letters carry side bearings and overshoot that grow with size, so at display sizes a box-aligned O looks indented against the text beneath it. Cites: CRF-04, LAY-09; Bringhurst, *The Elements of Typographic Style*.
+
 ## Review checklist
 
 | Rule | What it asks | Verified by | Pass |
@@ -239,6 +278,11 @@ Use curly quotes and apostrophes, the ellipsis character, an en dash for ranges,
 | CRF-18 | Reduce Motion honoured | manual: emulated reduced motion, before and after | |
 | CRF-19 | Tabular figures where numbers align or change | manual: 1111 / 0000 test, `tnum` present | |
 | CRF-20 | Correct typographic characters | manual: text search | |
+| CRF-21 | No widows or orphans | `widow`, `orphan`; manual: printed pages | |
+| CRF-22 | Even rag; justified text hyphenated | `rag`, `hyphenation` | |
+| CRF-23 | Headings balanced, paragraphs pretty | `text-wrap-balance`, `text-wrap-pretty` | |
+| CRF-24 | Hanging punctuation where declared | `hanging-punctuation` | |
+| CRF-25 | Display type aligned by its ink | `optical-margin`; manual: 400% crop | |
 
 ## Sources
 

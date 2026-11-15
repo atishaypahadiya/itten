@@ -38,7 +38,7 @@ A default run on a typical page takes under a minute; `--full` takes one to thre
 | Pass | Widths | Scheme | Text | Checks |
 |---|---|---|---|---|
 | Layout sweep | 320, 768, 1440, 1920 px (`--full`: 320 to 1920 px in 40 px steps) | light | default | every layout check below |
-| Contrast and fonts | key widths | light, then dark | default | `contrast`, `font-fallback` |
+| Contrast and fonts | key widths | light, then dark | default | `contrast`, `font-fallback`; `optical-margin` in light |
 | Text doubled | the same widths | light | browser default font size 32 px instead of 16 px | `overflow`, `clipping`, `overlap`; `text-resize` at the last key width |
 | Device pixels | first and last key width | light | default | `hairline-subpixel` at a device pixel ratio of 2 |
 | Other engines | 320, 768, 1440 and 1920 px | light | default | the layout checks except `spacing-scale` and `type-scale`, in WebKit and Firefox |
@@ -65,7 +65,17 @@ Severity follows the precedence in `ITTEN.md`. An **error** breaks an accessibil
 | `sibling-gaps` | warning | The gaps between three or more siblings of the same kind in one container, along each axis. | CRF-03 |
 | `radius` | warning | Corner radii outside the system's set (a concentric derivation is allowed when `nesting` is `concentric`). Without a system: more than four radii, or radii within 2 px of each other. | CRF-11, SHP-02 |
 | `radius-concentric` | warning | A rounded box nested near the corner of a rounded parent whose radius is not the parent's radius minus the inset. | CRF-12, SHP-01 |
+| `widow` | warning | A paragraph whose last line holds one word, which `text-wrap: pretty` does not move (it is set already, or was tried and left the word). A word broken across lines is not counted. | CRF-21 |
+| `orphan` | warning | A paragraph split across columns with one line on either side of the break. Printed pages are not judged. | CRF-21 |
+| `rag` | warning | Ragged text with three or more lines in which a line other than the last, or one ended by a `<br>`, stops more than 25% of the measure short, and `hyphens: auto` would bring the deepest hole up by at least 10% of the measure. Text already hyphenated is not judged. | CRF-22 |
+| `hyphenation` | warning | Justified text without effective hyphenation (`hyphens: auto` and a `lang`) whose word spaces stretch past 1.5 times their natural width on some line. | CRF-22 |
+| `text-wrap-balance` | info | A heading of two or more lines, not balanced, whose shortest line is under 60% of its longest, where `text-wrap: balance` raises that ratio to 60% or more and by at least 30 points. | CRF-23 |
+| `text-wrap-pretty` | info | A plainly wrapped paragraph whose last line holds one word or fills under a third of the measure, where `text-wrap: pretty` moves a second word down or fills the line by at least 10% more. A one-word last line that `pretty` does not fix is a `widow` instead, so each paragraph is reported once. | CRF-23 |
+| `hanging-punctuation` | warning | Only where the system sets `type.hangingPunctuation`: a block starting with an opening quote or bracket that sits less than half outside the text edge. | CRF-24 |
+| `optical-margin` | warning | Display type (32 px and up), left-aligned, starting with a round or pointed letter, next to smaller text that shares its edge. The first glyph of each is screenshotted with the page's text drawn and again with all text transparent; the first column that differs is where the ink starts. Reported when the display letter's ink starts a whole pixel or more to the right of the other's. Key widths, light. | CRF-25 |
 | `hairline-subpixel` | warning, or info | Borders and rules up to 1.5 px thick whose position or width does not land on whole device pixels at 1× and 2×. The middle of each line (up to three per finding) is screenshotted in each engine and profiled across its thickness. Warning when an engine draws it blurred across two pixels; info when every engine snaps it to whole pixels, which browsers do for most borders placed by layout. Lines moved by a fractional transform blur in Chromium and WebKit. | CRF-08 |
+
+The typographic checks (`widow` to `optical-margin` above) judge the lines Chromium draws, at every width of the sweep. Where a check asks whether a property would help, it sets the property on the element for a moment, reads the lines again and puts the element back.
 
 ### What it does not judge
 

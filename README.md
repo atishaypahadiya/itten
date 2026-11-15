@@ -45,7 +45,7 @@ The check takes about 40 seconds at four widths and a little over a minute with 
 
 ## What the inspector catches
 
-On the fixtures, the default run and the full sweep each catch all 22 planted defects, one or more for each of the 15 checks, with no false positives on any page (recall 22/22, precision 26/26). Two of the defects are judged without a system file, in distinct-value mode. `fixtures/README.md` lists the defects. `protocol/04-inspect.md` lists what the inspector does not judge: the insides of graphics, states other than the default, pseudo-element text, icon optics, motion, and fonts on platforms other than the one it runs on.
+On the fixtures, the default run and the full sweep each catch all 30 planted defects, one or more for each of the 23 checks, with no false positives on any page (recall 30/30, precision 34/34). Two of the defects are judged without a system file, in distinct-value mode. `fixtures/README.md` lists the defects. `protocol/04-inspect.md` lists what the inspector does not judge: the insides of graphics, states other than the default, pseudo-element text, icon optics, motion, and fonts on platforms other than the one it runs on.
 
 ## What comes next
 

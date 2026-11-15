@@ -147,7 +147,7 @@
                   "maxWidth"
                 ],
                 "additionalProperties": false,
-                "description": "A fluid step: min px at minWidth and below, max px at maxWidth and above, linear in between. This is what clamp(min, a + b\u00b7vw, max) produces.",
+                "description": "A fluid step: min px at minWidth and below, max px at maxWidth and above, linear in between. This is what clamp(min, a + b·vw, max) produces.",
                 "properties": {
                   "min": {
                     "type": "number",
@@ -230,6 +230,10 @@
             }
           },
           "description": "TYP-04: characters per line for running text."
+        },
+        "hangingPunctuation": {
+          "type": "boolean",
+          "description": "Opening quotes and brackets at the start of a block hang into the margin (CRF-24)."
         }
       }
     },

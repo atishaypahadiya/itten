@@ -13,8 +13,10 @@
       { "name": "body", "size": 16, "lineHeight": 24, "weight": 400 },
       { "name": "label", "size": 16, "lineHeight": 20, "weight": 600 },
       { "name": "title", "size": 24, "lineHeight": 32, "weight": 600 },
+      { "name": "hero", "size": 64, "lineHeight": 72, "weight": 600 },
       { "name": "display", "fluid": { "min": 32, "max": 40, "minWidth": 320, "maxWidth": 960 }, "lineHeight": 48, "weight": 600 }
-    ]
+    ],
+    "hangingPunctuation": true
   },
   "grid": { "breakpoints": [{ "minWidth": 0, "columns": 1, "gutter": 16, "margin": 16, "maxWidth": 720 }] },
   "radius": { "scale": [4, 12], "capsule": false, "nesting": "concentric" },

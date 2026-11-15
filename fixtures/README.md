@@ -7,7 +7,7 @@ A test print for the inspector, in the way a 3D printer's calibration model exer
 - `itten.system.json` is the system both pages are built to.
 - `defects.json` lists the planted defects; `make.js` writes the two pages and `defects.json` from one table, so they cannot drift apart. Edit `make.js`, then run `node fixtures/make.js`.
 
-Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either.
+Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure.
 
 ## Planted defects
 
@@ -33,6 +33,14 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 | d18 | `type-scale` | a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither. | The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well. |
 | d19 | `page-load` | the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised. | The figure draws from d19-data.json, which exists. |
 | d20 | `page-load` | the figure draws 2.5 s after the load event, by which time the inspector has begun measuring. | The figure draws as the page is read, before the load event. |
+| d23 | `widow` | a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it. | At 288 px the note sets on one line. |
+| d24 | `orphan` | orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column. | Orphans and widows of 2, the default, so the second paragraph breaks two lines and three. |
+| d25 | `rag` | hyphenation is off, so a long word leaves a line far short of the measure. | hyphens: auto, as on every paragraph, fills the line. |
+| d26 | `text-wrap-balance` | text-wrap is plain wrap, so the heading leaves a short second line. | text-wrap: balance, as on every heading, evens the two lines. |
+| d27 | `text-wrap-pretty` | text-wrap is plain wrap, so the last line holds one word; text-wrap: pretty would bring a second word down. | text-wrap: pretty, as on every paragraph, closes on two words. |
+| d28 | `hyphenation` | justified text in a narrow measure with hyphenation off, so the word spaces stretch. | The same text with hyphens: auto, as on every paragraph. |
+| d29 | `hanging-punctuation` | the opening quote sits inside the text edge, though the system hangs punctuation. | A negative text-indent pulls the quote into the margin. |
+| d30 | `optical-margin` | the large O sits on the box edge, so its ink starts inside the edge of the text below. | The line is pulled left until the ink of the O meets the text edge, an optical adjustment. |
 
 ## Without a system
 
@@ -54,4 +62,4 @@ node scripts/fixture-test.js --full   # 41 widths, a minute or two
 
 A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
-Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 22 of 22 and precision 26 of 26, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 26 findings for 22 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.
+Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 30 of 30 and precision 34 of 34, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 34 findings for 30 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.

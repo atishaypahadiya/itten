@@ -125,6 +125,47 @@
       document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';
     </script>
   </section>
+  <section id="d23">
+    <h2>Widow</h2>
+    <p class="small">At 288 px the note sets on one line.</p>
+    <p class="note">Short notes end on one word sometimes.</p>
+  </section>
+  <section id="d24">
+    <h2>Orphan across columns</h2>
+    <p class="small">Orphans and widows of 2, the default, so the second paragraph breaks two lines and three.</p>
+    <div class="cols"><p>The first paragraph runs to four lines in its column here.</p><p>The second runs on longer, and breaks across the two columns of the box below the first.</p></div>
+  </section>
+  <section id="d25">
+    <h2>Hole in the rag</h2>
+    <p class="small">hyphens: auto, as on every paragraph, fills the line.</p>
+    <p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its maintenance.</p>
+  </section>
+  <section id="d26">
+    <h2>Unbalanced heading</h2>
+    <p class="small">text-wrap: balance, as on every heading, evens the two lines.</p>
+    <h3 class="measure">A heading that wraps onto a short second line</h3>
+  </section>
+  <section id="d27">
+    <h2>Plain wrapping</h2>
+    <p class="small">text-wrap: pretty, as on every paragraph, closes on two words.</p>
+    <p class="measure">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</p>
+  </section>
+  <section id="d28">
+    <h2>Justified without hyphenation</h2>
+    <p class="small">The same text with hyphens: auto, as on every paragraph.</p>
+    <p class="measure justified">Justification spreads the words across the measure, and without hyphenation the narrow column opens wide rivers between them.</p>
+  </section>
+  <section id="d29">
+    <h2>Punctuation that should hang</h2>
+    <p class="small">A negative text-indent pulls the quote into the margin.</p>
+    <p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters align.</p>
+  </section>
+  <section id="d30">
+    <h2>Optical edge of display type</h2>
+    <p class="small">The line is pulled left until the ink of the O meets the text edge, an optical adjustment.</p>
+    <p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
+    <p>Hold the edge of this line against the round letter above.</p>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {
