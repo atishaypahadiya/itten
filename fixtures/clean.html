@@ -10,106 +10,106 @@
 <main>
   <header>
     <h1>Inspector test print, clean twin</h1>
-    <p>The same page as the test print with every planted defect fixed. The inspector should report nothing here.</p>
+    <p>The same page as the test print with every planted defect fixed. The inspector should report nothing&nbsp;here.</p>
     <figure>
       <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
       <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
-      <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.</figcaption>
+      <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is&nbsp;inside.</figcaption>
     </figure>
   </header>
   <section id="d01">
     <h2>Spacing off the scale</h2>
-    <p class="small">The padding is 12 px above and below, from the scale.</p>
+    <p class="small">The padding is 12 px above and below, from the&nbsp;scale.</p>
     <div class="tint d01">A padded box</div>
   </section>
   <section id="d02">
     <h2>Compounded type size</h2>
-    <p class="small">The note is set in rem, so it renders at 14 px, a step of the scale.</p>
+    <p class="small">The note is set in rem, so it renders at 14 px, a step of the&nbsp;scale.</p>
     <div class="d02"><p class="note">Small print in a smaller box.</p></div>
   </section>
   <section id="d03">
     <h2>Near-miss edge</h2>
-    <p class="small">The next line shares the left edge of the text above it.</p>
+    <p class="small">The next line shares the left edge of the text above&nbsp;it.</p>
     <p class="d03">This line should share the left edge.</p>
   </section>
   <section id="d04">
     <h2>Unequal sibling gaps</h2>
-    <p class="small">All four items are 8 px apart.</p>
+    <p class="small">All four items are 8 px&nbsp;apart.</p>
     <ul class="list"><li>First item</li><li>Second item</li><li>Third item</li><li>Fourth item</li></ul>
   </section>
   <section id="d05">
     <h2>Radius off the set</h2>
-    <p class="small">A 4 px radius, from the set.</p>
+    <p class="small">A 4 px radius, from the&nbsp;set.</p>
     <div class="tint d05">A rounded box</div>
   </section>
   <section id="d06">
     <h2>Non-concentric corners</h2>
-    <p class="small">The inner radius is 12 minus 4, so 8 px.</p>
+    <p class="small">The inner radius is 12 minus 4, so 8&nbsp;px.</p>
     <div class="outer"><div class="inner">A nested box</div></div>
   </section>
   <section id="d07">
     <h2>Font fallback</h2>
-    <p class="small">The text is set in the loaded web font.</p>
+    <p class="small">The text is set in the loaded web&nbsp;font.</p>
     <p class="d07">This text should be in a web font.</p>
   </section>
   <section id="d08">
     <h2>Contrast against rendered pixels</h2>
-    <p class="small">Dark text over the same light raster image.</p>
+    <p class="small">Dark text over the same light raster&nbsp;image.</p>
     <div class="photo"><canvas width="720" height="96" aria-hidden="true"></canvas><p>Text over an image</p></div>
   </section>
   <section id="d09">
     <h2>Target size</h2>
-    <p class="small">Two 44 px icon buttons 8 px apart.</p>
+    <p class="small">Two 44 px icon buttons 8 px&nbsp;apart.</p>
     <div class="tools"><button type="button" aria-label="Add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></div>
   </section>
   <section id="d10">
     <h2>Page overflow at a narrow width</h2>
-    <p class="small">The box is never wider than its column.</p>
+    <p class="small">The box is never wider than its&nbsp;column.</p>
     <div class="tint banner">A wide box</div>
   </section>
   <section id="d11">
     <h2>Text spilling out of its box</h2>
-    <p class="small">The long word is allowed to break.</p>
+    <p class="small">The long word is allowed to&nbsp;break.</p>
     <div class="tag">Uncompromisingly</div>
   </section>
   <section id="d12">
     <h2>Clipping at 200% text</h2>
-    <p class="small">A 40 px minimum height, so the box grows with the text.</p>
+    <p class="small">A 40 px minimum height, so the box grows with the&nbsp;text.</p>
     <div class="fixed">Fits at 100%</div>
   </section>
   <section id="d13">
     <h2>Overlapping text</h2>
-    <p class="small">The caption sits below the line, 8 px apart.</p>
+    <p class="small">The caption sits below the line, 8 px&nbsp;apart.</p>
     <div class="stack"><p>A line of text</p><p class="caption">A caption</p></div>
   </section>
   <section id="d15">
     <h2>Form control font</h2>
-    <p class="small">The field inherits the page font.</p>
+    <p class="small">The field inherits the page&nbsp;font.</p>
     <input type="text" aria-label="An empty field">
   </section>
   <section id="d14">
     <h2>Hairline off the pixel grid</h2>
-    <p class="small">The rule sits on a whole pixel.</p>
+    <p class="small">The rule sits on a whole&nbsp;pixel.</p>
     <div class="rule"></div>
   </section>
   <section id="d16">
     <h2>Undeclared fluid size</h2>
-    <p class="small">The lead is set at 16 px.</p>
-    <p class="lead">A lead paragraph that grows with the window.</p>
+    <p class="small">The lead is set at 16&nbsp;px.</p>
+    <p class="lead">A lead paragraph that grows with the&nbsp;window.</p>
   </section>
   <section id="d17">
     <h2>Text locked in px</h2>
-    <p class="small">The caption is set at 0.875rem, so it follows the setting.</p>
+    <p class="small">The caption is set at 0.875rem, so it follows the&nbsp;setting.</p>
     <p class="fine-print">Set in pixels, deaf to the reader.</p>
   </section>
   <section id="d18">
     <h2>Two steps at one size</h2>
-    <p class="small">The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well.</p>
+    <p class="small">The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as&nbsp;well.</p>
     <p class="label">A label at the body size, set tighter</p>
   </section>
   <section id="d19">
     <h2>Failed request</h2>
-    <p class="small">The figure draws from d19-data.json, which exists.</p>
+    <p class="small">The figure draws from d19-data.json, which&nbsp;exists.</p>
     <div class="d19-figure"></div>
     <script>
       fetch('d19-data.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -119,7 +119,7 @@
   </section>
   <section id="d20">
     <h2>Drawn after measuring</h2>
-    <p class="small">The figure draws as the page is read, before the load event.</p>
+    <p class="small">The figure draws as the page is read, before the load&nbsp;event.</p>
     <div class="d20-figure"></div>
     <script>
       document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';
@@ -134,50 +134,50 @@
   </section>
   <section id="d23">
     <h2>Widow</h2>
-    <p class="small">At 288 px the note sets on one line.</p>
+    <p class="small">At 288 px the note sets on one&nbsp;line.</p>
     <p class="note">Short notes end on one word sometimes.</p>
     <p class="note ref">Data set, version 1.0.1, Zenodo. doi:10.5281/zenodo.24158992</p>
     <p class="narrow">Post to the neighbourhood feed</p>
   </section>
   <section id="d24">
     <h2>Orphan across columns</h2>
-    <p class="small">Orphans and widows of 2, the default, so the second paragraph breaks two lines and three.</p>
+    <p class="small">Orphans and widows of 2, the default, so the second paragraph breaks two lines and&nbsp;three.</p>
     <div class="cols"><p>The first paragraph runs to four lines in its column here.</p><p>The second runs on longer, and breaks across the two columns of the box below the first.</p></div>
   </section>
   <section id="d25">
     <h2>Hole in the rag</h2>
-    <p class="small">hyphens: auto, as on every paragraph, fills the line.</p>
-    <p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its maintenance.</p>
+    <p class="small">hyphens: auto, as on every paragraph, fills the&nbsp;line.</p>
+    <p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its&nbsp;maintenance.</p>
   </section>
   <section id="d26">
     <h2>Unbalanced heading</h2>
-    <p class="small">text-wrap: balance, as on every heading, evens the two lines.</p>
+    <p class="small">text-wrap: balance, as on every heading, evens the two&nbsp;lines.</p>
     <h3 class="measure">A heading that wraps onto a short second line</h3>
   </section>
   <section id="d27">
     <h2>Plain wrapping</h2>
-    <p class="small">text-wrap: pretty, as on every paragraph, closes on two words.</p>
-    <p class="measure">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</p>
+    <p class="small">text-wrap: pretty, as on every paragraph, closes on two&nbsp;words.</p>
+    <p class="measure">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the&nbsp;others.</p>
   </section>
   <section id="d28">
     <h2>Justified without hyphenation</h2>
-    <p class="small">The same text with hyphens: auto, as on every paragraph.</p>
+    <p class="small">The same text with hyphens: auto, as on every&nbsp;paragraph.</p>
     <p class="measure justified">Justification spreads the words across the measure, and without hyphenation the narrow column opens wide rivers between them.</p>
   </section>
   <section id="d29">
     <h2>Punctuation that should hang</h2>
-    <p class="small">A negative text-indent pulls the quote into the margin.</p>
-    <p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters align.</p>
+    <p class="small">A negative text-indent pulls the quote into the&nbsp;margin.</p>
+    <p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters&nbsp;align.</p>
   </section>
   <section id="d30">
     <h2>Optical edge of display type</h2>
-    <p class="small">The line is pulled left until the ink of the O meets the text edge, an optical adjustment.</p>
+    <p class="small">The line is pulled left until the ink of the O meets the text edge, an optical&nbsp;adjustment.</p>
     <p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
-    <p>Hold the edge of this line against the round letter above.</p>
+    <p>Hold the edge of this line against the round letter&nbsp;above.</p>
   </section>
   <section id="d31">
     <h2>Duration off the system</h2>
-    <p class="small">The transition runs 250 ms with the standard easing, both from the system.</p>
+    <p class="small">The transition runs 250 ms with the standard easing, both from the&nbsp;system.</p>
     <div class="tint lift">Hover to lift</div>
     <div class="tint reveal">Dimmed, then restored</div>
     <script>
@@ -187,62 +187,62 @@
   </section>
   <section id="d32">
     <h2>Motion under Reduce Motion</h2>
-    <p class="small">The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does.</p>
+    <p class="small">The pulse stops under prefers-reduced-motion: reduce, as every animation on the page&nbsp;does.</p>
     <div class="pulse" aria-hidden="true"></div>
   </section>
   <section id="d33">
     <h2>Animated width</h2>
-    <p class="small">The same growth as a scale transform.</p>
+    <p class="small">The same growth as a scale&nbsp;transform.</p>
     <div class="tint grow">Hover to widen</div>
   </section>
   <section id="d34">
     <h2>Dropped frames while scrolling</h2>
-    <p class="small">The box has no scroll handler.</p>
+    <p class="small">The box has no scroll&nbsp;handler.</p>
     <div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>
   </section>
   <section id="d35">
     <h2>Flashing</h2>
-    <p class="small">The panel alternates once a second.</p>
+    <p class="small">The panel alternates once a&nbsp;second.</p>
     <div class="strobe" aria-hidden="true"></div>
   </section>
   <section id="d36">
     <h2>Matched on weight</h2>
-    <p class="small">The text keeps the body step's 24 px line height. Its bold run takes the paragraph's step on both pages.</p>
+    <p class="small">The text keeps the body step's 24 px line height. Its bold run takes the paragraph's step on both&nbsp;pages.</p>
     <p class="tight">Regular text with a <strong>bold run</strong>.</p>
   </section>
   <section id="d37">
     <h2>Weight off the steps</h2>
-    <p class="small">The text is set at weight 400, the body step.</p>
+    <p class="small">The text is set at weight 400, the body&nbsp;step.</p>
     <p class="medium">A weight no step has.</p>
   </section>
   <section id="d38">
     <h2>Family of another role</h2>
-    <p class="small">The pull quote is set in the display family, as its step says.</p>
+    <p class="small">The pull quote is set in the display family, as its step&nbsp;says.</p>
     <p class="pull">A pull quote</p>
   </section>
   <section id="d39">
     <h2>Spacing in px</h2>
-    <p class="small">The padding is 0.75rem 1rem, as everywhere else on the page.</p>
+    <p class="small">The padding is 0.75rem 1rem, as everywhere else on the&nbsp;page.</p>
     <div class="tint">Padding in rem</div>
   </section>
   <section id="d40">
     <h2>Fluid spacing off its range</h2>
-    <p class="small">The side padding follows the declared range.</p>
+    <p class="small">The side padding follows the declared&nbsp;range.</p>
     <div class="tint fluid-pad">Fluid side padding</div>
   </section>
   <section id="d41">
     <h2>Dropped frames on a slower CPU</h2>
-    <p class="small">The box has no scroll handler.</p>
+    <p class="small">The box has no scroll&nbsp;handler.</p>
     <div class="scroller" tabindex="0" aria-label="A second scrolling box"><div class="scroller-content"></div></div>
   </section>
   <section id="d42">
     <h2>Motion started by focus</h2>
-    <p class="small">The focus ring transition runs 250 ms, from the system.</p>
+    <p class="small">The focus ring transition runs 250 ms, from the&nbsp;system.</p>
     <button type="button" class="ring">Focus ring</button>
   </section>
   <section id="d43">
     <h2>Motion started by a click</h2>
-    <p class="small">The toggle moves with a transform.</p>
+    <p class="small">The toggle moves with a&nbsp;transform.</p>
     <button type="button" class="toggle" aria-pressed="false">Toggle</button>
     <script>
       { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }
