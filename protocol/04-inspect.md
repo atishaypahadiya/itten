@@ -117,6 +117,8 @@ The typographic checks (`widow` to `optical-margin` above) judge the lines Chrom
 
 A finding is listed once however many widths it appears at. Its message comes from the first width where it was seen.
 
+Information findings of one check that fall in one table or list are shown as one note: the sentence once, with `…` where the findings differ, then a line per cell or item (`row 5, cell 3`) with its own values, ID and widths. Errors and warnings are never grouped; each keeps its crops. The pull request comment groups them the same way in its new and fixed lists. `report.json` keeps every finding, so baselines and fingerprints do not change.
+
 Below the findings, "Values in use" counts the distinct font sizes and spacing values at any one width, which is what a reader meets on one screen, and across the sweep, where each fluid range counts as one value. It then lists every fixed value, with the most elements using each at any one width, and every fluid range, then the fonts that actually rendered for each requested stack. "Coverage" lists what was measured, what was skipped by `data-itten-ignore`, and what was not judged.
 
 "Engines" lists the findings that differ between Chromium, WebKit and Firefox at the widths all of them ran, and how each engine drew any hairline found. Spacing and type values are computed styles, the same in every engine, so they are compared in Chromium only. Engine differences come mostly from font rendering (text widths and line breaks), form controls, and how each engine rounds positions.
