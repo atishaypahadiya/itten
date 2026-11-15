@@ -107,6 +107,10 @@ const S = [
   ['d44', 'broken-word', 'Words broken without a hyphen', 'Planted: the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen ("Bouvar|d\'s", "Verrier\'|s"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.', 'The table is laid out automatically without break-word, so the first column is as wide as its longest word.', `<table class="data"><tbody><tr><td class="name">Bouvard\'s tables</td><td>1821</td></tr><tr><td class="name">Le Verrier\'s orbit</td><td>1846</td></tr></tbody></table>`, `#d44 .data { table-layout: fixed; width: 160px; }\n#d44 .data .name { width: 72px; overflow-wrap: break-word; }`],
   ['d45', 'spacing-scale', 'Spacing in a table in a figure', 'Planted: the table\'s cells are padded 5 px above and below. The scale has 4 and 8. A figure\'s table is text, measured like the rest of the page.', 'The cells are padded 4 px above and below, from the scale.', `<figure><table class="data"><tbody><tr><td>Bouvard</td><td>1821</td></tr><tr><td>Le Verrier</td><td>1846</td></tr></tbody></table><figcaption class="small">Table 1. Two tables of Uranus.</figcaption></figure>`, `#d45 .data td { padding: 0.3125rem 0.5rem; }`],
   ['d46', 'rag', 'Hole in the rag in a table cell', 'Planted: hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.', 'hyphens: auto, as on the table\'s cells, fills the line.', `<figure><table class="data notes"><tbody><tr><td>1846</td></tr><tr><td>Our correspondents were uncompromisingly incomprehensible about the communications infrastructure and its notoriously unpredictable upkeep and maintenance.</td></tr></tbody></table><figcaption class="small">Table 2. A dated note.</figcaption></figure>`, `#d46 .notes td { hyphens: manual; }`],
+  ['d47', 'overflow', 'Sized once, at load', 'Planted: a script sets the box\'s width in px from its column when the page loads, and never again. Opened at any width the box fits; made narrower after loading, it runs off the page. Only the resize pass sees it.', 'The box\'s width is left to CSS, so it follows the window.', (clean) => `<div class="d47-box"><p>A box as wide as its column was when the page loaded.</p></div>${clean ? '' : `
+    <script>
+      addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });
+    </script>`}`, '', { resizeOnly: true }],
 ];
 // Distinct-value mode: the same idea, inspected without a system file.
 // Nothing says which fluid values are deliberate, so each fluid range must
@@ -197,7 +201,9 @@ writeFileSync(dir + 'distinct-clean.html', distinctPage(true));
 writeFileSync(dir + 'clean.html', page(true));
 writeFileSync(dir + 'defects.json', JSON.stringify({
   page: 'fixtures/index.html', twin: 'fixtures/clean.html', system: 'fixtures/itten.system.json',
-  note: 'Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect\'s resource.',
+  note: 'Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect\'s resource. A resizeOnly defect must be seen only by the resize pass.',
+  breakpoints: 2,
+  breakpointsNote: 'fixture.css has one media query and one container query that change the layout between the default widths; the resize pass must find both, on both pages.',
   defects: S.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), ...(s[6] ? { css: s[6] } : { markup: s[5](false) }), fixedInTwin: s[4], ...(s[7] || {}) })),
   distinct: {
     page: 'fixtures/distinct.html', twin: 'fixtures/distinct-clean.html',

@@ -2,7 +2,9 @@
   "page": "fixtures/index.html",
   "twin": "fixtures/clean.html",
   "system": "fixtures/itten.system.json",
-  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect's resource.",
+  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect's resource. A resizeOnly defect must be seen only by the resize pass.",
+  "breakpoints": 2,
+  "breakpointsNote": "fixture.css has one media query and one container query that change the layout between the default widths; the resize pass must find both, on both pages.",
   "defects": [
     {
       "id": "d01",
@@ -356,6 +358,15 @@
       "planted": "hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.",
       "css": "#d46 .notes td { hyphens: manual; }",
       "fixedInTwin": "hyphens: auto, as on the table's cells, fills the line."
+    },
+    {
+      "id": "d47",
+      "check": "overflow",
+      "title": "Sized once, at load",
+      "planted": "a script sets the box's width in px from its column when the page loads, and never again. Opened at any width the box fits; made narrower after loading, it runs off the page. Only the resize pass sees it.",
+      "markup": "<div class=\"d47-box\"><p>A box as wide as its column was when the page loaded.</p></div>\n    <script>\n      addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });\n    </script>",
+      "fixedInTwin": "The box's width is left to CSS, so it follows the window.",
+      "resizeOnly": true
     }
   ],
   "distinct": {

@@ -45,11 +45,11 @@ npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 - the overrides example, its rendered page or the overrides validator is wrong, or the telemetry script, run on the eight test repositories in `fixtures/telemetry/`, flags anything but CRF-16;
 - the action's tests fail (the baseline comparison, the fail-on gate, the static server, and the pull request comment against a stand-in for the GitHub API), or an action or workflow uses a third-party action not pinned by commit SHA.
 
-The check takes about 40 seconds at four widths and a little over a minute with `--full`, most of it the fixture run. Reports and crops go to `dist/`, which is not committed.
+The check takes about 7 minutes at four widths on a 14-core laptop, most of it the fixture run: four pages, each loaded fresh at every width of every pass, then resized across their breakpoints, in Chromium and WebKit. Reports and crops go to `dist/`, which is not committed.
 
 ## What the inspector catches
 
-On the fixtures, the default run and the full sweep each catch all 46 planted defects, one or more for each of the 30 checks, with no false positives on any page (recall 46/46, precision 52/52). Two of the defects are judged without a system file, in distinct-value mode. `fixtures/README.md` lists the defects. `protocol/04-inspect.md` lists what the inspector does not judge: the insides of graphics, states other than the default, pseudo-element text, icon optics, motion that only scripts or untried interactions start, and fonts on platforms other than the one it runs on.
+On the fixtures, the default run and the full sweep each catch all 47 planted defects, one or more for each of the 30 checks, with no false positives on any page (recall 47/47, precision 54/54). Two of the defects are judged without a system file, in distinct-value mode. `fixtures/README.md` lists the defects. `protocol/04-inspect.md` lists what the inspector does not judge: the insides of graphics, states other than the default, pseudo-element text, icon optics, motion that only scripts or untried interactions start, and fonts on platforms other than the one it runs on.
 
 ## What comes next
 

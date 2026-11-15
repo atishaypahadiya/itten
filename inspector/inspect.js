@@ -227,6 +227,61 @@ function lateInit(W) {
   };
 }
 
+// Which media and container queries hold at this width, as a string: two
+// widths with different strings lie on two sides of a breakpoint. Media
+// queries are asked of matchMedia; a container query is asked of the engine
+// by a probe set in each container it can apply to (up to 20 per rule), the
+// probe styled by a copy of the rule. Runs in the page.
+function breakpointState() {
+  const media = [], cont = [];
+  const walk = (rules) => {
+    for (const r of rules) {
+      if (r instanceof CSSMediaRule) { media.push(r.media.mediaText); walk(r.cssRules); }
+      else if (typeof CSSContainerRule !== 'undefined' && r instanceof CSSContainerRule) { cont.push(r); walk(r.cssRules); }
+      else if (r instanceof CSSImportRule) { if (r.media?.mediaText) media.push(r.media.mediaText); try { if (r.styleSheet) walk(r.styleSheet.cssRules); } catch { /* cross-origin */ } }
+      else if (r.cssRules) walk(r.cssRules);
+    }
+  };
+  for (const sh of document.styleSheets) {
+    if (sh.media?.mediaText) media.push(sh.media.mediaText);
+    try { walk(sh.cssRules); } catch { /* cross-origin sheet */ }
+  }
+  const out = [...new Set(media)].filter((t) => /width|aspect-ratio|orientation/.test(t)).map((t) => (matchMedia(t).matches ? '1 ' : '0 ') + t);
+  if (cont.length) {
+    const containers = [...document.querySelectorAll('*')].filter((el) => getComputedStyle(el).containerType !== 'normal');
+    const style = document.createElement('style');
+    style.setAttribute('data-itten-probe', '');
+    style.textContent = cont.map((r, i) => `@container ${r.conditionText} { [data-itten-probe="${i}"] { --itten-probe-${i}: 1; } }`).join('\n');
+    document.head.append(style);
+    cont.forEach((r, i) => {
+      const name = r.containerName;
+      const els = containers.filter((el) => !name || getComputedStyle(el).containerName.split(/\s+/).includes(name)).slice(0, 20);
+      for (const el of els) {
+        const probe = document.createElement('span');
+        probe.setAttribute('data-itten-probe', String(i));
+        probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+        el.append(probe);
+        out.push((getComputedStyle(probe).getPropertyValue(`--itten-probe-${i}`).trim() ? '1 ' : '0 ') + r.conditionText);
+        probe.remove();
+      }
+    });
+    style.remove();
+  }
+  return out.join('\n');
+}
+
+// Pairs of widths for the resize pass: each two neighbouring widths of the
+// sweep with a breakpoint between them, both ways, and the narrowest width
+// to the widest key width and back.
+export function resizePairs(widths, sigs, wide) {
+  const ws = widths.filter((w) => sigs.has(w));
+  const pairs = [];
+  const add = (a, b) => { if (a !== b && !pairs.some(([x, y]) => x === a && y === b)) pairs.push([a, b]); };
+  if (ws.length && ws.includes(wide)) { add(ws[0], wide); add(wide, ws[0]); }
+  for (let i = 0; i + 1 < ws.length; i++) if (sigs.get(ws[i]) !== sigs.get(ws[i + 1])) { add(ws[i], ws[i + 1]); add(ws[i + 1], ws[i]); }
+  return pairs;
+}
+
 // How long to wait for a page to go still, from the benchmark index of the
 // machine (motion.js, Lighthouse's units). 500 ms with nothing added on a
 // machine at 1600, Lighthouse's high-end desktop, or faster; longer on a
@@ -323,6 +378,7 @@ export async function inspect(url, o = {}) {
   let motion = null;
   let remeasured = 0;
   let watched = { until: 0 };
+  const resize = { pairs: [], breakpoints: 0 };
   // How long the page must go without adding an element before it is
   // measured, scaled to this machine (settleTiming).
   const bench = await browser.newPage();
@@ -360,7 +416,11 @@ export async function inspect(url, o = {}) {
     }
     it.count = Math.max(it.count, raw.count);
     for (const el of raw.elements) if (it.elements.length < 8 && !it.elements.some((x) => x.sel === el.sel)) it.elements.push(el);
-    (it.seen[pass.mode] ??= []).push(pass.w);
+    (it.seen[pass.mode] ??= []).push(pass.resize ? `${pass.resize[0]}→${pass.resize[1]}` : pass.w);
+    if (pass.resize) {
+      if (isNew) it.message = `After resize from ${pass.resize[0]} to ${pass.resize[1]} px: ${raw.message}`;
+      (it.resize ??= []).push({ from: pass.resize[0], to: pass.resize[1], engine: pass.engine || 'chromium' });
+    }
     const wantCrop = (isNew || upgrade || (pass.engine && pass.engine !== 'chromium' && !it.crops.some((c) => c.engine === pass.engine))) && raw.severity !== 'info';
     if (wantCrop && outDir && cropCount < (o.maxCrops ?? 400)) await crop(page, raw, it, pass);
   };
@@ -380,12 +440,12 @@ export async function inspect(url, o = {}) {
   };
 
   // A finding judged across the sweep: seen at a list of light-pass widths.
-  const addFinding = async (page, f) => {
+  const addFinding = async (pageAt, f) => {
     const w = f.widths[0];
+    const page = await pageAt(w);
     const mode = f.mode || 'light';
     const it = { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
     issues.set(it.fingerprint, it);
-    await page.setViewportSize({ width: w, height: VIEW_H });
     await settle(page);
     const rects = await page.evaluate((sels) => sels.map((s) => {
       let el = null; try { el = document.querySelector(s); } catch { /* bad selector */ }
@@ -434,6 +494,7 @@ export async function inspect(url, o = {}) {
   // network never went quiet, the --wait-for selector never appeared, the
   // page never went still, or elements appeared after it had gone still.
   const pageLoadFindings = async (page, watched) => {
+    // page: a function giving a page loaded at a width.
     const at = [widths[0]];
     const sec = (ms) => (ms / 1000).toFixed(1);
     const req = [...failed.values()];
@@ -464,8 +525,31 @@ export async function inspect(url, o = {}) {
     }
   };
 
+  // The resize pass: for each pair, a fresh load at the first width,
+  // resized to the second, measured with the given checks. A finding the
+  // fresh load at the second width also had adds nothing; any other is
+  // reported as seen after that resize, and says so.
+  const resizePass = async (c, pairs, checks, engine, freshMode) => {
+    const mode = engine ? `${ENGINE_NAMES[engine]} resize` : 'resize';
+    let n = 0;
+    for (const [a, b] of pairs) {
+      const page = await c.newPage();
+      await page.setViewportSize({ width: a, height: VIEW_H });
+      await load(page, url, o, T, watched.until);
+      const pass = { w: b, mode, engine: engine ?? undefined, resize: [a, b], label: `${b} px after resize from ${a} px${engine ? `, ${ENGINE_NAMES[engine]}` : ''}`, dpr: 1, checks: checks.filter((ch) => ch !== 'hairline-subpixel') };
+      const res = await runPass(page, pass);
+      for (const raw of res.issues) {
+        if ((issues.get(raw.check + '|' + raw.key)?.seen[freshMode] ?? []).includes(b)) continue;
+        await merge(page, raw, pass);
+        n++;
+      }
+      await page.close();
+    }
+    log(`  ${engine ? ENGINE_NAMES[engine] : 'Chromium'}, resize pass: ${plural(pairs.length, 'resize')}, ${plural(n, 'finding')} not seen on a fresh load`);
+  };
+
   const runPass = async (page, pass, extra = {}) => {
-    await page.setViewportSize({ width: pass.w, height: VIEW_H });
+    if (page.viewportSize()?.width !== pass.w) await page.setViewportSize({ width: pass.w, height: VIEW_H });
     await page.evaluate(() => scrollTo(0, 0));
     await settle(page);
     await waitStill(page, T, watched.until);
@@ -488,16 +572,35 @@ export async function inspect(url, o = {}) {
     watched = await watchLoad(wpage, url, o, T);
     await wpage.close();
     log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${(watched.quietAt / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
-    const page = await ctx.newPage();
     const consoleErrors = [];
-    page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
-    await load(page, url, o, T, watched.until);
-    const cdp = await ctx.newCDPSession(page);
-    await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+    // A fresh page for every width: loaded at that width, so each is the
+    // layout a reader who opens the page at that size gets. A page already
+    // at the width asked for is kept for the next use (findings judged
+    // across the sweep crop from it).
+    const pages = (c, prep, errors = false) => {
+      let cur = null;
+      const at = async (w) => {
+        if (cur && cur.w === w) return cur.page;
+        await cur?.page.close();
+        const page = await c.newPage();
+        await page.setViewportSize({ width: w, height: VIEW_H });
+        if (errors) page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
+        if (prep) await prep(page);
+        await load(page, url, o, T, watched.until);
+        cur = { w, page };
+        return page;
+      };
+      at.close = async () => { await cur?.page.close(); cur = null; };
+      return at;
+    };
+    const lightAt = pages(ctx, null, true);
+    const sigs = new Map();
 
     for (const w of widths) {
+      const page = await lightAt(w);
       const pass = { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT };
       const t0 = Date.now();
+      sigs.set(w, await page.evaluate(breakpointState));
       const res = await runPass(page, pass, { recordSizes: w === keyWidths.at(-1) });
       if (w === keyWidths.at(-1)) sizes.base = res.data.textSizes;
       for (const k of ['graphics', 'elements', 'text', 'relativeSpacing']) coverage[k] = Math.max(coverage[k], res.counts[k]);
@@ -513,34 +616,38 @@ export async function inspect(url, o = {}) {
       for (const raw of res.issues) await merge(page, raw, pass);
       const ty = await measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER }));
       for (const raw of ty.issues) await merge(page, raw, pass);
-      log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-    }
-    for (const f of scaleFindings(obs, system, widths, distinct)) await addFinding(page, f);
-
-    for (const scheme of ['light', 'dark']) {
-      await page.emulateMedia({ colorScheme: scheme });
-      for (const w of keyWidths) {
-        const pass = { w, mode: scheme, label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
-        const res = await runPass(page, pass, { contrast: true, fonts: true });
-        for (const raw of res.issues) await merge(page, raw, pass);
-        for (const raw of await fontIssues(cdp, page, res, system, renderedFonts)) await merge(page, raw, pass);
-        coverage.fontGroups = Math.max(coverage.fontGroups, new Set(res.data.fontReps.map((r) => r.group)).size);
-        for (const raw of await contrastIssues(page, res, coverage)) await merge(page, raw, pass);
-        if (scheme === 'light') {
-          const ty = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
-          for (const raw of await opticalIssues(page, ty.optical)) await merge(page, raw, pass);
+      // Contrast and fonts at the key widths, light and then dark, on the
+      // same load: a reader switching the scheme does not reload.
+      if (keyWidths.includes(w)) {
+        const cdp = await ctx.newCDPSession(page);
+        await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+        for (const scheme of ['light', 'dark']) {
+          await page.emulateMedia({ colorScheme: scheme });
+          const sp = { w, mode: scheme, label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
+          const cr = await runPass(page, sp, { contrast: true, fonts: true });
+          for (const raw of cr.issues) await merge(page, raw, sp);
+          for (const raw of await fontIssues(cdp, page, cr, system, renderedFonts)) await merge(page, raw, sp);
+          coverage.fontGroups = Math.max(coverage.fontGroups, new Set(cr.data.fontReps.map((r) => r.group)).size);
+          for (const raw of await contrastIssues(page, cr, coverage)) await merge(page, raw, sp);
+          if (scheme === 'light') {
+            const oy = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
+            for (const raw of await opticalIssues(page, oy.optical)) await merge(page, raw, sp);
+          }
         }
-        log(`  ${pass.label}: contrast and fonts`);
+        await page.emulateMedia({ colorScheme: 'light' });
+        await cdp.detach().catch(() => {});
       }
+      log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings${keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     }
-    await page.emulateMedia({ colorScheme: 'light' });
+    for (const f of scaleFindings(obs, system, widths, distinct)) await addFinding(lightAt, f);
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
-    const page2 = await ctx.newPage();
-    const cdp2 = await ctx.newCDPSession(page2);
-    await cdp2.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-    await load(page2, url, o, T, watched.until);
+    const bigAt = pages(ctx, async (page) => {
+      const c = await ctx.newCDPSession(page);
+      await c.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
+    });
     for (const w of widths) {
+      const page2 = await bigAt(w);
       const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
       const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true });
       if (w === keyWidths.at(-1)) sizes.doubled = res.data.textSizes;
@@ -561,22 +668,33 @@ export async function inspect(url, o = {}) {
         const bySize = new Map();
         for (const k of fixed) bySize.set(sizes.base[k], (bySize.get(sizes.base[k]) || 0) + 1);
         const sizesText = [...bySize].sort((a, b) => a[0] - b[0]).map(([v, n]) => `${v} px (${n})`).join(', ');
-        await addFinding(page2, { check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
+        await addFinding(bigAt, { check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
           message: `${fixed.length} of ${keys.length} text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: ${sizesText}. Set font sizes in rem, or give clamp() rem limits.`,
           elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k })) });
       }
     }
-    for (const f of spacingUnitFindings(obs)) await addFinding(page2, f);
-    await pageLoadFindings(page, watched);
+    for (const f of spacingUnitFindings(obs)) await addFinding(bigAt, f);
+    await bigAt.close();
+
+    // The resize pass, in Chromium: load at one width, resize to another,
+    // measure. Pairs cross every media and container query breakpoint the
+    // sweep found, both ways, and go from the narrowest width to the widest
+    // key width and back.
+    const pairs = resizePairs(widths, sigs, keyWidths.at(-1));
+    resize.pairs = pairs.map(([a, b]) => `${a}→${b}`);
+    resize.breakpoints = pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2;
+    await resizePass(ctx, pairs, LAYOUT, null, 'light');
+    await pageLoadFindings(lightAt, watched);
+    await lightAt.close();
     watching = false;
     await ctx.close();
 
     // Pass set 3: device pixel ratio 2, hairlines only.
     const ctx2 = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
     await ctx2.addInitScript(lateInit, T.window);
-    const page3 = await ctx2.newPage();
-    await load(page3, url, o, T, watched.until);
+    const hiAt = pages(ctx2);
     for (const w of [keyWidths[0], keyWidths.at(-1)]) {
+      const page3 = await hiAt(w);
       const pass = { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] };
       const res = await runPass(page3, pass);
       for (const raw of res.issues) await merge(page3, raw, pass);
@@ -587,8 +705,9 @@ export async function inspect(url, o = {}) {
     // allowed and again with prefers-reduced-motion: reduce.
     motion = await motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log, T, watched.until);
 
-    // Pass set 5: WebKit and Firefox, light, a few widths, layout checks only.
-    const engines = { widths: o.engineWidths ?? DEFAULT_WIDTHS, checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
+    // Pass set 5: WebKit and Firefox, light, layout checks only: four widths,
+    // or with --full the whole sweep, each a fresh load; then the resize pass.
+    const engines = { widths: o.engineWidths ?? (o.full ? widths : DEFAULT_WIDTHS), checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
     const pw = await import('playwright');
     for (const name of o.engines ?? ['webkit', 'firefox']) {
       let eb;
@@ -603,14 +722,16 @@ export async function inspect(url, o = {}) {
         engines.browsers[name] = eb.version();
         const ectx = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
         await ectx.addInitScript(lateInit, T.window);
-        const ep = await ectx.newPage();
-        await load(ep, url, o, T, watched.until);
+        const engAt = pages(ectx);
         for (const w of engines.widths) {
+          const ep = await engAt(w);
           const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
           const res = await runPass(ep, pass);
           for (const raw of res.issues) await merge(ep, raw, pass);
           log(`  ${pass.label}: ${res.issues.length} findings`);
         }
+        await engAt.close();
+        await resizePass(ectx, resizePairs(engines.widths, sigs, keyWidths.at(-1)), ENGINE_CHECKS, name, name);
         await ectx.close();
       } catch (e) {
         engines.notRun[name] = `failed: ${String(e.message || e).split('\n')[0]}`;
@@ -645,7 +766,7 @@ export async function inspect(url, o = {}) {
     const list = [...issues.values()].map((it) => ({
       ...it,
       title: CHECKS[it.check].title, rule: CHECKS[it.check].rule,
-      seen: Object.fromEntries(Object.entries(it.seen).map(([m, ws]) => [m, rangeText(ws)])),
+      seen: Object.fromEntries(Object.entries(it.seen).map(([m, ws]) => [m, ws.every((x) => typeof x === 'number') ? rangeText(ws) : [...new Set(ws)].join(', ')])),
     })).sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity)
       || Object.keys(CHECKS).indexOf(a.check) - Object.keys(CHECKS).indexOf(b.check)
       || a.id.localeCompare(b.id));
@@ -658,7 +779,7 @@ export async function inspect(url, o = {}) {
       tool: 'itten-inspector', version: VERSION, url, date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
-      sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths },
+      sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize },
       coverage,
       notJudged: [
         `Insides of drawn content: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and role="img" (mark a diagram drawn with HTML elements role="img"). Their outer boxes are measured. A figure's tables, text and caption are measured like the rest of the page. Skipped on this page: ${coverage.graphics} graphics.`,

@@ -154,6 +154,7 @@ try {
   fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twins ${r.findingsOnTwin} findings.`;
   for (const id of r.missed) fail('Fixtures', `planted defect ${id} was not caught`);
   for (const f of r.falsePositives) fail('Fixtures', `false positive: ${f.check} ${f.message} [${f.elements.join(', ')}]`);
+  if (!r.breakpoints.equal) fail('Fixtures', `the resize pass found ${r.breakpoints.testPrint} breakpoints on the test print and ${r.breakpoints.twin} on the twin; the fixtures have ${r.breakpoints.expected}`);
   if (!r.distinctSweep.equal) fail('Fixtures', `without a system, the sweep totals of distinct.html and its twin differ: ${JSON.stringify(r.distinctSweep.testPrint)} against ${JSON.stringify(r.distinctSweep.twin)}`);
 } catch (e) {
   fail('Fixtures', `the fixture test could not run: ${e.message.split('\n')[0]}`);
