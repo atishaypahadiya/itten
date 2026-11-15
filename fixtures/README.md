@@ -11,10 +11,12 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 
 In the clean twins, the last two words of every paragraph of copy are joined by a no-break space, and so are those of the specimens whose last line came out short at some width in Chromium or WebKit (d16, d22, d25, d27, d29, d30). Lines break a little differently on each platform: d25's specimen ended on one word on Linux and not on macOS. A widow that depends on the platform is luck, so the twins do not leave it to chance. d23's specimens are not joined, since they test what the widow check must not report.
 
-Five more things on both pages must not be reported; the first four were found on real sites:
+Eight more things on both pages must not be reported; all but the last were found on real sites:
 
 - in d20, a small chart drawn again on every resize, its path id taken from a counter, so the id differs each time it is drawn (not late content);
 - in d23, a reference ending on a DOI alone on its last line (a citation ends on its link; not a widow);
+- in d23, a reference ending on an arXiv id alone on its last line, and a note ending on a repository path (identifiers that cannot be reworded or hyphenated; not widows);
+- in d23, two references whose names are set in a span, as a site does to keep them from being hyphenated (their text starts on the same x, so their left edges are not 0.5 to 3 px apart);
 - in d23, a paragraph in a 104 px column without hyphenation, ending on one word (every line there is a fragment; not judged as a widow);
 - in d31, a 250 ms transition reversed after 150 ms, which the browser runs for less than 250 ms (the declared duration is judged, not the shortened one);
 - in d36, a bold run inside a regular paragraph (it takes the paragraph's step, so its weight is not judged).

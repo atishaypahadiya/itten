@@ -183,9 +183,15 @@ export function typography(opts) {
     }
     const prettyHelps = !!pretty && pretty.length <= L.length + 1 && ((oneWord(L) && !oneWord(pretty)) || (!oneWord(L) && fill(pretty.at(-1)) >= 1 / 3 && fill(pretty.at(-1)) - fill(last) >= 0.1));
     // A citation ends on its link by convention, and a link cannot be
-    // joined to the word before it; a last line that is a URL or DOI is not
-    // judged.
-    const link = /^(https?:\/\/|www\.|doi:)|^[\w-]+(\.[\w-]+)+\/\S/i;
+    // joined to the word before it; a last line that is one identifier is
+    // not judged. Identifiers: a URL or a DOI, a host with a path, an id
+    // behind a scheme-like prefix (arXiv:2108.06305, isbn:978…, urn:…: a
+    // word, a colon, and a run holding a digit), or a file or repository
+    // path (a token with an underscore, two slashes, or a slash and a file
+    // extension; "and/or" is a word). None of them can be reworded or
+    // hyphenated, and joining one to the word before it makes a longer
+    // unbreakable run.
+    const link = /^(https?:\/\/|www\.|doi:)|^[\w-]+(\.[\w-]+)+\/\S|^[a-z][a-z0-9+.-]*:\S*\d\S*$|^\S*\w_\w\S*$|^\S*\/\S*\/\S*$|^\S*\/\S*\.[a-z0-9]{1,8}[.,;:)\]]*$/i;
     if (want.has('widow') && !head && !narrow && oneWord(L) && !link.test(last.words[0].text) && !prettyHelps && live(el, 'widow')) {
       const w = last.words[0].text;
       report('widow', 'warning', el, `The last line holds one word, "${w.length > 24 ? w.slice(0, 23) + '…' : w}", under ${L.length - 1} full line${L.length > 2 ? 's' : ''}${plain ? ', and text-wrap: pretty does not move it' : ', with text-wrap: pretty set'}. Change the measure or the copy, or join the last two words with a no-break space.`, [mark(last)]);
