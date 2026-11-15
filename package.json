@@ -1,6 +1,6 @@
 {
   "name": "itten",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A detail discipline and inspector: a protocol for reading a project's inspiration as measurements, and a tool that checks the rendered page up close.",
   "type": "module",

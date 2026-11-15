@@ -49,8 +49,8 @@ On the fixtures, the default run and the full sweep each catch all 43 planted de
 
 ## What comes next
 
-`ROADMAP.md` sets out 0.2 to 0.6 and the test each version has to pass.
+`ROADMAP.md` sets out 0.2 to 0.6 and the test each version has to pass; 0.2 has shipped. `CHANGELOG.md` lists what changed in each version.
 
 ## Licence
 
-Code (`inspector/`, `scripts/`, `schema/`, `fixtures/`) is MIT, in `LICENSE`. The documents are CC BY 4.0, attribution Atishay Pahadiya: `ITTEN.md`, `ROADMAP.md`, this README, and `reference/`, `protocol/`, `library/` and `research/baselines/`, with a `LICENSE` in each of those folders. Fonts in `library/assets/fonts/` keep the SIL Open Font License 1.1 and icons in `library/assets/icons/lucide/` keep ISC, each with its licence file.
+Code (`inspector/`, `scripts/`, `schema/`, `fixtures/`) is MIT, in `LICENSE`. The documents are CC BY 4.0, attribution Atishay Pahadiya: `ITTEN.md`, `ROADMAP.md`, `CHANGELOG.md`, this README, and `reference/`, `protocol/`, `library/` and `research/baselines/`, with a `LICENSE` in each of those folders. Fonts in `library/assets/fonts/` keep the SIL Open Font License 1.1 and icons in `library/assets/icons/lucide/` keep ISC, each with its licence file.

@@ -2,7 +2,11 @@
 
 The order in which ITTEN grows after 0.1, what each version covers, and the test it has to pass before it ships. A version ships when its acceptance test passes and the fixture test still reports full recall, full precision and no findings on the clean twins. Scope can move between versions; the order of the first three is fixed, because each one feeds the next.
 
+Status, 15 November 2026: 0.2 has shipped as 0.2.0 (see `CHANGELOG.md`). 0.3 is next.
+
 ## 0.2 · Typographic finish and motion
+
+**Status.** Shipped in 0.2.0. Every check has a planted defect and a clean twin; the fixture test reports recall 43/43 and precision 49/49 at the default widths and the full sweep. Both families ran on the two baselines, and each finding is recorded there with its verdict; four false positives found there became fixture cases. Beyond the scope below, the motion pass also tabs, clicks and repeats everything with the CPU slowed 4×.
 
 **Scope.** Two families of inspector checks for what 0.1 leaves to the eye.
 
