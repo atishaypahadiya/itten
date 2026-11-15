@@ -44,7 +44,7 @@ Eight more things on both pages must not be reported; all but the last were foun
 | d17 | `text-resize` | a caption set at 14px, which stays 14 px when the reader doubles the browser text size. | The caption is set at 0.875rem, so it follows the setting. |
 | d18 | `type-scale` | a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither. | The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well. |
 | d19 | `page-load` | the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised. | The figure draws from d19-data.json, which exists. |
-| d20 | `page-load` | the figure draws 2.5 s after the load event, by which time the inspector has begun measuring. | The figure draws as the page is read, before the load event. |
+| d20 | `page-load` | the figure draws 2.5 s after the load event, long after the page has gone still (nothing added for the settle window, 0.5 to 1.5 s). | The figure draws as the page is read, before the load event. |
 | d23 | `widow` | a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it. | At 288 px the note sets on one line. |
 | d24 | `orphan` | orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column. | Orphans and widows of 2, the default, so the second paragraph breaks two lines and three. |
 | d25 | `rag` | hyphenation is off, so a long word leaves a line far short of the measure. | hyphens: auto, as on every paragraph, fills the line. |
