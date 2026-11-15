@@ -2,6 +2,15 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
+## 0.3.2 · 15 November 2026
+
+Tables are text, wherever they are set.
+
+- A `<figure>` is no longer treated as a graphic. Only drawn content keeps its insides unmeasured: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and `role="img"`. A figure's tables, text and caption go through every layout and typographic check. Before, a table set in a figure was skipped by all of them, and `broken-word` read it as a special case.
+- A diagram drawn with HTML elements needs `role="img"` and a label to stay unmeasured, as it does to be read as one image. The fixtures' div diagram now has them.
+- d45 and d46 plant a spacing defect and a hole in the rag in tables inside figures; both pages, the default widths and the full sweep give recall 46/46 and precision 52/52 with nothing on the clean twins.
+- `ROADMAP.md` evaluates running the action in Playwright's container image, which would remove the 40 to 77 s apt install from each job; not built.
+
 ## 0.3.1 · 15 November 2026
 
 Frame timing that holds on any machine, two false positives from neptune-fork fixed, a new check for words broken without a hyphen, and fixes to telemetry and the action's browser cache.

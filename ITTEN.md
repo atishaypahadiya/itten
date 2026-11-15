@@ -91,7 +91,7 @@ jobs:
           persist-credentials: false
       # Build the site here if it needs building, for example:
       # - run: npm ci && npm run build
-      - uses: atishaypahadiya/itten@v0.3.1  # or pin the release's commit SHA
+      - uses: atishaypahadiya/itten@v0.3.2  # or pin the release's commit SHA
         with:
           static-dir: dist
           pages: |
