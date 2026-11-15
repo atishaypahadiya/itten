@@ -11,6 +11,17 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// A no-break space before the last word of each paragraph, so its last line
+// can never hold one word alone. The clean twins set all their copy this way,
+// and the specimens in TIE, whose last line came out short (two words or
+// fewer, or under a third of the measure) at some width from 320 to 1920 px
+// in Chromium or WebKit. Line breaks differ a little between platforms, and
+// a widow that appears on one and not another is luck, not a fixed defect.
+// d23's specimens are left alone: they are the cases the widow check must
+// not report.
+const tie = (html) => html.replace(/ ([^\s<>]+)(?=<\/(?:p|figcaption)>|$)/g, '&nbsp;$1');
+const TIE = new Set(['d16', 'd22', 'd25', 'd27', 'd29', 'd30']);
+const specimen = (s, clean) => { const m = typeof s[5] === 'function' ? s[5](clean) : s[5]; return clean && TIE.has(s[0]) ? tie(m) : m; };
 const S = [
   ['d01', 'spacing-scale', 'Spacing off the scale', 'Planted: 13 px padding above and below the text. The scale has 12 and 16.', 'The padding is 12 px above and below, from the scale.', `<div class="tint d01">A padded box</div>`, `.d01 { padding: 0.8125rem 1rem; }`],
   ['d02', 'type-scale', 'Compounded type size', 'Planted: 0.875em inside a 0.875rem parent, which renders at 12.25 px.', 'The note is set in rem, so it renders at 14 px, a step of the scale.', `<div class="d02"><p class="note">Small print in a smaller box.</p></div>`, `.d02 .note { font-size: 0.875em; line-height: 20px; }`],
@@ -118,8 +129,8 @@ ${D.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
 <main>
 ${D.map((s) => `  <section id="${s[0]}">
     <h2>${s[2]}</h2>
-    <p class="small">${clean ? s[4] : s[3]}</p>
-    ${s[5]}
+    <p class="small">${clean ? tie(s[4]) : s[3]}</p>
+    ${specimen(s, clean)}
   </section>`).join('\n')}
 </main>
 </body>
@@ -154,18 +165,18 @@ ${S.filter((s) => s[6]).map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
   <header>
     <h1>Inspector test print${clean ? ', clean twin' : ''}</h1>
     <p>${clean
-      ? 'The same page as the test print with every planted defect fixed. The inspector should report nothing here.'
+      ? tie('The same page as the test print with every planted defect fixed. The inspector should report nothing here.')
       : 'Each section plants one defect for one inspector check. The clean twin, clean.html, is the same page with every defect fixed.'}</p>
     <figure>
       <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
       <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
-      <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.</figcaption>
+      <figcaption class="small">${(clean ? tie : String)('A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.')}</figcaption>
     </figure>
   </header>
 ${S.map((s) => `  <section id="${s[0]}">
     <h2>${s[2]}</h2>
-    <p class="small">${clean ? s[4] : s[3]}</p>
-    ${typeof s[5] === 'function' ? s[5](clean) : s[5]}
+    <p class="small">${clean ? tie(s[4]) : s[3]}</p>
+    ${specimen(s, clean)}
   </section>`).join('\n')}
 </main>
 ${canvasScript}
