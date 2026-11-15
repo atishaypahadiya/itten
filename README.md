@@ -47,6 +47,10 @@ The check takes about 40 seconds at four widths and a little over a minute with 
 
 On the fixtures, the default run and the full sweep each catch all 22 planted defects, one or more for each of the 15 checks, with no false positives on any page (recall 22/22, precision 26/26). Two of the defects are judged without a system file, in distinct-value mode. `fixtures/README.md` lists the defects. `protocol/04-inspect.md` lists what the inspector does not judge: the insides of graphics, states other than the default, pseudo-element text, icon optics, motion, and fonts on platforms other than the one it runs on.
 
+## What comes next
+
+`ROADMAP.md` sets out 0.2 to 0.6 and the test each version has to pass.
+
 ## Licence
 
-Code (`inspector/`, `scripts/`, `schema/`, `fixtures/`) is MIT, in `LICENSE`. The documents are CC BY 4.0, attribution Atishay Pahadiya: `ITTEN.md`, this README, and `reference/`, `protocol/`, `library/` and `research/baselines/`, with a `LICENSE` in each of those folders. Fonts in `library/assets/fonts/` keep the SIL Open Font License 1.1 and icons in `library/assets/icons/lucide/` keep ISC, each with its licence file.
+Code (`inspector/`, `scripts/`, `schema/`, `fixtures/`) is MIT, in `LICENSE`. The documents are CC BY 4.0, attribution Atishay Pahadiya: `ITTEN.md`, `ROADMAP.md`, this README, and `reference/`, `protocol/`, `library/` and `research/baselines/`, with a `LICENSE` in each of those folders. Fonts in `library/assets/fonts/` keep the SIL Open Font License 1.1 and icons in `library/assets/icons/lucide/` keep ISC, each with its licence file.
