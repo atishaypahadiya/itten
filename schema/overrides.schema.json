@@ -56,6 +56,7 @@
             "overflow",
             "clipping",
             "overlap",
+            "broken-word",
             "target-size",
             "spacing-scale",
             "type-scale",

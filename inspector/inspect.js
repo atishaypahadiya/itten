@@ -33,6 +33,7 @@ export const CHECKS = {
   'overflow': { title: 'Overflow', rule: 'CRF-16 · LAY-03 · WCAG 1.4.10' },
   'clipping': { title: 'Clipping', rule: 'CRF-16 · TYP-03 · WCAG 1.4.4' },
   'overlap': { title: 'Overlapping text', rule: 'CRF-16' },
+  'broken-word': { title: 'Words broken without a hyphen', rule: 'CRF-22' },
   'target-size': { title: 'Target size', rule: 'CRF-17 · INT-01 · INT-02 · WCAG 2.5.8' },
   'spacing-scale': { title: 'Spacing off the scale', rule: 'CRF-01 · CRF-07 · LAY-05' },
   'type-scale': { title: 'Type off the scale', rule: 'CRF-06 · CRF-07 · TYP-06' },
@@ -61,8 +62,18 @@ const SEVERITY = ['error', 'warning', 'info'];
 const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
 // Checks run again in WebKit and Firefox. Spacing and type values are
 // computed styles, the same in every engine, so they run in Chromium only.
-const ENGINE_CHECKS = ['near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'hairline-subpixel'];
-const LAYOUT = ['spacing-scale', 'type-scale', 'near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'hairline-subpixel'];
+// Words broken without a hyphen are judged in every engine: where a word
+// breaks depends on how each sizes a column.
+const ENGINE_CHECKS = ['near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel'];
+const LAYOUT = ['spacing-scale', 'type-scale', 'near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel'];
+// A last line, or a word, that is one identifier: a URL or a DOI, a host
+// with a path, an id behind a scheme-like prefix (arXiv:2108.06305, isbn:,
+// urn:: a word, a colon, and a run holding a digit), or a file or
+// repository path (a token with an underscore, two slashes, or a slash and
+// a file extension; "and/or" is a word). None can be reworded or
+// hyphenated. widow does not count one as a widow, and broken-word does not
+// judge where one breaks. Passed to the page as a string.
+const IDENTIFIER = String.raw`^(https?:\/\/|www\.|doi:)|^[\w-]+(\.[\w-]+)+\/\S|^[a-z][a-z0-9+.-]*:\S*\d\S*$|^\S*\w_\w\S*$|^\S*\/\S*\/\S*$|^\S*\/\S*\.[a-z0-9]{1,8}[.,;:)\]]*$`;
 const TEXT200 = ['overflow', 'clipping', 'overlap'];
 // Typographic checks run in Chromium at every width of the sweep: line
 // breaking differs between engines, and these judge Chromium's lines. The
@@ -393,7 +404,7 @@ export async function inspect(url, o = {}) {
     await page.setViewportSize({ width: pass.w, height: VIEW_H });
     await page.evaluate(() => scrollTo(0, 0));
     await settle(page);
-    const res = await page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, ...extra });
+    const res = await page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, identifier: IDENTIFIER, ...extra });
     // When the pass measured, in ms after the start of measuring.
     if (page.passTimes) page.passTimes.push([pass.label, await page.evaluate(() => (window.__ittenLate?.mark == null ? 0 : performance.now() - window.__ittenLate.mark))]);
     return res;
@@ -434,7 +445,7 @@ export async function inspect(url, o = {}) {
       for (const [sel, ...v] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
       for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
       for (const raw of res.issues) await merge(page, raw, pass);
-      const ty = await page.evaluate(typography, { checks: TYPO, system });
+      const ty = await page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER });
       for (const raw of ty.issues) await merge(page, raw, pass);
       log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     }
@@ -450,7 +461,7 @@ export async function inspect(url, o = {}) {
         coverage.fontGroups = Math.max(coverage.fontGroups, new Set(res.data.fontReps.map((r) => r.group)).size);
         for (const raw of await contrastIssues(page, res, coverage)) await merge(page, raw, pass);
         if (scheme === 'light') {
-          const ty = await page.evaluate(typography, { checks: ['optical-margin'], system });
+          const ty = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
           for (const raw of await opticalIssues(page, ty.optical)) await merge(page, raw, pass);
         }
         log(`  ${pass.label}: contrast and fonts`);

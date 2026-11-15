@@ -69,7 +69,7 @@
   </section>
   <section id="d11">
     <h2>Text spilling out of its box</h2>
-    <p class="small">The long word is allowed to&nbsp;break.</p>
+    <p class="small">The box is as wide as the word, and never wider than its column; overflow-wrap: anywhere stays as the last resort, and is not&nbsp;needed.</p>
     <div class="tag">Uncompromisingly</div>
   </section>
   <section id="d12">
@@ -250,6 +250,11 @@
     <script>
       { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }
     </script>
+  </section>
+  <section id="d44">
+    <h2>Words broken without a hyphen</h2>
+    <p class="small">The table is laid out automatically without break-word, so the first column is as wide as its longest&nbsp;word.</p>
+    <table class="data"><tbody><tr><td class="name">Bouvard's tables</td><td>1821</td></tr><tr><td class="name">Le Verrier's orbit</td><td>1846</td></tr></tbody></table>
   </section>
 </main>
 <script>

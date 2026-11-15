@@ -31,7 +31,7 @@
 /* d10 overflow */
 .banner { min-width: 336px; }
 /* d11 overflow */
-.tag { overflow-wrap: normal; }
+.tag { width: 96px; overflow-wrap: normal; }
 /* d12 clipping */
 .fixed { height: 40px; overflow: hidden; }
 /* d13 overlap */
@@ -83,6 +83,9 @@
 #d40 .fluid-pad { padding-inline: clamp(1rem, 5vw, 3rem); }
 /* d42 motion-timing */
 #d42 .ring { transition-duration: 400ms; }
+/* d44 broken-word */
+#d44 .data { table-layout: fixed; width: 160px; }
+#d44 .data .name { width: 72px; overflow-wrap: break-word; }
 </style>
 </head>
 <body>
@@ -340,6 +343,11 @@
       { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }
     </script>
     <style>#d43 .toggle { transition-property: margin-left; } #d43 .toggle[aria-pressed="true"] { transform: none; margin-left: 0.5rem; }</style>
+  </section>
+  <section id="d44">
+    <h2>Words broken without a hyphen</h2>
+    <p class="small">Planted: the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen ("Bouvar|d's", "Verrier'|s"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.</p>
+    <table class="data"><tbody><tr><td class="name">Bouvard's tables</td><td>1821</td></tr><tr><td class="name">Le Verrier's orbit</td><td>1846</td></tr></tbody></table>
   </section>
 </main>
 <script>
