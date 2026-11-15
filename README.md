@@ -42,7 +42,7 @@ npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 - the schema, the fixtures' system file or the example in `protocol/02-system.md` does not validate, or the validator accepts a deliberately broken file;
 - the inspector misses a planted defect on the test print or reports anything on the clean twin;
 - a font or icon folder in `library/` has no licence file;
-- the overrides example, its rendered page or the overrides validator is wrong, or the telemetry script, run on the seven test repositories in `fixtures/telemetry/`, flags anything but CRF-16;
+- the overrides example, its rendered page or the overrides validator is wrong, or the telemetry script, run on the eight test repositories in `fixtures/telemetry/`, flags anything but CRF-16;
 - the action's tests fail (the baseline comparison, the fail-on gate, the static server, and the pull request comment against a stand-in for the GitHub API), or an action or workflow uses a third-party action not pinned by commit SHA.
 
 The check takes about 40 seconds at four widths and a little over a minute with `--full`, most of it the fixture run. Reports and crops go to `dist/`, which is not committed.
