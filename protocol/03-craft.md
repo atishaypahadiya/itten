@@ -11,11 +11,13 @@ Each rule names how it is verified: by an inspector check (`protocol/04-inspect.
 ## Spacing and edges
 
 ### CRF-01 · Spacing comes only from the scale
-Strength: MUST · Verified by: `spacing-scale` (inspector)
+Strength: MUST · Verified by: `spacing-scale` (inspector); manual: compare gaps at 100% and 200% text
 
 Every margin, padding and gap is 0 or a value in `spacing.scale`. Combine scale values only where the result is also in the scale.
 
-*Why:* a closed scale removes near-duplicates such as 13 px beside 12 px, which read as mistakes rather than decisions. Cites: LAY-05.
+Set spacing in the same unit as type, `rem`, so that when a reader doubles the browser's text size the gaps grow with the text and the rhythm between them holds. The scale is written in px at the default 16 px root; 24 px is set as `1.5rem`. Spacing in `px` stays put while the text doubles, so at 200% text a paragraph gap shrinks to half a line and groups run together.
+
+*Why:* a closed scale removes near-duplicates such as 13 px beside 12 px, which read as mistakes rather than decisions, and a scale in the type's unit keeps its proportions to the text at every text size. Cites: LAY-05, TYP-03; WCAG 2.2 SC 1.4.4.
 
 ### CRF-02 · Groups sit further apart than their contents
 Strength: MUST · Verified by: manual: for each grouped region (card, form section, list under a heading), read the largest gap inside a group and the gap between groups from the devtools box-model overlay, and check the ratio against `spacing.groupRatioMin`
@@ -217,7 +219,7 @@ Use curly quotes and apostrophes, the ellipsis character, an en dash for ranges,
 
 | Rule | What it asks | Verified by | Pass |
 |---|---|---|---|
-| CRF-01 | Spacing only from the scale | `spacing-scale` | |
+| CRF-01 | Spacing only from the scale, in rem | `spacing-scale`; manual: gaps at 200% text | |
 | CRF-02 | Groups further apart than contents | manual: box-model overlay, ratio vs `groupRatioMin` | |
 | CRF-03 | One gap between siblings of one kind | `sibling-gaps` | |
 | CRF-04 | Shared edges, optical exceptions logged | `near-miss-edge` | |
