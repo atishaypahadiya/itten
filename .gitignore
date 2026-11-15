@@ -1,0 +1,6 @@
+.itten-private-terms
+
+# system and build
+.DS_Store
+node_modules/
+dist/

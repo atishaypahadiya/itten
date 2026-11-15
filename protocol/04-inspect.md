@@ -1,0 +1,116 @@
+# Inspect
+
+The inspector opens the rendered page in Chromium, measures it at many widths, text sizes and colour schemes, checks the layout again in WebKit and Firefox, and lists what is wrong up close. It reads the page the way a careful reviewer with a loupe would: computed values, layout boxes, rendered fonts and the actual pixels. It does not read the source, so it judges what people see, whatever produced it.
+
+## Run it
+
+Install once, in the project:
+
+```sh
+npm install --save-dev playwright
+npx playwright install chromium webkit firefox
+```
+
+Then, with the page served locally or deployed:
+
+```sh
+node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.json --out itten-report
+```
+
+| Option | Meaning |
+|---|---|
+| `<url>` | The page to inspect. Inspect each distinct template, not only the home page. |
+| `--system <path>` | The project's `itten.system.json`. It is validated first; the run stops if it is invalid. Without it the inspector runs in distinct-value mode: it reports how many font sizes, spacing values and radii the page uses instead of checking them against a scale. |
+| `--out <dir>` | Where the report goes. Default `itten-report`. Add it to `.gitignore`. |
+| `--full` | Sweep every 40 px from 320 to 1920 px (41 widths) instead of the default four: 320, 768, 1440 and 1920 px. Use it before a release, and to find the widths where a finding starts and stops. |
+| `--widths a:b:step` or `a,b,c` | Any other set of widths. |
+| `--key-widths a,b,c` | Widths for the contrast and font passes. Default `320,768,1440`. |
+| `--no-engines` | Skip the WebKit and Firefox pass. |
+| `--fail-on error` or `warning` | Exit with code 1 when findings of that severity or worse exist, for CI. |
+| `--validate <path>` | Only validate a system file against `schema/system.schema.json`. |
+
+A default run on a typical page takes under a minute; `--full` takes one to three.
+
+## What a run does
+
+| Pass | Widths | Scheme | Text | Checks |
+|---|---|---|---|---|
+| Layout sweep | 320, 768, 1440, 1920 px (`--full`: 320 to 1920 px in 40 px steps) | light | default | every layout check below |
+| Contrast and fonts | key widths | light, then dark | default | `contrast`, `font-fallback` |
+| Text doubled | the same widths | light | browser default font size 32 px instead of 16 px | `overflow`, `clipping`, `overlap`; `text-resize` at the last key width |
+| Device pixels | first and last key width | light | default | `hairline-subpixel` at a device pixel ratio of 2 |
+| Other engines | 320, 768, 1440 and 1920 px | light | default | the layout checks except `spacing-scale` and `type-scale`, in WebKit and Firefox |
+
+The page is loaded once per pass set and scrolled to the bottom and back, so lazy content and reveal-on-scroll elements render. The viewport is 900 px tall. Doubling the browser's default font size is the setting people change in their browser preferences; text set in `px` ignores it, and the report says how much of the page did. Browser zoom is covered by the width sweep, since 200% zoom at 1280 px lays out like 640 px.
+
+## The checks
+
+Severity follows the precedence in `ITTEN.md`. An **error** breaks an accessibility floor or the rendering itself. A **warning** departs from the project's system or from an up-close rule in `03-craft.md`. **Info** is worth knowing but is not a defect on its own.
+
+| Check | Severity | What it measures | Rule |
+|---|---|---|---|
+| `contrast` | error, or warning | The text colour against the pixels rendered behind it. The page is screenshotted twice with all text made transparent, 400 ms apart; the background is sampled across each line of text, and the text colour (with its opacity) is composited over each sample. Error when the median sample is below 4.5:1 (3:1 for large text); warning when the worst tenth is. This sees images, video, gradients, canvas and WebGL behind text, which computed styles cannot. | CRF-14, COL-01 |
+| `font-fallback` | error, or warning | The font that actually drew each text run, from the browser's rendering engine, against the family requested. Error when a web font failed to load or when text renders in a fallback; warning when some glyphs come from another font, when a family is not in the system, or when a form control's computed family differs from the page's (the browser's control font), even if the control holds no text yet. | CRF-13 |
+| `overflow` | error | The page scrolling sideways (and the element or word that causes it), or text spilling out of the painted box that contains it. | CRF-16, LAY-03 |
+| `clipping` | error, or warning | Text partly cut off by an `overflow: hidden` box or by the viewport. Truncation with an ellipsis or a line clamp is a warning. | CRF-16, TYP-03 |
+| `overlap` | error | Text drawn over other text. | CRF-16 |
+| `text-resize` | warning | Text elements whose font size grows by less than 5% when the browser's default text size is doubled, compared at the last key width. They are set in px, or in vw alone. One finding lists them all, with the sizes affected. | CRF-16, TYP-03 |
+| `target-size` | error, or info | Interactive targets below 24 px that do not meet the WCAG 2.5.8 spacing or inline exceptions; targets below the comfortable size (44 px) as info. | CRF-17, INT-02 |
+| `spacing-scale` | warning | Every margin, padding and flex or grid gap, against the system's scale. Fractional values are reported in both modes. | CRF-01, CRF-07 |
+| `type-scale` | warning | Every font size against the type scale, and the line height of each step. A fluid step accepts the size its declared range gives at each width, within 0.25 px; any other size that follows the viewport is reported as an undeclared fluid range. Fractional fixed sizes are reported in both modes. | CRF-06, CRF-07 |
+| `near-miss-edge` | warning | Left, right, top and baseline edges of visible boxes and text blocks that are 0.5 to 3 px apart and within 96 px of each other. Visible boxes are those that paint something: a background, border, shadow, image or control. Text blocks contribute their first-line baseline and their aligned edge. Elements that share a centre are skipped, since different widths centred will never share edges. | CRF-04, LAY-09 |
+| `sibling-gaps` | warning | The gaps between three or more siblings of the same kind in one container, along each axis. | CRF-03 |
+| `radius` | warning | Corner radii outside the system's set (a concentric derivation is allowed when `nesting` is `concentric`). Without a system: more than four radii, or radii within 2 px of each other. | CRF-11, SHP-02 |
+| `radius-concentric` | warning | A rounded box nested near the corner of a rounded parent whose radius is not the parent's radius minus the inset. | CRF-12, SHP-01 |
+| `hairline-subpixel` | warning, or info | Borders and rules up to 1.5 px thick whose position or width does not land on whole device pixels at 1× and 2×. The middle of each line (up to three per finding) is screenshotted in each engine and profiled across its thickness. Warning when an engine draws it blurred across two pixels; info when every engine snaps it to whole pixels, which browsers do for most borders placed by layout. Lines moved by a fractional transform blur in Chromium and WebKit. | CRF-08 |
+
+### What it does not judge
+
+- **The insides of graphics.** svg, canvas, img, video, iframe, object, embed, math and `role="img"` elements are measured as boxes; what is drawn inside them is not. Everything in a `<figure>` except its `<figcaption>` is treated the same way, so a diagram built from divs is not held to the page's spacing scale. The report gives the count of each.
+- **States other than the default.** Hover, focus-visible, active, disabled, empty, loading and error states are not rendered. Build a state sheet (CRF-15) and inspect that page.
+- **Text the DOM does not expose as text:** `::before`, `::after` and `::marker` content, shadow DOM, and text drawn in canvas or WebGL.
+- **Icon optical centring and stroke weight, text-box trim and motion** (CRF-05, CRF-09, CRF-10, CRF-18). These are manual checks.
+- **The worst frame of a moving background.** Two frames are sampled.
+- **Other platforms' fonts.** Font results reflect the machine the inspector runs on. A stack that renders correctly on macOS can fall back on Windows or Linux; run it on the platforms that matter.
+- **Layout in dark mode.** Layout checks run in light only, on the assumption that the scheme changes colour and not geometry. If yours changes geometry, say so in the overrides and inspect a dark-only build.
+
+## Read the report
+
+`report.html` opens with a table of findings by check and severity, then lists every finding, errors first. Each one has:
+
+- the message, with the measured values;
+- the rule it comes from, the finding's ID, and where it was seen: the scheme or mode, and the widths, written as ranges (`320–600, 1440 px`);
+- the elements involved, as selectors and a short label;
+- one to three crops, zoomed 2 to 4 times with nearest-neighbour scaling so single pixels stay sharp. Magenta outlines the elements involved; blue marks the edges being compared.
+
+A finding is listed once however many widths it appears at. Its message comes from the first width where it was seen.
+
+Below the findings, "Values in use" lists every distinct font size, spacing value and radius the page used, with the most elements using each at any one width, then the fonts that actually rendered for each requested stack. "Coverage" lists what was measured, what was skipped by `data-itten-ignore`, and what was not judged.
+
+"Engines" lists the findings that differ between Chromium, WebKit and Firefox at the widths all of them ran, and how each engine drew any hairline found. Spacing and type values are computed styles, the same in every engine, so they are compared in Chromium only. Engine differences come mostly from font rendering (text widths and line breaks), form controls, and how each engine rounds positions.
+
+`report.json` has the same content for scripts. Crops are in `crops/`.
+
+## Fix in this order
+
+1. **Errors in `font-fallback`.** A fallback font changes every measurement after it: sizes, line breaks, edges, contrast. Fix it, then re-run before looking at anything else.
+2. **Errors in `overflow`, `clipping` and `overlap`.** These lose content. Start with the narrowest width and the 200% text pass, where most of them appear first.
+3. **Errors in `contrast` and `target-size`.** These are accessibility floors. A floor is never logged away as taste (see the precedence in `ITTEN.md`).
+4. **Warnings in `text-resize`, `type-scale` and `spacing-scale`.** One stray value usually comes from one rule in the stylesheet. Fixing the source rule often clears several `near-miss-edge` and `sibling-gaps` findings at once, so re-run before working through those.
+5. **Warnings in `near-miss-edge`, `sibling-gaps`, `radius`, `radius-concentric` and `hairline-subpixel`.** Work through the crops. Each one either becomes an exact match or a logged optical adjustment.
+6. **Info.** Read it; act on it when the brief cares.
+
+Within a severity, fix the findings seen at the most widths first: they are structural, not breakpoint accidents.
+
+## When a finding is intended
+
+Some findings are deliberate: an optical offset (LAY-10), a display headline that breaks the type scale on purpose, a carousel that clips its next slide as a hint (LAY-08). For each one:
+
+1. Add a row to `docs/itten-overrides.md` with the rule or check, the value, and the reason.
+2. Mark the element with `data-itten-ignore="<check>"` (several checks separated by spaces, or `all`). The attribute also applies to the element's descendants.
+
+The report counts ignored element and check pairs, so an ignore without an override entry shows up in review. Never ignore an error that breaks an accessibility floor for text people need to read or targets people need to use.
+
+## Known limits
+
+The inspector is tested against `fixtures/`: a test print with one planted defect per check and a clean twin. `node scripts/fixture-test.js` reports its precision and recall. The fixtures prove the checks work on known defects. They do not prove the absence of false positives on every real page. When a finding is wrong, reduce it to a fixture and fix the check rather than ignoring it.

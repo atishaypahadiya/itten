@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "itten/schema/system.schema.json",
+  "title": "ITTEN project system",
+  "description": "A project's own closed design system, derived from its teardown (protocol/02-system.md). Every value the build uses comes from here or is logged in docs/itten-overrides.md. Lengths are CSS px at a 16 px root.",
+  "type": "object",
+  "required": [
+    "name",
+    "source",
+    "spacing",
+    "type",
+    "grid",
+    "radius",
+    "colour",
+    "motion"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name."
+    },
+    "version": {
+      "type": "string",
+      "description": "Version of this system file, changed whenever a value changes."
+    },
+    "source": {
+      "type": "object",
+      "description": "Where the values came from.",
+      "required": [
+        "teardown"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "teardown": {
+          "type": "string",
+          "description": "Path to the teardown, usually docs/teardown.md."
+        },
+        "brief": {
+          "type": "string",
+          "description": "Path to the brief."
+        },
+        "overrides": {
+          "type": "string",
+          "description": "Path to the override log, usually docs/itten-overrides.md."
+        }
+      }
+    },
+    "spacing": {
+      "type": "object",
+      "required": [
+        "scale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scale": {
+          "description": "Every margin, padding and gap the build may use, in px, ascending. 0 is always allowed and need not be listed.",
+          "$ref": "#/$defs/ascendingLengths"
+        },
+        "groupRatioMin": {
+          "type": "number",
+          "minimum": 1,
+          "description": "LAY-06: minimum ratio of the gap between groups to the largest gap inside them."
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "type": {
+      "type": "object",
+      "required": [
+        "families",
+        "scale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "families": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Every font family the build requests. The inspector fails any text that renders in a different family.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "role"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Family name exactly as written in CSS font-family."
+              },
+              "role": {
+                "enum": [
+                  "display",
+                  "text",
+                  "mono",
+                  "other"
+                ]
+              },
+              "fallback": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Fallback stack, for metric matching (size-adjust, ascent-override)."
+              },
+              "source": {
+                "type": "string",
+                "description": "Where the font comes from: a file path, a foundry, a licence."
+              }
+            }
+          }
+        },
+        "scale": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The closed set of text styles (TYP-06). Font sizes outside it are reported, except values a declared fluid step produces at that width.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "size": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Font size in px, for a fixed step."
+              },
+              "fluid": {
+                "type": "object",
+                "required": [
+                  "min",
+                  "max",
+                  "minWidth",
+                  "maxWidth"
+                ],
+                "additionalProperties": false,
+                "description": "A fluid step: min px at minWidth and below, max px at maxWidth and above, linear in between. This is what clamp(min, a + b\u00b7vw, max) produces.",
+                "properties": {
+                  "min": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "max": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "minWidth": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "maxWidth": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              },
+              "lineHeight": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Line height in px."
+              },
+              "leading": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Line height as a ratio of the size, for fluid steps; the inspector allows 0.5 px of rounding."
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 1000
+              },
+              "family": {
+                "type": "string",
+                "description": "One of the names in families."
+              },
+              "tracking": {
+                "type": "number",
+                "description": "Letter spacing in em."
+              }
+            },
+            "description": "A fixed step has size and lineHeight. A fluid step has fluid (it follows the viewport between two widths, as CSS clamp() does) and lineHeight or leading.",
+            "oneOf": [
+              {
+                "required": [
+                  "size"
+                ]
+              },
+              {
+                "required": [
+                  "fluid"
+                ]
+              }
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "lineHeight"
+                ]
+              },
+              {
+                "required": [
+                  "leading"
+                ]
+              }
+            ]
+          }
+        },
+        "measure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            }
+          },
+          "description": "TYP-04: characters per line for running text."
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "breakpoints"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "breakpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "minWidth",
+              "columns",
+              "gutter",
+              "margin"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "minWidth": {
+                "type": "number",
+                "minimum": 0
+              },
+              "columns": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "gutter": {
+                "type": "number",
+                "minimum": 0
+              },
+              "margin": {
+                "type": "number",
+                "minimum": 0
+              },
+              "maxWidth": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "radius": {
+      "type": "object",
+      "required": [
+        "scale",
+        "nesting"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scale": {
+          "description": "Allowed corner radii in px. 0 is always allowed.",
+          "$ref": "#/$defs/ascendingLengths"
+        },
+        "capsule": {
+          "type": "boolean",
+          "description": "Whether fully rounded ends (radius at least half the shorter side) are allowed."
+        },
+        "nesting": {
+          "enum": [
+            "concentric",
+            "independent"
+          ],
+          "description": "concentric: inner = max(0, outer - padding) (SHP-01). independent: nested radii are not derived; log why."
+        }
+      }
+    },
+    "colour": {
+      "type": "object",
+      "required": [
+        "roles"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "type": "object",
+          "description": "Colours by role (COL-06), each with a light and dark value as any CSS colour string.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "light"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "light": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dark": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lightMore": {
+                "type": "string"
+              },
+              "darkMore": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "description": "Which teardown reference the colour was measured from."
+              },
+              "share": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Share of the coloured area, if the teardown measured proportions."
+              }
+            }
+          }
+        },
+        "pairs": {
+          "type": "array",
+          "description": "Text and non-text pairs the build relies on, with the minimum WCAG ratio for each.",
+          "items": {
+            "type": "object",
+            "required": [
+              "fg",
+              "bg",
+              "min"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "fg": {
+                "type": "string"
+              },
+              "bg": {
+                "type": "string"
+              },
+              "min": {
+                "type": "number",
+                "minimum": 1
+              },
+              "use": {
+                "enum": [
+                  "body",
+                  "text",
+                  "large",
+                  "non-text",
+                  "display"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "required": [
+        "durations",
+        "easings",
+        "reducedMotion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "durations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          },
+          "description": "Named durations in ms (MOT-07)."
+        },
+        "easings": {
+          "type": "object",
+          "description": "Named easings: a cubic-bezier as four numbers, or any CSS easing string such as linear(...).",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4
+              },
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          }
+        },
+        "reducedMotion": {
+          "enum": [
+            "fade",
+            "instant",
+            "none-animated"
+          ],
+          "description": "What movement becomes under Reduce Motion (MOT-08)."
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "number",
+          "minimum": 24,
+          "description": "Never below the WCAG 2.5.8 floor of 24 px."
+        },
+        "comfortable": {
+          "type": "number",
+          "minimum": 24
+        }
+      }
+    },
+    "hairline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Hairline width in CSS px, usually 1."
+        },
+        "dpr": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "description": "Device pixel ratios hairlines must land on whole device pixels for."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ascendingLengths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "number",
+        "minimum": 0
+      },
+      "ascending": true
+    }
+  }
+}

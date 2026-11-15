@@ -1,0 +1,38 @@
+{
+  "$schema": "../schema/system.schema.json",
+  "name": "ITTEN fixtures",
+  "version": "1",
+  "source": { "teardown": "fixtures/README.md" },
+  "spacing": { "scale": [4, 8, 12, 16, 24, 32, 40, 48, 64, 96], "groupRatioMin": 2 },
+  "type": {
+    "families": [
+      { "name": "Atkinson Hyperlegible Next", "role": "text", "fallback": ["sans-serif"], "source": "library/assets/fonts/atkinson-hyperlegible-next, OFL 1.1" }
+    ],
+    "scale": [
+      { "name": "small", "size": 14, "lineHeight": 20, "weight": 400 },
+      { "name": "body", "size": 16, "lineHeight": 24, "weight": 400 },
+      { "name": "title", "size": 24, "lineHeight": 32, "weight": 600 },
+      { "name": "display", "fluid": { "min": 32, "max": 40, "minWidth": 320, "maxWidth": 960 }, "lineHeight": 48, "weight": 600 }
+    ]
+  },
+  "grid": { "breakpoints": [{ "minWidth": 0, "columns": 1, "gutter": 16, "margin": 16, "maxWidth": 720 }] },
+  "radius": { "scale": [4, 12], "capsule": false, "nesting": "concentric" },
+  "colour": {
+    "roles": {
+      "ground": { "light": "#FFFFFF", "dark": "#141414" },
+      "text": { "light": "#1A1A1A", "dark": "#EDEDED" },
+      "muted": { "light": "#5C5C5C", "dark": "#A8A8A8" },
+      "tint": { "light": "#F0F0F0", "dark": "#262626" },
+      "tint-deep": { "light": "#E0E0E0", "dark": "#333333" },
+      "edge": { "light": "#8A8A8A", "dark": "#777777" }
+    },
+    "pairs": [
+      { "fg": "text", "bg": "ground", "min": 4.5, "use": "body" },
+      { "fg": "muted", "bg": "ground", "min": 4.5, "use": "text" },
+      { "fg": "text", "bg": "tint", "min": 4.5, "use": "body" }
+    ]
+  },
+  "motion": { "durations": { "none": 0 }, "easings": { "linear": "linear" }, "reducedMotion": "instant" },
+  "targets": { "minimum": 24, "comfortable": 44 },
+  "hairline": { "width": 1, "dpr": [1, 2] }
+}

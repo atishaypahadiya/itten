@@ -1,0 +1,144 @@
+{
+  "page": "fixtures/index.html",
+  "twin": "fixtures/clean.html",
+  "system": "fixtures/itten.system.json",
+  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section.",
+  "defects": [
+    {
+      "id": "d01",
+      "check": "spacing-scale",
+      "title": "Spacing off the scale",
+      "planted": "13 px padding above and below the text. The scale has 12 and 16.",
+      "css": ".d01 { padding: 13px 16px; }",
+      "fixedInTwin": "The padding is 12 px above and below, from the scale."
+    },
+    {
+      "id": "d02",
+      "check": "type-scale",
+      "title": "Compounded type size",
+      "planted": "0.875em inside a 0.875rem parent, which renders at 12.25 px.",
+      "css": ".d02 .note { font-size: 0.875em; line-height: 20px; }",
+      "fixedInTwin": "The note is set in rem, so it renders at 14 px, a step of the scale."
+    },
+    {
+      "id": "d03",
+      "check": "near-miss-edge",
+      "title": "Near-miss edge",
+      "planted": "the next line starts 2 px to the right of the text above it.",
+      "css": ".d03 { position: relative; left: 2px; }",
+      "fixedInTwin": "The next line shares the left edge of the text above it."
+    },
+    {
+      "id": "d04",
+      "check": "sibling-gaps",
+      "title": "Unequal sibling gaps",
+      "planted": "the third item has an extra 8 px top margin, so the gaps run 8, 16, 8.",
+      "css": ".list li:nth-child(3) { margin-top: 8px; }",
+      "fixedInTwin": "All four items are 8 px apart."
+    },
+    {
+      "id": "d05",
+      "check": "radius",
+      "title": "Radius off the set",
+      "planted": "a 6 px radius. The set is 4 and 12.",
+      "css": ".d05 { border-radius: 6px; }",
+      "fixedInTwin": "A 4 px radius, from the set."
+    },
+    {
+      "id": "d06",
+      "check": "radius-concentric",
+      "title": "Non-concentric corners",
+      "planted": "the inner box keeps the outer 12 px radius inside a 4 px inset; concentric is 8 px.",
+      "css": ".inner { border-radius: 12px; }",
+      "fixedInTwin": "The inner radius is 12 minus 4, so 8 px."
+    },
+    {
+      "id": "d07",
+      "check": "font-fallback",
+      "title": "Font fallback",
+      "planted": "the first family points at a file that does not exist, so the text falls back to a platform font.",
+      "css": "@font-face { font-family: \"Fixture Missing\"; src: url(\"missing-font.woff2\") format(\"woff2\"); }\n.d07 { font-family: \"Fixture Missing\", sans-serif; }",
+      "fixedInTwin": "The text is set in the loaded web font."
+    },
+    {
+      "id": "d08",
+      "check": "contrast",
+      "title": "Contrast against rendered pixels",
+      "planted": "white text over a light raster image. Its computed background is transparent, so only the rendered pixels show the problem.",
+      "css": ".photo p { color: #FFFFFF; }",
+      "fixedInTwin": "Dark text over the same light raster image."
+    },
+    {
+      "id": "d09",
+      "check": "target-size",
+      "title": "Target size",
+      "planted": "two 18 px icon buttons 4 px apart.",
+      "css": ".tools { gap: 4px; }\n.tools button { width: 18px; height: 18px; }\n.tools svg { width: 10px; height: 10px; }",
+      "fixedInTwin": "Two 44 px icon buttons 8 px apart."
+    },
+    {
+      "id": "d10",
+      "check": "overflow",
+      "title": "Page overflow at a narrow width",
+      "planted": "a box with a 336 px minimum width. At 320 px the page scrolls sideways; from 360 px it fits.",
+      "css": ".banner { min-width: 336px; }",
+      "fixedInTwin": "The box is never wider than its column."
+    },
+    {
+      "id": "d11",
+      "check": "overflow",
+      "title": "Text spilling out of its box",
+      "planted": "a long word that cannot break, in a 96 px box.",
+      "css": ".tag { overflow-wrap: normal; }",
+      "fixedInTwin": "The long word is allowed to break."
+    },
+    {
+      "id": "d12",
+      "check": "clipping",
+      "title": "Clipping at 200% text",
+      "planted": "a fixed 40 px height with overflow hidden. The text fits at the default text size and is cut off when the browser text size is doubled.",
+      "css": ".fixed { height: 40px; overflow: hidden; }",
+      "fixedInTwin": "A 40 px minimum height, so the box grows with the text."
+    },
+    {
+      "id": "d13",
+      "check": "overlap",
+      "title": "Overlapping text",
+      "planted": "a caption positioned 8 px down, over the line above it.",
+      "css": ".caption { position: absolute; top: 8px; left: 0; }",
+      "fixedInTwin": "The caption sits below the line, 8 px apart."
+    },
+    {
+      "id": "d15",
+      "check": "font-fallback",
+      "title": "Form control font",
+      "planted": "an empty text field left with the browser's own control font.",
+      "css": "#d15 input { font: revert; }",
+      "fixedInTwin": "The field inherits the page font."
+    },
+    {
+      "id": "d14",
+      "check": "hairline-subpixel",
+      "title": "Hairline off the pixel grid",
+      "planted": "a 1 px rule moved down half a pixel.",
+      "css": ".rule { transform: translateY(0.5px); }",
+      "fixedInTwin": "The rule sits on a whole pixel."
+    },
+    {
+      "id": "d16",
+      "check": "type-scale",
+      "title": "Undeclared fluid size",
+      "planted": "a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported.",
+      "css": "#d16 .lead { font-size: clamp(1rem, 0.875rem + 0.625vw, 1.125rem); line-height: 24px; }",
+      "fixedInTwin": "The lead is set at 16 px."
+    },
+    {
+      "id": "d17",
+      "check": "text-resize",
+      "title": "Text locked in px",
+      "planted": "a caption set at 14px, which stays 14 px when the reader doubles the browser text size.",
+      "css": "#d17 .fine-print { font-size: 14px; }",
+      "fixedInTwin": "The caption is set at 0.875rem, so it follows the setting."
+    }
+  ]
+}

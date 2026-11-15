@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector test print</title>
+<link rel="stylesheet" href="fixture.css">
+<style id="planted">
+/* One planted defect per section. fixtures/defects.json lists them. */
+/* d01 spacing-scale */
+.d01 { padding: 13px 16px; }
+/* d02 type-scale */
+.d02 .note { font-size: 0.875em; line-height: 20px; }
+/* d03 near-miss-edge */
+.d03 { position: relative; left: 2px; }
+/* d04 sibling-gaps */
+.list li:nth-child(3) { margin-top: 8px; }
+/* d05 radius */
+.d05 { border-radius: 6px; }
+/* d06 radius-concentric */
+.inner { border-radius: 12px; }
+/* d07 font-fallback */
+@font-face { font-family: "Fixture Missing"; src: url("missing-font.woff2") format("woff2"); }
+.d07 { font-family: "Fixture Missing", sans-serif; }
+/* d08 contrast */
+.photo p { color: #FFFFFF; }
+/* d09 target-size */
+.tools { gap: 4px; }
+.tools button { width: 18px; height: 18px; }
+.tools svg { width: 10px; height: 10px; }
+/* d10 overflow */
+.banner { min-width: 336px; }
+/* d11 overflow */
+.tag { overflow-wrap: normal; }
+/* d12 clipping */
+.fixed { height: 40px; overflow: hidden; }
+/* d13 overlap */
+.caption { position: absolute; top: 8px; left: 0; }
+/* d15 font-fallback */
+#d15 input { font: revert; }
+/* d14 hairline-subpixel */
+.rule { transform: translateY(0.5px); }
+/* d16 type-scale */
+#d16 .lead { font-size: clamp(1rem, 0.875rem + 0.625vw, 1.125rem); line-height: 24px; }
+/* d17 text-resize */
+#d17 .fine-print { font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Inspector test print</h1>
+    <p>Each section plants one defect for one inspector check. The clean twin, clean.html, is the same page with every defect fixed.</p>
+    <figure>
+      <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
+      <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
+      <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.</figcaption>
+    </figure>
+  </header>
+  <section id="d01">
+    <h2>Spacing off the scale</h2>
+    <p class="small">Planted: 13 px padding above and below the text. The scale has 12 and 16.</p>
+    <div class="tint d01">A padded box</div>
+  </section>
+  <section id="d02">
+    <h2>Compounded type size</h2>
+    <p class="small">Planted: 0.875em inside a 0.875rem parent, which renders at 12.25 px.</p>
+    <div class="d02"><p class="note">Small print in a smaller box.</p></div>
+  </section>
+  <section id="d03">
+    <h2>Near-miss edge</h2>
+    <p class="small">Planted: the next line starts 2 px to the right of the text above it.</p>
+    <p class="d03">This line should share the left edge.</p>
+  </section>
+  <section id="d04">
+    <h2>Unequal sibling gaps</h2>
+    <p class="small">Planted: the third item has an extra 8 px top margin, so the gaps run 8, 16, 8.</p>
+    <ul class="list"><li>First item</li><li>Second item</li><li>Third item</li><li>Fourth item</li></ul>
+  </section>
+  <section id="d05">
+    <h2>Radius off the set</h2>
+    <p class="small">Planted: a 6 px radius. The set is 4 and 12.</p>
+    <div class="tint d05">A rounded box</div>
+  </section>
+  <section id="d06">
+    <h2>Non-concentric corners</h2>
+    <p class="small">Planted: the inner box keeps the outer 12 px radius inside a 4 px inset; concentric is 8 px.</p>
+    <div class="outer"><div class="inner">A nested box</div></div>
+  </section>
+  <section id="d07">
+    <h2>Font fallback</h2>
+    <p class="small">Planted: the first family points at a file that does not exist, so the text falls back to a platform font.</p>
+    <p class="d07">This text should be in a web font.</p>
+  </section>
+  <section id="d08">
+    <h2>Contrast against rendered pixels</h2>
+    <p class="small">Planted: white text over a light raster image. Its computed background is transparent, so only the rendered pixels show the problem.</p>
+    <div class="photo"><canvas width="720" height="96" aria-hidden="true"></canvas><p>Text over an image</p></div>
+  </section>
+  <section id="d09">
+    <h2>Target size</h2>
+    <p class="small">Planted: two 18 px icon buttons 4 px apart.</p>
+    <div class="tools"><button type="button" aria-label="Add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></div>
+  </section>
+  <section id="d10">
+    <h2>Page overflow at a narrow width</h2>
+    <p class="small">Planted: a box with a 336 px minimum width. At 320 px the page scrolls sideways; from 360 px it fits.</p>
+    <div class="tint banner">A wide box</div>
+  </section>
+  <section id="d11">
+    <h2>Text spilling out of its box</h2>
+    <p class="small">Planted: a long word that cannot break, in a 96 px box.</p>
+    <div class="tag">Uncompromisingly</div>
+  </section>
+  <section id="d12">
+    <h2>Clipping at 200% text</h2>
+    <p class="small">Planted: a fixed 40 px height with overflow hidden. The text fits at the default text size and is cut off when the browser text size is doubled.</p>
+    <div class="fixed">Fits at 100%</div>
+  </section>
+  <section id="d13">
+    <h2>Overlapping text</h2>
+    <p class="small">Planted: a caption positioned 8 px down, over the line above it.</p>
+    <div class="stack"><p>A line of text</p><p class="caption">A caption</p></div>
+  </section>
+  <section id="d15">
+    <h2>Form control font</h2>
+    <p class="small">Planted: an empty text field left with the browser's own control font.</p>
+    <input type="text" aria-label="An empty field">
+  </section>
+  <section id="d14">
+    <h2>Hairline off the pixel grid</h2>
+    <p class="small">Planted: a 1 px rule moved down half a pixel.</p>
+    <div class="rule"></div>
+  </section>
+  <section id="d16">
+    <h2>Undeclared fluid size</h2>
+    <p class="small">Planted: a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported.</p>
+    <p class="lead">A lead paragraph that grows with the window.</p>
+  </section>
+  <section id="d17">
+    <h2>Text locked in px</h2>
+    <p class="small">Planted: a caption set at 14px, which stays 14 px when the reader doubles the browser text size.</p>
+    <p class="fine-print">Set in pixels, deaf to the reader.</p>
+  </section>
+</main>
+<script>
+  for (const c of document.querySelectorAll('.photo canvas')) {
+    const g = c.getContext('2d'), img = g.createImageData(c.width, c.height);
+    let s = 7;
+    for (let i = 0; i < img.data.length; i += 4) {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      const v = 226 + (s % 24);
+      img.data[i] = v; img.data[i + 1] = v - 2; img.data[i + 2] = v - 6; img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+</script>
+</body>
+</html>
