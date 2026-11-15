@@ -49,6 +49,14 @@ const S = [
   ['d29', 'hanging-punctuation', 'Punctuation that should hang', 'Planted: the opening quote sits inside the text edge, though the system hangs punctuation.', 'A negative text-indent pulls the quote into the margin.', `<p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters align.</p>`, `#d29 .quote { text-indent: 0; }`],
   ['d30', 'optical-margin', 'Optical edge of display type', 'Planted: the large O sits on the box edge, so its ink starts inside the edge of the text below.', 'The line is pulled left until the ink of the O meets the text edge, an optical adjustment.', `<p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
     <p>Hold the edge of this line against the round letter above.</p>`, `#d30 .hero { text-indent: 0; }`],
+  ['d31', 'motion-timing', 'Duration off the system', 'Planted: the hover transition runs 350 ms. The system has 100, 250 and 1000 ms.', 'The transition runs 250 ms with the standard easing, both from the system.', `<div class="tint lift">Hover to lift</div>`, `#d31 .lift { transition-duration: 350ms; }`],
+  ['d32', 'reduced-motion', 'Motion under Reduce Motion', 'Planted: the pulse keeps looping when the reader asks for reduced motion.', 'The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does.', `<div class="pulse" aria-hidden="true"></div>`, `@media (prefers-reduced-motion: reduce) { #d32 .pulse { animation: pulse 1000ms linear infinite alternate !important; } }`],
+  ['d33', 'motion-layout', 'Animated width', 'Planted: the hover transition animates width, so the page is laid out again on every frame.', 'The same growth as a scale transform.', `<div class="tint grow">Hover to widen</div>`, `#d33 .grow { transition-property: width; }\n#d33 .grow:hover { transform: none; width: 176px; }`],
+  ['d34', 'frame-timing', 'Dropped frames while scrolling', 'Planted: the box\'s scroll handler holds the main thread for 80 ms each time it fires.', 'The box has no scroll handler.', (clean) => `<div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>${clean ? '' : `
+    <script>
+      document.querySelector('#d34 .scroller').addEventListener('scroll', () => { const t = performance.now(); while (performance.now() - t < 80) { /* busy */ } });
+    </script>`}`, ''],
+  ['d35', 'flash', 'Flashing', 'Planted: the panel alternates dark and light every 100 ms, five flashes a second over its whole area.', 'The panel alternates once a second.', `<div class="strobe" aria-hidden="true"></div>`, `#d35 .strobe { animation-duration: 100ms; }`],
 ];
 // Distinct-value mode: the same idea, inspected without a system file.
 // Nothing says which fluid values are deliberate, so each fluid range must

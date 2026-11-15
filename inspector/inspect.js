@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { platform, release } from 'node:os';
 import { collect } from './collect.js';
 import { typography } from './typography.js';
+import { motionInit, motionReport } from './motion.js';
 import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { validate } from '../scripts/lib/schema.js';
@@ -46,6 +47,11 @@ export const CHECKS = {
   'text-wrap-pretty': { title: 'Short last lines', rule: 'CRF-23' },
   'hanging-punctuation': { title: 'Punctuation that should hang', rule: 'CRF-24' },
   'optical-margin': { title: 'Display type off its optical edge', rule: 'CRF-25 · CRF-04' },
+  'flash': { title: 'Flashing', rule: 'CRF-29 · MOT-09 · WCAG 2.3.1' },
+  'reduced-motion': { title: 'Motion under Reduce Motion', rule: 'CRF-18 · MOT-08' },
+  'motion-timing': { title: 'Durations and easings off the system', rule: 'CRF-26 · MOT-07' },
+  'motion-layout': { title: 'Animated layout properties', rule: 'CRF-27' },
+  'frame-timing': { title: 'Dropped frames', rule: 'CRF-28 · MOT-11' },
 };
 const SEVERITY = ['error', 'warning', 'info'];
 const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
@@ -241,6 +247,7 @@ export async function inspect(url, o = {}) {
   let cropCount = 0, idCount = 0;
   const failed = new Map();
   let watching = true;
+  let motion = null;
 
   const merge = async (page, raw, pass) => {
     if (raw.check === 'hairline-subpixel') await judgeHairline(page, raw, pass);
@@ -491,7 +498,11 @@ export async function inspect(url, o = {}) {
     }
     await ctx2.close();
 
-    // Pass set 4: WebKit and Firefox, light, a few widths, layout checks only.
+    // Pass set 4: motion, in Chromium at the last key width, with motion
+    // allowed and again with prefers-reduced-motion: reduce.
+    motion = await motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log);
+
+    // Pass set 5: WebKit and Firefox, light, a few widths, layout checks only.
     const engines = { widths: o.engineWidths ?? DEFAULT_WIDTHS, checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
     const pw = await import('playwright');
     for (const name of o.engines ?? ['webkit', 'firefox']) {
@@ -565,12 +576,13 @@ export async function inspect(url, o = {}) {
       coverage,
       notJudged: [
         `Insides of graphics: svg, canvas, img, video, iframe, object, embed, math, role="img", and everything in a figure except its figcaption. Their outer boxes are measured. Skipped on this page: ${coverage.graphics} graphics and ${coverage.figureParts} figure parts.`,
-        'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not rendered (CRF-15).',
+        'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not measured (CRF-15). Hover is used only to start transitions for the motion checks.',
         'Text drawn by ::before, ::after or ::marker, inside shadow DOM, or inside canvas and WebGL.',
-        'Icon optical centring and stroke weight (CRF-09, CRF-10), text-box trim (CRF-05) and motion (CRF-18).',
+        'Icon optical centring and stroke weight (CRF-09, CRF-10) and text-box trim (CRF-05).',
         'Moving backgrounds are sampled in two frames 400 ms apart, not at their worst frame.',
         `Fonts are judged against the fonts installed on this machine (${platform()}); another platform can fall back differently.`,
         'Layout checks run in the light scheme only; the dark scheme is checked for contrast and fonts.',
+        'Motion is recorded in Chromium at the last key width: animations running after load, transitions started by hovering each element that declares one, and frames while hovering and while scrolling the page and each scroll container by wheel. Focus, click and scripted interactions are not exercised, so motion they start is not judged.',
         'Typographic checks judge the lines Chromium draws; WebKit and Firefox break lines a little differently. Printed pages are not paginated, so orphans and widows across pages are not judged.',
       ],
       summary: {
@@ -584,6 +596,7 @@ export async function inspect(url, o = {}) {
       textScaling,
       engines,
       pageErrors: [...new Set(consoleErrors)].slice(0, 20),
+      motion,
       load: { networkIdle: loaded.networkIdle, waitFor: o.waitFor ?? null, waited: loaded.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()] },
       issues: list,
     };
@@ -818,6 +831,230 @@ async function fontIssues(cdp, page, res, system, renderedFonts) {
         push('error', 'local|' + key, `"${requested}" is neither loaded as a web font nor installed here; ${where} ${verb} in ${main.name}${hit ? `, the stack's later choice "${hit}"` : ', which the stack does not name'}.`, groupEls, n);
       }
     }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ motion
+// Easings compared as numbers: keywords become their cubic-bezier.
+const EASE_KEYWORDS = { ease: [0.25, 0.1, 0.25, 1], 'ease-in': [0.42, 0, 1, 1], 'ease-out': [0, 0, 0.58, 1], 'ease-in-out': [0.42, 0, 0.58, 1], linear: 'linear' };
+const easingOf = (v) => {
+  if (Array.isArray(v)) return v;
+  const t = String(v).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (t in EASE_KEYWORDS) return EASE_KEYWORDS[t];
+  const m = t.match(/^cubic-bezier\(([^)]*)\)$/);
+  return m ? m[1].split(',').map(Number) : t.replace(/\s*([(),])\s*/g, '$1');
+};
+const sameEasing = (a, b) => {
+  a = easingOf(a); b = easingOf(b);
+  if (Array.isArray(a) && Array.isArray(b)) return a.every((x, i) => Math.abs(x - b[i]) < 0.001);
+  return a === b;
+};
+// Properties that make the browser lay the page out again on every frame.
+const LAYOUT_PROPS = /^(width|height|min-width|min-height|max-width|max-height|top|right|bottom|left|inset.*|margin.*|padding.*|border(-(top|right|bottom|left))?-width|font-size|line-height|letter-spacing|word-spacing|gap|row-gap|column-gap|flex-basis|grid-template.*)$/;
+// Properties that move or resize something; colour and opacity do not.
+const MOVEMENT_PROPS = /^(transform|translate|rotate|scale|offset.*|background-position|perspective.*|scroll.*)$/;
+// WCAG 2.3.1: the general flash threshold applies to a combined area of
+// 25% of a 10° visual field, about 21,824 px² at 1024 × 768.
+const FLASH_AREA = 21824;
+
+async function motionPasses(browser, url, o, system, w, merge, log) {
+  const out = { width: w, animations: 0, durations: [], easings: [], frames: {} };
+  const runs = {};
+  for (const mode of ['motion', 'reduced']) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference' });
+    await ctx.addInitScript(motionInit);
+    const page = await ctx.newPage();
+    try {
+      await load(page, url, o);
+      const phase = (p) => page.evaluate((x) => window.__ittenMotion?.setPhase(x), p);
+      await phase('idle');
+      await page.waitForTimeout(mode === 'motion' ? 2000 : 1000);
+      // Hover every visible element that declares a transition.
+      const targets = await page.evaluate(() => {
+        const ms = (v) => Math.max(0, ...v.split(',').map((x) => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000)));
+        const out = [];
+        for (const el of document.body.querySelectorAll('*')) {
+          if (out.length >= 20) break;
+          if (el.closest('svg, canvas, [role="img"]')) continue;
+          const s = getComputedStyle(el);
+          const d = ms(s.transitionDuration) + ms(s.transitionDelay);
+          if (!(d > 0) || !el.getClientRects().length) continue;
+          out.push({ i: out.length, d: Math.min(d, 1000) });
+          el.setAttribute('data-itten-hover', String(out.length - 1));
+        }
+        return out;
+      });
+      const where = async (q) => page.evaluate((qs) => { const el = document.querySelector(qs); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }, q);
+      for (const t of targets) {
+        const at = await where(`[data-itten-hover="${t.i}"]`);
+        if (!at) continue;
+        await page.waitForTimeout(50);
+        await phase('hover:' + t.i);
+        await page.mouse.move(at[0], at[1]);
+        await page.waitForTimeout(t.d + 150);
+        await phase('unhover:' + t.i);
+        await page.mouse.move(1, 1);
+        await page.waitForTimeout(t.d + 100);
+      }
+      // Scroll the page and each scroll container by wheel, as a reader does.
+      if (mode === 'motion') {
+        const boxes = await page.evaluate(() => {
+          const out = [];
+          for (const el of document.body.querySelectorAll('*')) {
+            if (out.length >= 5) break;
+            const s = getComputedStyle(el);
+            if (!/(auto|scroll)/.test(s.overflowY) || el.scrollHeight <= el.clientHeight + 20 || !el.getClientRects().length) continue;
+            el.setAttribute('data-itten-scroll', String(out.length));
+            out.push(out.length);
+          }
+          return out;
+        });
+        for (const b of [null, ...boxes]) {
+          let at = [w / 2, VIEW_H / 2];
+          if (b !== null) { const c = await where(`[data-itten-scroll="${b}"]`); if (!c) continue; at = c; }
+          else await page.evaluate(() => scrollTo(0, 0));
+          await page.mouse.move(at[0], at[1]);
+          await page.waitForTimeout(100);
+          await phase('scroll:' + (b === null ? 'page' : b));
+          for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 240); await page.waitForTimeout(60); }
+          await page.waitForTimeout(300);
+          await phase('after-scroll');
+        }
+        await page.evaluate(() => scrollTo(0, 0));
+      }
+      await phase('done');
+      const rep = await page.evaluate(motionReport);
+      // Selectors for the phases' targets, without the inspector's own attributes.
+      const names = await page.evaluate(() => {
+        const sel = (el) => {
+          if (el.id && /^[A-Za-z][\w-]*$/.test(el.id) && document.querySelectorAll('#' + el.id).length === 1) return '#' + el.id;
+          if (el === document.body) return 'body';
+          const p = el.parentElement, same = p ? [...p.children].filter((c) => c.localName === el.localName) : [];
+          return (p ? sel(p) + ' > ' : '') + el.localName + (same.length > 1 ? `:nth-of-type(${same.indexOf(el) + 1})` : '');
+        };
+        const out = {};
+        for (const [attr, pre] of [['data-itten-hover', 'hover:'], ['data-itten-scroll', 'scroll:']]) {
+          for (const el of document.querySelectorAll(`[${attr}]`)) {
+            const r = el.getBoundingClientRect();
+            let t = (el.innerText || '').replace(/\s+/g, ' ').trim(); if (t.length > 40) t = t.slice(0, 39) + '…';
+            out[pre + el.getAttribute(attr)] = { sel: sel(el), label: el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (t ? ` "${t}"` : ''), rect: [r.left + scrollX, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 100) / 100) };
+            el.removeAttribute(attr);
+          }
+        }
+        out['scroll:page'] = { sel: 'html', label: 'the page', rect: [0, 0, innerWidth, innerHeight] };
+        return out;
+      });
+      runs[mode] = { rep, names };
+      const issues = judgeMotion(mode, rep, names, system);
+      const pass = { w, mode: mode === 'motion' ? 'motion' : 'reduced motion', label: `${w} px, ${mode === 'motion' ? 'motion' : 'reduced motion'}`, dpr: 1 };
+      for (const raw of issues) await merge(page, raw, pass);
+      log(`  ${pass.label}: ${rep ? rep.anims.length : 0} animations, ${issues.length} findings`);
+    } finally {
+      await ctx.close();
+    }
+  }
+  const rep = runs.motion?.rep;
+  if (rep) {
+    out.animations = rep.anims.length;
+    out.durations = [...new Set(rep.anims.map((a) => a.duration).filter((d) => d > 0))].sort((a, b) => a - b);
+    out.easings = [...new Set(rep.anims.filter((a) => a.duration > 0).map((a) => a.easing))].sort();
+    for (const [ph, ds] of Object.entries(rep.frames)) {
+      if (!/^(idle|hover|scroll)/.test(ph) || !ds.length) continue;
+      const k = /^hover/.test(ph) ? 'hover' : ph === 'idle' ? 'idle' : (runs.motion.names[ph]?.sel ?? ph);
+      (out.frames[k] ??= []).push(...ds);
+    }
+    for (const [k, ds] of Object.entries(out.frames)) out.frames[k] = frameStats(ds);
+  }
+  return out;
+}
+
+const frameStats = (ds) => {
+  const s = [...ds].sort((a, b) => a - b);
+  const q = (p) => Math.round(s[Math.min(s.length - 1, Math.floor(s.length * p))] * 10) / 10;
+  return { frames: s.length, p50: q(0.5), p95: q(0.95), max: Math.round(s.at(-1) * 10) / 10,
+    histogram: { '≤17 ms': s.filter((d) => d <= 17.5).length, '≤33 ms': s.filter((d) => d > 17.5 && d <= 34).length, '≤50 ms': s.filter((d) => d > 34 && d <= 50).length, '>50 ms': s.filter((d) => d > 50).length } };
+};
+
+function judgeMotion(mode, rep, names, system) {
+  if (!rep) return [];
+  const out = [];
+  const el = (a) => ({ sel: a.sel, label: a.label + (a.pseudo ? ` ${a.pseudo}` : ''), rect: a.rect });
+  const what = (a) => a.kind === 'CSSTransition' ? `The transition of ${a.name}` : a.kind === 'CSSAnimation' ? `The animation "${a.name}"` : `A scripted animation${a.name ? ` "${a.name}"` : ''}`;
+  const push = (check, severity, key, a, message) => { if (!a.ignore.includes(check)) out.push({ check, severity, key, count: 1, elements: [el(a)], marks: [], crop: 'each', message }); };
+  const anims = rep.anims.filter((a) => a.duration > 0);
+  if (mode === 'reduced') {
+    // Under Reduce Motion, movement becomes what the system says, and loops
+    // stop. Colour and opacity changes are not movement, except where the
+    // system says nothing is animated.
+    const rm = system?.motion?.reducedMotion ?? 'instant';
+    for (const a of anims) {
+      const moves = a.props.filter((p) => MOVEMENT_PROPS.test(p) || LAYOUT_PROPS.test(p));
+      const loop = a.iterations === Infinity;
+      if (!moves.length && !loop && rm !== 'none-animated') continue;
+      push('reduced-motion', 'warning', `${a.sel}|${a.pseudo}|${a.name}`, a, `${what(a)} still runs with prefers-reduced-motion: reduce${loop ? ', and loops without end' : ''}${moves.length ? `, moving ${moves.join(', ')}` : ''} (${a.duration} ms). The system says movement becomes ${rm === 'fade' ? 'a fade' : rm === 'instant' ? 'an instant change' : 'nothing animated'} under Reduce Motion: stop it in a prefers-reduced-motion: reduce query.`);
+    }
+    return out;
+  }
+  const durs = system ? Object.values(system.motion.durations) : null;
+  const eases = system ? Object.values(system.motion.easings) : null;
+  for (const a of anims) {
+    if (durs) {
+      const offD = !durs.some((d) => Math.abs(d - a.duration) <= 1);
+      const offE = !eases.some((e) => sameEasing(e, a.easing));
+      if (offD || offE) {
+        const names = (o, f) => Object.entries(o).map(([k, v]) => `${k} ${f(v)}`).join(', ');
+        push('motion-timing', 'warning', `${a.sel}|${a.pseudo}|${a.name}|${a.duration}|${a.easing}`, a, `${what(a)} runs ${a.duration} ms with ${a.easing}${offD && offE ? '; neither is' : offD ? '; the duration is not' : '; the easing is not'} in the system (durations: ${names(system.motion.durations, (v) => v + ' ms')}; easings: ${names(system.motion.easings, (v) => (Array.isArray(v) ? `cubic-bezier(${v.join(', ')})` : v))}).`);
+      }
+    }
+    const layout = a.props.filter((p) => LAYOUT_PROPS.test(p));
+    if (layout.length) {
+      push('motion-layout', 'warning', `${a.sel}|${a.pseudo}|${layout.join(',')}`, a, `${what(a)} animates ${layout.join(', ')}, so the browser lays the page out again on every frame (${a.duration} ms). Animate transform and opacity instead: scale or translate for size and position, clip-path for reveals.`);
+    }
+    // Flashing: luminance reversals of 10% or more, where the darker state
+    // is below 0.8, counted per second over the element's area.
+    const area = a.rect[2] * a.rect[3];
+    if (area >= FLASH_AREA && a.lums.length >= 2) {
+      const L = a.lums;
+      let changes = 0;
+      const flips = (x, y) => Math.abs(x - y) >= 0.1 && Math.min(x, y) < 0.8;
+      for (let i = 1; i < L.length; i++) if (flips(L[i - 1], L[i])) changes++;
+      if (!/alternate/.test(a.direction) && a.iterations > 1 && flips(L.at(-1), L[0])) changes++;
+      const perSecond = (changes * 1000) / a.duration / 2;
+      if (perSecond > 3) {
+        push('flash', 'error', `${a.sel}|${a.pseudo}|${a.name}`, a, `${what(a)} flashes ${Math.round(perSecond * 10) / 10} times a second over ${Math.round(area)} px², between relative luminances ${Math.round(Math.min(...L) * 100) / 100} and ${Math.round(Math.max(...L) * 100) / 100}. More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1). Slow it to one flash a second or less, or reduce the change in luminance.`);
+      }
+    }
+  }
+  // Flashing driven by script: class or style changes, with the luminance
+  // after each, counted in any one second.
+  for (const t of rep.toggles) {
+    const area = t.rect[2] * t.rect[3];
+    if (area < FLASH_AREA) continue;
+    let best = 0;
+    for (let i = 0; i < t.rec.length; i++) {
+      let n = 0;
+      for (let j = i + 1; j < t.rec.length && t.rec[j][0] - t.rec[i][0] <= 1000; j++) {
+        const [x, y] = [t.rec[j - 1][1], t.rec[j][1]];
+        if (Math.abs(x - y) >= 0.1 && Math.min(x, y) < 0.8) n++;
+      }
+      best = Math.max(best, n);
+    }
+    if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
+      message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
+  }
+  // Dropped frames while hovering or scrolling: frames over 50 ms, three
+  // or more frames of a 60 Hz display, are visible as a stall.
+  for (const [ph, ds] of Object.entries(rep.frames)) {
+    if (!/^(hover|scroll):/.test(ph)) continue;
+    const who = names[ph];
+    if (!who) continue;
+    const st = frameStats(ds);
+    const long = st.histogram['>50 ms'];
+    if (long < 3) continue;
+    const h = Object.entries(st.histogram).map(([k, v]) => `${k} ${v}`).join(', ');
+    out.push({ check: 'frame-timing', severity: 'warning', key: who.sel + '|' + ph.split(':')[0], count: long, elements: [who], marks: [], crop: 'each',
+      message: `While ${ph.startsWith('scroll') ? `scrolling ${who.sel === 'html' ? 'the page' : 'this container'}` : 'hovering this element'}, ${long} of ${st.frames} frames took over 50 ms (median ${st.p50} ms, 95th percentile ${st.p95} ms, longest ${st.max} ms; frame times ${h}). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.` });
   }
   return out;
 }

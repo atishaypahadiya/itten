@@ -62,6 +62,15 @@
 #d29 .quote { text-indent: 0; }
 /* d30 optical-margin */
 #d30 .hero { text-indent: 0; }
+/* d31 motion-timing */
+#d31 .lift { transition-duration: 350ms; }
+/* d32 reduced-motion */
+@media (prefers-reduced-motion: reduce) { #d32 .pulse { animation: pulse 1000ms linear infinite alternate !important; } }
+/* d33 motion-layout */
+#d33 .grow { transition-property: width; }
+#d33 .grow:hover { transform: none; width: 176px; }
+/* d35 flash */
+#d35 .strobe { animation-duration: 100ms; }
 </style>
 </head>
 <body>
@@ -223,6 +232,34 @@
     <p class="small">Planted: the large O sits on the box edge, so its ink starts inside the edge of the text below.</p>
     <p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
     <p>Hold the edge of this line against the round letter above.</p>
+  </section>
+  <section id="d31">
+    <h2>Duration off the system</h2>
+    <p class="small">Planted: the hover transition runs 350 ms. The system has 100, 250 and 1000 ms.</p>
+    <div class="tint lift">Hover to lift</div>
+  </section>
+  <section id="d32">
+    <h2>Motion under Reduce Motion</h2>
+    <p class="small">Planted: the pulse keeps looping when the reader asks for reduced motion.</p>
+    <div class="pulse" aria-hidden="true"></div>
+  </section>
+  <section id="d33">
+    <h2>Animated width</h2>
+    <p class="small">Planted: the hover transition animates width, so the page is laid out again on every frame.</p>
+    <div class="tint grow">Hover to widen</div>
+  </section>
+  <section id="d34">
+    <h2>Dropped frames while scrolling</h2>
+    <p class="small">Planted: the box's scroll handler holds the main thread for 80 ms each time it fires.</p>
+    <div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>
+    <script>
+      document.querySelector('#d34 .scroller').addEventListener('scroll', () => { const t = performance.now(); while (performance.now() - t < 80) { /* busy */ } });
+    </script>
+  </section>
+  <section id="d35">
+    <h2>Flashing</h2>
+    <p class="small">Planted: the panel alternates dark and light every 100 ms, five flashes a second over its whole area.</p>
+    <div class="strobe" aria-hidden="true"></div>
   </section>
 </main>
 <script>

@@ -6,7 +6,7 @@ Every value these rules refer to comes from the project's `itten.system.json` (`
 
 Strength follows `reference/README.md`. MUST: a violation is a defect. SHOULD: deviate only with a logged override (DEC-08). No rule here can lower an accessibility floor (`ITTEN.md`, precedence).
 
-Each rule names how it is verified: by an inspector check (`protocol/04-inspect.md`), or by a manual method where the inspector cannot judge. The inspector does not look inside `svg`, `canvas` or figure graphics, does not exercise hover, focus, active, disabled, empty, loading or error states, and does not judge icon centring, icon stroke, text-box trim or motion.
+Each rule names how it is verified: by an inspector check (`protocol/04-inspect.md`), or by a manual method where the inspector cannot judge. The inspector does not look inside `svg`, `canvas` or figure graphics, does not exercise focus, active, disabled, empty, loading or error states, and does not judge icon centring, icon stroke or text-box trim. It hovers elements only to record their transitions.
 
 ## Spacing and edges
 
@@ -193,11 +193,39 @@ Every pointer target is at least `targets.minimum` CSS px (never below 24) in bo
 ## Motion
 
 ### CRF-18 · Reduce Motion is honoured
-Strength: MUST · Verified by: manual: emulate `prefers-reduced-motion: reduce` (devtools Rendering panel, or a Playwright context with `reducedMotion: "reduce"`), record the page before and after, and confirm every movement follows `motion.reducedMotion`
+Strength: MUST · Verified by: `reduced-motion` (inspector); manual: motion started by focus, clicks or scripts, under emulated `prefers-reduced-motion: reduce`, recorded before and after
 
 Under `prefers-reduced-motion: reduce`, movement along x, y and z becomes what `motion.reducedMotion` says (a fade, an instant change, or nothing animated). Parallax, autoplaying loops, smooth scrolling and bounce stop. Nothing is communicated only by motion.
 
 *Why:* large and repeated movement causes dizziness and nausea for some people, and some cannot perceive motion at all. Cites: MOT-08, MOT-02, MOT-01; Media Queries Level 5 (`prefers-reduced-motion`); WCAG 2.2 SC 2.3.3.
+
+### CRF-26 · Durations and easings come from the system
+Strength: MUST · Verified by: `motion-timing` (inspector)
+
+Every transition and animation runs for one of the durations in `motion.durations` and with one of the easings in `motion.easings`. Distance and size set which duration (MOT-07); frequent interactions use the shortest (MOT-05).
+
+*Why:* motion built from a few named timings reads as one hand at work; a 350 ms transition beside a 250 ms one reads as an accident, as 13 px beside 12 px does. Cites: MOT-05, MOT-07.
+
+### CRF-27 · Animate transform and opacity, not layout
+Strength: SHOULD · Verified by: `motion-layout` (inspector)
+
+Movement and growth are animated with `transform` (translate, scale, rotate) and `opacity`, and reveals with `clip-path`. Width, height, top, left, margin, padding and font size are not animated: each frame of them makes the browser lay the page out again.
+
+*Why:* layout on every frame competes with everything else on the main thread and drops frames on slower devices. Cites: MOT-11; web.dev, ["How to create high-performance CSS animations"](https://web.dev/articles/animations-guide) and ["Rendering performance"](https://web.dev/articles/rendering-performance).
+
+### CRF-28 · Frames hold steady while scrolling and moving
+Strength: SHOULD · Verified by: `frame-timing` (inspector); manual: a performance recording on a slower device
+
+Scrolling, hovering and every transition hold the display's frame rate. No scroll or pointer handler does heavy work on every event; work that must follow the scroll uses `requestAnimationFrame`, a passive listener or an `IntersectionObserver`.
+
+*Why:* a stall of three frames or more reads as jitter, the plainest mark of rushed work. Cites: MOT-11.
+
+### CRF-29 · Nothing flashes more than three times a second
+Strength: MUST · Verified by: `flash` (inspector)
+
+No content flashes more than three times in any one second, unless the flash is below the general and red flash thresholds: small (under about 21,824 px² at 1024 × 768) or a change in luminance under 10%.
+
+*Why:* flashing in that range can trigger seizures. Cites: MOT-09; [WCAG 2.2 SC 2.3.1](https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html).
 
 ## Text details
 
@@ -275,7 +303,7 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 | CRF-15 | Every state designed | manual: state sheet, also inspected | |
 | CRF-16 | No overflow, clipping or overlap | `overflow`, `clipping`, `overlap`; manual: 1.4.12 overrides | |
 | CRF-17 | Target size | `target-size` | |
-| CRF-18 | Reduce Motion honoured | manual: emulated reduced motion, before and after | |
+| CRF-18 | Reduce Motion honoured | `reduced-motion`; manual: motion started by focus, clicks or scripts | |
 | CRF-19 | Tabular figures where numbers align or change | manual: 1111 / 0000 test, `tnum` present | |
 | CRF-20 | Correct typographic characters | manual: text search | |
 | CRF-21 | No widows or orphans | `widow`, `orphan`; manual: printed pages | |
@@ -283,6 +311,10 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 | CRF-23 | Headings balanced, paragraphs pretty | `text-wrap-balance`, `text-wrap-pretty` | |
 | CRF-24 | Hanging punctuation where declared | `hanging-punctuation` | |
 | CRF-25 | Display type aligned by its ink | `optical-margin`; manual: 400% crop | |
+| CRF-26 | Durations and easings from the system | `motion-timing` | |
+| CRF-27 | Transform and opacity, not layout | `motion-layout` | |
+| CRF-28 | Steady frames | `frame-timing`; manual: slower device | |
+| CRF-29 | No flashing above three a second | `flash` | |
 
 ## Sources
 

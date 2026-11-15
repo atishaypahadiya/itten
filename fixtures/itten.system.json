@@ -35,7 +35,7 @@
       { "fg": "text", "bg": "tint", "min": 4.5, "use": "body" }
     ]
   },
-  "motion": { "durations": { "none": 0 }, "easings": { "linear": "linear" }, "reducedMotion": "instant" },
+  "motion": { "durations": { "none": 0, "brief": 100, "standard": 250, "slow": 1000 }, "easings": { "linear": "linear", "standard": [0.2, 0, 0, 1] }, "reducedMotion": "instant" },
   "targets": { "minimum": 24, "comfortable": 44 },
   "hairline": { "width": 1, "dpr": [1, 2] }
 }

@@ -228,6 +228,46 @@
       "planted": "the large O sits on the box edge, so its ink starts inside the edge of the text below.",
       "css": "#d30 .hero { text-indent: 0; }",
       "fixedInTwin": "The line is pulled left until the ink of the O meets the text edge, an optical adjustment."
+    },
+    {
+      "id": "d31",
+      "check": "motion-timing",
+      "title": "Duration off the system",
+      "planted": "the hover transition runs 350 ms. The system has 100, 250 and 1000 ms.",
+      "css": "#d31 .lift { transition-duration: 350ms; }",
+      "fixedInTwin": "The transition runs 250 ms with the standard easing, both from the system."
+    },
+    {
+      "id": "d32",
+      "check": "reduced-motion",
+      "title": "Motion under Reduce Motion",
+      "planted": "the pulse keeps looping when the reader asks for reduced motion.",
+      "css": "@media (prefers-reduced-motion: reduce) { #d32 .pulse { animation: pulse 1000ms linear infinite alternate !important; } }",
+      "fixedInTwin": "The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does."
+    },
+    {
+      "id": "d33",
+      "check": "motion-layout",
+      "title": "Animated width",
+      "planted": "the hover transition animates width, so the page is laid out again on every frame.",
+      "css": "#d33 .grow { transition-property: width; }\n#d33 .grow:hover { transform: none; width: 176px; }",
+      "fixedInTwin": "The same growth as a scale transform."
+    },
+    {
+      "id": "d34",
+      "check": "frame-timing",
+      "title": "Dropped frames while scrolling",
+      "planted": "the box's scroll handler holds the main thread for 80 ms each time it fires.",
+      "markup": "<div class=\"scroller\" tabindex=\"0\" aria-label=\"A scrolling box\"><div class=\"scroller-content\"></div></div>\n    <script>\n      document.querySelector('#d34 .scroller').addEventListener('scroll', () => { const t = performance.now(); while (performance.now() - t < 80) { /* busy */ } });\n    </script>",
+      "fixedInTwin": "The box has no scroll handler."
+    },
+    {
+      "id": "d35",
+      "check": "flash",
+      "title": "Flashing",
+      "planted": "the panel alternates dark and light every 100 ms, five flashes a second over its whole area.",
+      "css": "#d35 .strobe { animation-duration: 100ms; }",
+      "fixedInTwin": "The panel alternates once a second."
     }
   ],
   "distinct": {

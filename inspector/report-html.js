@@ -31,6 +31,17 @@ function engineSection(r) {
   </section>`;
 }
 
+function motionSection(r) {
+  const m = r.motion;
+  if (!m) return '';
+  const rows = Object.entries(m.frames).map(([k, f]) => `<tr><td>${esc(k === 'idle' ? 'idle, after load' : k === 'hover' ? 'hovering' : k === 'html' ? 'scrolling the page' : 'scrolling ' + k)}</td><td class="n">${f.frames}</td><td class="n">${f.p50}</td><td class="n">${f.p95}</td><td class="n">${f.max}</td><td class="n">${f.histogram['>50 ms']}</td></tr>`).join('');
+  return `<section>
+    <h2>Motion</h2>
+    <p>Recorded at ${m.width} px: ${m.animations} animations and transitions. Durations in use: ${m.durations.length ? esc(m.durations.join(', ')) + ' ms' : 'none'}. Easings: ${m.easings.length ? m.easings.map((e) => `<code>${esc(e)}</code>`).join(', ') : 'none'}. Frame times below are in ms; at 60 Hz a frame is 16.7 ms.</p>
+    ${rows ? `<table><thead><tr><th>Frames while</th><th class="n">Frames</th><th class="n">Median</th><th class="n">95th</th><th class="n">Longest</th><th class="n">Over 50</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+  </section>`;
+}
+
 export function renderHtml(r) {
   const checks = Object.entries(r.summary.byCheck).filter(([, c]) => c.error + c.warning + c.info);
   const table = checks.length ? `
@@ -96,7 +107,7 @@ export function renderHtml(r) {
   <h1>Inspection report</h1>
   <p><a href="${esc(r.url)}">${esc(r.url)}</a></p>
   <p class="meta">${esc(r.date)} · ${esc(r.environment.browser)} on ${esc(r.environment.platform)} · ${r.mode === 'system' ? `checked against <code>${esc(r.system)}</code>` : 'no system file: distinct-value mode'}</p>
-  <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×.</p>
+  <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×; motion at the last key width, with and without reduced motion.</p>
   ${table}
   ${sections}
   <section>
@@ -116,6 +127,7 @@ export function renderHtml(r) {
     <ul>${r.renderedFonts.map((f) => `<li><code>${esc(f.requested)}</code> ${esc(f.weight)}${f.style !== 'normal' ? ' ' + esc(f.style) : ''}: ${esc(f.rendered.join('; '))}</li>`).join('')}</ul>
     ${ts ? `<p>At ${ts.width} px with the browser's text size doubled, ${ts.unchanged} of ${ts.measured} text elements kept their size, which means they are set in px and ignore the setting.</p>` : ''}
   </section>
+  ${motionSection(r)}
   ${engineSection(r)}
   <section>
     <h2>Coverage</h2>

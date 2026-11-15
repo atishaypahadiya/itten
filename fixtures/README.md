@@ -7,7 +7,7 @@ A test print for the inspector, in the way a 3D printer's calibration model exer
 - `itten.system.json` is the system both pages are built to.
 - `defects.json` lists the planted defects; `make.js` writes the two pages and `defects.json` from one table, so they cannot drift apart. Edit `make.js`, then run `node fixtures/make.js`.
 
-Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure.
+Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure. Every animation and transition uses the system's durations and easings and stops under `prefers-reduced-motion: reduce`; d31 to d35 each break one of these.
 
 ## Planted defects
 
@@ -41,6 +41,11 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 | d28 | `hyphenation` | justified text in a narrow measure with hyphenation off, so the word spaces stretch. | The same text with hyphens: auto, as on every paragraph. |
 | d29 | `hanging-punctuation` | the opening quote sits inside the text edge, though the system hangs punctuation. | A negative text-indent pulls the quote into the margin. |
 | d30 | `optical-margin` | the large O sits on the box edge, so its ink starts inside the edge of the text below. | The line is pulled left until the ink of the O meets the text edge, an optical adjustment. |
+| d31 | `motion-timing` | the hover transition runs 350 ms. The system has 100, 250 and 1000 ms. | The transition runs 250 ms with the standard easing, both from the system. |
+| d32 | `reduced-motion` | the pulse keeps looping when the reader asks for reduced motion. | The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does. |
+| d33 | `motion-layout` | the hover transition animates width, so the page is laid out again on every frame. | The same growth as a scale transform. |
+| d34 | `frame-timing` | the box's scroll handler holds the main thread for 80 ms each time it fires. | The box has no scroll handler. |
+| d35 | `flash` | the panel alternates dark and light every 100 ms, five flashes a second over its whole area. | The panel alternates once a second. |
 
 ## Without a system
 
@@ -62,4 +67,4 @@ node scripts/fixture-test.js --full   # 41 widths, a minute or two
 
 A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
-Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 30 of 30 and precision 34 of 34, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 34 findings for 30 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.
+Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 35 of 35 and precision 39 of 39, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 39 findings for 35 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.

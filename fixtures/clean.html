@@ -166,6 +166,31 @@
     <p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
     <p>Hold the edge of this line against the round letter above.</p>
   </section>
+  <section id="d31">
+    <h2>Duration off the system</h2>
+    <p class="small">The transition runs 250 ms with the standard easing, both from the system.</p>
+    <div class="tint lift">Hover to lift</div>
+  </section>
+  <section id="d32">
+    <h2>Motion under Reduce Motion</h2>
+    <p class="small">The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does.</p>
+    <div class="pulse" aria-hidden="true"></div>
+  </section>
+  <section id="d33">
+    <h2>Animated width</h2>
+    <p class="small">The same growth as a scale transform.</p>
+    <div class="tint grow">Hover to widen</div>
+  </section>
+  <section id="d34">
+    <h2>Dropped frames while scrolling</h2>
+    <p class="small">The box has no scroll handler.</p>
+    <div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>
+  </section>
+  <section id="d35">
+    <h2>Flashing</h2>
+    <p class="small">The panel alternates once a second.</p>
+    <div class="strobe" aria-hidden="true"></div>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {
