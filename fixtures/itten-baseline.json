@@ -1,0 +1,487 @@
+{
+  "tool": "itten-inspector",
+  "note": "Known findings per page. Written by inspect.js --write-baseline; compared by --baseline and the ITTEN action.",
+  "pages": {
+    "/fixtures/clean.html": {
+      "date": "2026-11-15T14:08:59.627Z",
+      "version": "0.2.0",
+      "system": "fixtures/itten.system.json",
+      "widths": "320, 768, 1440, 1920",
+      "findings": []
+    },
+    "/fixtures/distinct-clean.html": {
+      "date": "2026-11-15T14:09:49.282Z",
+      "version": "0.2.0",
+      "system": null,
+      "widths": "320, 768, 1440, 1920",
+      "findings": []
+    },
+    "/fixtures/distinct.html": {
+      "date": "2026-11-15T14:09:24.288Z",
+      "version": "0.2.0",
+      "system": null,
+      "widths": "320, 768, 1440, 1920",
+      "findings": [
+        {
+          "fingerprint": "spacing-scale|fluid|16,31,56,56",
+          "check": "spacing-scale",
+          "severity": "info",
+          "message": "padding-right, padding-left on 1 element scale with the viewport, from 16 px at 320 px wide to 56 px at 1440 px wide (3 values across the sweep, counted as one range in the totals). A fluid range, listed for the record. With a system file it is checked against the spacing scale; a deliberate range is logged as an override.",
+          "elements": [
+            "#d22 > div"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|fluid|30,30.43,42,42",
+          "check": "type-scale",
+          "severity": "info",
+          "message": "The font size of 1 text element scales with the viewport, from 30 px at 320 px wide to 42 px at 1440 px wide (3 values across the sweep, counted as one range in the totals). A fluid range, listed for the record. A system file can declare it as a fluid step.",
+          "elements": [
+            "#d21 > p:nth-of-type(2)"
+          ]
+        }
+      ]
+    },
+    "/fixtures/index.html": {
+      "date": "2026-11-15T14:08:09.958Z",
+      "version": "0.2.0",
+      "system": "fixtures/itten.system.json",
+      "widths": "320, 768, 1440, 1920",
+      "findings": [
+        {
+          "fingerprint": "page-load|requests",
+          "check": "page-load",
+          "severity": "error",
+          "message": "2 requests failed while the page was measured: GET http://127.0.0.1:55062/fixtures/missing-font.woff2 (font, HTTP 404); GET http://127.0.0.1:55062/fixtures/d19-missing.json (fetch, HTTP 404). What was measured may be the page's error state. Fix the requests, then inspect again.",
+          "elements": []
+        },
+        {
+          "fingerprint": "contrast|#d08 > div > p",
+          "check": "contrast",
+          "severity": "error",
+          "message": "Text measures 1.22:1 against the pixels behind it (needs 4.5:1). Text #FFFFFF over about #EAE8E4; worst sample 1.14:1.",
+          "elements": [
+            "#d08 > div > p"
+          ]
+        },
+        {
+          "fingerprint": "font-fallback|failed|\"Fixture Missing\", sans-serif|400|normal",
+          "check": "font-fallback",
+          "severity": "error",
+          "message": "Web font \"Fixture Missing\" failed to load; 1 text element at weight 400 renders in Helvetica instead.",
+          "elements": [
+            "#d07 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "overflow|page|#d10 > div",
+          "check": "overflow",
+          "severity": "error",
+          "message": "Sticks out 32 px past the right edge; the page scrolls sideways (WCAG 1.4.10, LAY-03).",
+          "elements": [
+            "#d10 > div"
+          ]
+        },
+        {
+          "fingerprint": "overflow|spill|#d11 > div",
+          "check": "overflow",
+          "severity": "error",
+          "message": "Text spills 26.64 px out of its own box.",
+          "elements": [
+            "#d11 > div"
+          ]
+        },
+        {
+          "fingerprint": "clipping|clip|#d12 > div",
+          "check": "clipping",
+          "severity": "error",
+          "message": "Text is cut off by its own box (overflow: hidden).",
+          "elements": [
+            "#d12 > div"
+          ]
+        },
+        {
+          "fingerprint": "overlap|#d13 > div > p:nth-of-type(1) | #d13 > div > p:nth-of-type(2)",
+          "check": "overlap",
+          "severity": "error",
+          "message": "Text overlaps other text: p \"A line of text\" and p.caption \"A caption\".",
+          "elements": [
+            "#d13 > div > p:nth-of-type(1)",
+            "#d13 > div > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "target-size|#d09 > div > button:nth-of-type(1)",
+          "check": "target-size",
+          "severity": "error",
+          "message": "Target 18 × 18 px is below the 24 px minimum, and button \"Remove\" is too close for the spacing exception (WCAG 2.5.8, INT-02).",
+          "elements": [
+            "#d09 > div > button:nth-of-type(1)",
+            "#d09 > div > button:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "target-size|#d09 > div > button:nth-of-type(2)",
+          "check": "target-size",
+          "severity": "error",
+          "message": "Target 18 × 18 px is below the 24 px minimum, and button \"Add\" is too close for the spacing exception (WCAG 2.5.8, INT-02).",
+          "elements": [
+            "#d09 > div > button:nth-of-type(2)",
+            "#d09 > div > button:nth-of-type(1)"
+          ]
+        },
+        {
+          "fingerprint": "flash|#d35 > div|null|strobe",
+          "check": "flash",
+          "severity": "error",
+          "message": "The animation \"strobe\" flashes 5 times a second over 55040 px², between relative luminances 0.01 and 1. More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1). Slow it to one flash a second or less, or reduce the change in luminance.",
+          "elements": [
+            "#d35 > div"
+          ]
+        },
+        {
+          "fingerprint": "page-load|late",
+          "check": "page-load",
+          "severity": "warning",
+          "message": "1 element appeared 0.5 s after measuring began, so 1 pass measured the page without it (320 px, light). The page was still drawing: a timer, an animation-frame chain or a slow request. Pass --wait-for with a selector for what appears last, or --settle with a wait in ms. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore=\"page-load\".",
+          "elements": [
+            "#d20 > div > p"
+          ]
+        },
+        {
+          "fingerprint": "font-fallback|control|Arial|13.3333px",
+          "check": "font-fallback",
+          "severity": "warning",
+          "message": "1 form control (input[type=text]) computed in Arial at 13.3333px, not the page's \"Atkinson Hyperlegible Next\", sans-serif. Browsers give controls their own font unless the stylesheet sets font: inherit; it shows as soon as there is text, a value or a placeholder.",
+          "elements": [
+            "#d15 > input"
+          ]
+        },
+        {
+          "fingerprint": "font-fallback|system|Fixture Missing",
+          "check": "font-fallback",
+          "severity": "warning",
+          "message": "\"Fixture Missing\" is requested but is not one of the system's families; 1 text element at weight 400.",
+          "elements": [
+            "#d07 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "spacing-scale|fixed|13",
+          "check": "spacing-scale",
+          "severity": "warning",
+          "message": "13 px is not on the spacing scale (nearest 12 or 16 px); used 2 times as padding-top, padding-bottom.",
+          "elements": [
+            "#d01 > div"
+          ]
+        },
+        {
+          "fingerprint": "spacing-scale|fluid|16,38.4,48,48",
+          "check": "spacing-scale",
+          "severity": "warning",
+          "message": "padding-right, padding-left on 1 element scale with the viewport, from 16 to 48 px across the sweep: 3 distinct values, 1 fractional, 1 off the spacing scale. Fluid values land between steps at most widths; snap them to the scale at breakpoints, or log the fluid range as an override.",
+          "elements": [
+            "#d40 > div"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|fixed|12.25",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "Font size 12.25 px is not on the type scale (nearest 14 px) and is fractional; on 1 text element.",
+          "elements": [
+            "#d02 > div > p"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|fixed|18",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "Font size 18 px is not on the type scale (nearest 16 or 24 px); on 1 text element.",
+          "elements": [
+            "#d16 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|step|16|500|text",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "16 px at weight 500 in Atkinson Hyperlegible Next (text) matches no step: no step at this size has this weight. The steps at 16 px are \"body\" (weight 400), \"label\" (weight 600); on 1 text element. Use a step's weight and family, or add the step to the system.",
+          "elements": [
+            "#d37 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|step|24|400|text",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "24 px at weight 400 in Atkinson Hyperlegible Next (text) matches no step: the steps at this size with this weight are set in a family of another role. The steps at 24 px are \"title\" (weight 600), \"quote\" (weight 400, Bodoni Moda); on 1 text element. Use a step's weight and family, or add the step to the system.",
+          "elements": [
+            "#d38 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|lh|16/22",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "Line height 22 px at 16 px; the \"label\" step (weight 600) sets 20 px; on 1 text element.",
+          "elements": [
+            "#d18 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "type-scale|lh|16/20",
+          "check": "type-scale",
+          "severity": "warning",
+          "message": "Line height 20 px at 16 px; the \"body\" step (weight 400) sets 24 px; on 1 text element.",
+          "elements": [
+            "#d36 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "text-resize|all",
+          "check": "text-resize",
+          "severity": "warning",
+          "message": "1 of 129 text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: 14 px (1). Set font sizes in rem, or give clamp() rem limits.",
+          "elements": [
+            "#d17 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "spacing-unit|px|12",
+          "check": "spacing-unit",
+          "severity": "warning",
+          "message": "12 px of padding-top, padding-bottom stays 12 px when the browser's text size is doubled, on 1 element: it is set in px, so the text grows and the gap does not. Set spacing in rem, the unit of the type (0.75rem at the default 16 px).",
+          "elements": [
+            "#d39 > div"
+          ]
+        },
+        {
+          "fingerprint": "spacing-unit|px|16",
+          "check": "spacing-unit",
+          "severity": "warning",
+          "message": "16 px of padding-right, padding-left stays 16 px when the browser's text size is doubled, on 1 element: it is set in px, so the text grows and the gap does not. Set spacing in rem, the unit of the type (1rem at the default 16 px).",
+          "elements": [
+            "#d39 > div"
+          ]
+        },
+        {
+          "fingerprint": "near-miss-edge|#d03 > h2 | #d03 > p:nth-of-type(2)|l",
+          "check": "near-miss-edge",
+          "severity": "warning",
+          "message": "Left edges 2 px apart: h2 \"Near-miss edge\" at 16, p.d03 \"This line should share the left edge.\" at 18. Share the edge, or log the optical offset.",
+          "elements": [
+            "#d03 > h2",
+            "#d03 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "near-miss-edge|#d03 > p:nth-of-type(1) | #d03 > p:nth-of-type(2)|l",
+          "check": "near-miss-edge",
+          "severity": "warning",
+          "message": "Left edges 2 px apart: p.small \"Planted: the next line starts 2 px to t…\" at 16, p.d03 \"This line should share the left edge.\" at 18. Share the edge, or log the optical offset.",
+          "elements": [
+            "#d03 > p:nth-of-type(1)",
+            "#d03 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "near-miss-edge|#d03 > p:nth-of-type(2) | #d04 > h2|l",
+          "check": "near-miss-edge",
+          "severity": "warning",
+          "message": "Left edges 2 px apart: h2 \"Unequal sibling gaps\" at 16, p.d03 \"This line should share the left edge.\" at 18. Share the edge, or log the optical offset.",
+          "elements": [
+            "#d04 > h2",
+            "#d03 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "sibling-gaps|#d04 > ul|vertical|#d04 > ul > li:nth-of-type(1)",
+          "check": "sibling-gaps",
+          "severity": "warning",
+          "message": "Vertical gaps between 4 li siblings in ul.list \"First item Second item Third item Fourt…\" are 8, 16, 8 px.",
+          "elements": [
+            "#d04 > ul",
+            "#d04 > ul > li:nth-of-type(1)",
+            "#d04 > ul > li:nth-of-type(2)",
+            "#d04 > ul > li:nth-of-type(3)",
+            "#d04 > ul > li:nth-of-type(4)"
+          ]
+        },
+        {
+          "fingerprint": "radius|6",
+          "check": "radius",
+          "severity": "warning",
+          "message": "Radius 6 px is not in the radius set (4, 12 px) and is not a concentric derivation; on 1 element.",
+          "elements": [
+            "#d05 > div"
+          ]
+        },
+        {
+          "fingerprint": "radius-concentric|#d06 > div > div",
+          "check": "radius-concentric",
+          "severity": "warning",
+          "message": "Corner radius 12 px sits 4 px inside a 12 px corner of div.outer \"A nested box\"; concentric would be 8 px (SHP-01).",
+          "elements": [
+            "#d06 > div > div",
+            "#d06 > div"
+          ]
+        },
+        {
+          "fingerprint": "hairline-subpixel|div.rule",
+          "check": "hairline-subpixel",
+          "severity": "warning",
+          "message": "A hairline off the device-pixel grid at 1×: top border at 3752.5 px, 1 px wide. As rendered: Chromium blurs the line across two pixels (4 of 4 samples); WebKit blurs the line across two pixels (4 of 4 samples).",
+          "elements": [
+            "#d14 > div"
+          ]
+        },
+        {
+          "fingerprint": "widow|#d23 > p:nth-of-type(2)",
+          "check": "widow",
+          "severity": "warning",
+          "message": "The last line holds one word, \"sometimes.\", under 1 full line, with text-wrap: pretty set. Change the measure or the copy, or join the last two words with a no-break space.",
+          "elements": [
+            "#d23 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "orphan|#d24 > div > p:nth-of-type(2)",
+          "check": "orphan",
+          "severity": "warning",
+          "message": "The paragraph breaks across 2 columns as 1 + 4 lines, leaving one line at the foot of a column. Keep at least two lines on each side: orphans and widows of 2, the default, or break-inside: avoid.",
+          "elements": [
+            "#d24 > div > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "rag|#d25 > p:nth-of-type(2)",
+          "check": "rag",
+          "severity": "warning",
+          "message": "Line 2 of 7 ends 46% short of the measure, a hole in the rag. With hyphens: auto the deepest hole would be 13%.",
+          "elements": [
+            "#d25 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "hyphenation|#d28 > p:nth-of-type(2)",
+          "check": "hyphenation",
+          "severity": "warning",
+          "message": "Justified text, about 31 characters a line, without hyphenation: on line 1 the word spaces stretch to 2.6 times their natural width. Set hyphens: auto, or set the text ragged.",
+          "elements": [
+            "#d28 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "hanging-punctuation|#d29 > p:nth-of-type(2)",
+          "check": "hanging-punctuation",
+          "severity": "warning",
+          "message": "The opening “ sits inside the measure (0 of its 6.4 px outside the text edge). The system hangs punctuation: pull it into the margin, for example with text-indent: -0.4em.",
+          "elements": [
+            "#d29 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "reduced-motion|#d32 > div|null|pulse",
+          "check": "reduced-motion",
+          "severity": "warning",
+          "message": "The animation \"pulse\" still runs with prefers-reduced-motion: reduce, and loops without end (1000 ms). The system says movement becomes an instant change under Reduce Motion: stop it in a prefers-reduced-motion: reduce query.",
+          "elements": [
+            "#d32 > div"
+          ]
+        },
+        {
+          "fingerprint": "motion-timing|#d31 > div:nth-of-type(1)|null|transform|350|cubic-bezier(0.2, 0, 0, 1)",
+          "check": "motion-timing",
+          "severity": "warning",
+          "message": "The transition of transform runs 350 ms with cubic-bezier(0.2, 0, 0, 1); the duration is not in the system (durations: none 0 ms, brief 100 ms, standard 250 ms, slow 1000 ms; easings: linear linear, standard cubic-bezier(0.2, 0, 0, 1)).",
+          "elements": [
+            "#d31 > div:nth-of-type(1)"
+          ]
+        },
+        {
+          "fingerprint": "motion-timing|#d42 > button|null|box-shadow|400|cubic-bezier(0.2, 0, 0, 1)",
+          "check": "motion-timing",
+          "severity": "warning",
+          "message": "The transition of box-shadow runs 400 ms with cubic-bezier(0.2, 0, 0, 1); the duration is not in the system (durations: none 0 ms, brief 100 ms, standard 250 ms, slow 1000 ms; easings: linear linear, standard cubic-bezier(0.2, 0, 0, 1)).",
+          "elements": [
+            "#d42 > button"
+          ]
+        },
+        {
+          "fingerprint": "motion-layout|#d33 > div|null|width",
+          "check": "motion-layout",
+          "severity": "warning",
+          "message": "The transition of width animates width, so the browser lays the page out again on every frame (250 ms). Animate transform and opacity instead: scale or translate for size and position, clip-path for reveals.",
+          "elements": [
+            "#d33 > div"
+          ]
+        },
+        {
+          "fingerprint": "motion-layout|#d43 > button|null|margin-left",
+          "check": "motion-layout",
+          "severity": "warning",
+          "message": "The transition of margin-left animates margin-left, so the browser lays the page out again on every frame (250 ms). Animate transform and opacity instead: scale or translate for size and position, clip-path for reveals.",
+          "elements": [
+            "#d43 > button"
+          ]
+        },
+        {
+          "fingerprint": "frame-timing|#d34 > div|scroll|1",
+          "check": "frame-timing",
+          "severity": "warning",
+          "message": "While scrolling this container, 10 of 44 frames took over 50 ms (median 16.7 ms, 95th percentile 83.4 ms, longest 83.4 ms; frame times ≤17 ms 34, ≤33 ms 0, ≤50 ms 0, >50 ms 10). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.",
+          "elements": [
+            "#d34 > div"
+          ]
+        },
+        {
+          "fingerprint": "frame-timing|#d34 > div|scroll|4",
+          "check": "frame-timing",
+          "severity": "warning",
+          "message": "While scrolling this container, with the CPU slowed 4 times as on a mid-range phone, 10 of 42 frames took over 50 ms (median 16.7 ms, 95th percentile 83.3 ms, longest 83.4 ms; frame times ≤17 ms 32, ≤33 ms 0, ≤50 ms 0, >50 ms 10). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.",
+          "elements": [
+            "#d34 > div"
+          ]
+        },
+        {
+          "fingerprint": "frame-timing|#d41 > div|scroll|4",
+          "check": "frame-timing",
+          "severity": "warning",
+          "message": "While scrolling this container, with the CPU slowed 4 times as on a mid-range phone, 10 of 40 frames took over 50 ms (median 16.7 ms, 95th percentile 83.3 ms, longest 83.4 ms; frame times ≤17 ms 30, ≤33 ms 0, ≤50 ms 0, >50 ms 10). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.",
+          "elements": [
+            "#d41 > div"
+          ]
+        },
+        {
+          "fingerprint": "text-wrap-balance|#d26 > h3",
+          "check": "text-wrap-balance",
+          "severity": "info",
+          "message": "The heading breaks into lines of 234, 219, 41 px; with text-wrap: balance they would be 162, 141, 191 px.",
+          "elements": [
+            "#d26 > h3"
+          ]
+        },
+        {
+          "fingerprint": "text-wrap-pretty|#d27 > p:nth-of-type(2)",
+          "check": "text-wrap-pretty",
+          "severity": "info",
+          "message": "The last line holds one word, \"others.\"; with text-wrap: pretty it would hold 2 and fill 31% of the measure.",
+          "elements": [
+            "#d27 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "optical-margin|#d30 > p:nth-of-type(2)",
+          "check": "optical-margin",
+          "severity": "info",
+          "message": "The ink of the \"O\" at 64 px starts 1 px to the right of the ink of the \"H\" in p \"Hold the edge of this line against the …\", though their boxes share an edge. Round and pointed letters at display sizes need to reach past that edge to look aligned: pull the line left until the ink passes the edge slightly, about 0.03em with text-indent, and log it as an optical adjustment (CRF-04).",
+          "elements": [
+            "#d30 > p:nth-of-type(2)"
+          ]
+        }
+      ]
+    }
+  },
+  "version": "0.2.0"
+}

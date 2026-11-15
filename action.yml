@@ -1,0 +1,182 @@
+name: ITTEN inspector
+description: Inspect rendered pages against the project's ITTEN system, keep one pull request comment with new and fixed findings, and upload the report and crops.
+author: Atishay Pahadiya
+
+inputs:
+  static-dir:
+    description: A directory of built static files to serve, such as dist. Give this, or serve-command with url, or url alone.
+    required: false
+    default: ''
+  serve-command:
+    description: A command that serves the project in the background, such as "npm run preview". Needs url.
+    required: false
+    default: ''
+  url:
+    description: With serve-command, the address it serves. Alone, a deployed page to inspect.
+    required: false
+    default: ''
+  pages:
+    description: Paths to inspect, relative to the served root or the url, one per line or comma-separated.
+    required: false
+    default: '/'
+  system:
+    description: The project's system file. Empty uses itten.system.json when it exists; "none" runs without one (distinct-value mode).
+    required: false
+    default: ''
+  mode:
+    description: quick (320, 768, 1440 and 1920 px) or full (every 40 px from 320 to 1920 px).
+    required: false
+    default: quick
+  fail-on:
+    description: errors, warnings or never. With a baseline, only findings that are new or more severe count.
+    required: false
+    default: errors
+  baseline:
+    description: The committed list of known findings.
+    required: false
+    default: itten-baseline.json
+  write-baseline:
+    description: '"true" writes a fresh itten-baseline.json for these pages into the artifact, to download and commit.'
+    required: false
+    default: 'false'
+  comment:
+    description: '"false" skips the pull request comment; the job summary is always written.'
+    required: false
+    default: 'true'
+  name:
+    description: Names the artifact and the comment. Give each use of the action in one workflow its own name.
+    required: false
+    default: itten-report
+  working-directory:
+    description: The project directory that paths are relative to.
+    required: false
+    default: '.'
+  serve-timeout:
+    description: Seconds to wait for url to answer after serve-command starts.
+    required: false
+    default: '120'
+  github-token:
+    description: Token for the pull request comment. Needs pull-requests write permission.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  errors:
+    description: Errors across all pages.
+    value: ${{ steps.inspect.outputs.errors }}
+  warnings:
+    description: Warnings across all pages.
+    value: ${{ steps.inspect.outputs.warnings }}
+  info:
+    description: Info findings across all pages.
+    value: ${{ steps.inspect.outputs.info }}
+  new:
+    description: Findings not in the baseline.
+    value: ${{ steps.inspect.outputs.new }}
+  fixed:
+    description: Baseline findings no longer found.
+    value: ${{ steps.inspect.outputs.fixed }}
+  failing:
+    description: Findings that fail the run at fail-on.
+    value: ${{ steps.inspect.outputs.failing }}
+  report-dir:
+    description: The directory holding summary.json and one folder per page with report.json, report.html and crops.
+    value: ${{ steps.inspect.outputs.report-dir }}
+  artifact-url:
+    description: The uploaded report.
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+        package-manager-cache: false
+
+    - name: Install ITTEN's dependencies
+      id: deps
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --no-audit --no-fund
+        echo "playwright=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+        echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/itten-ms-playwright" >> "$GITHUB_ENV"
+
+    - name: Cache browsers
+      id: browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/itten-ms-playwright
+        key: itten-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.playwright }}
+
+    - name: Install Chromium and WebKit
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        CACHED: ${{ steps.browsers.outputs.cache-hit }}
+      run: |
+        if [ "$CACHED" = "true" ]; then
+          npx playwright install-deps chromium webkit
+        else
+          npx playwright install --with-deps chromium webkit
+        fi
+
+    - name: Inspect
+      id: inspect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ITTEN_STATIC_DIR: ${{ inputs.static-dir }}
+        ITTEN_SERVE_COMMAND: ${{ inputs.serve-command }}
+        ITTEN_URL: ${{ inputs.url }}
+        ITTEN_PAGES: ${{ inputs.pages }}
+        ITTEN_SYSTEM: ${{ inputs.system }}
+        ITTEN_MODE: ${{ inputs.mode }}
+        ITTEN_FAIL_ON: ${{ inputs.fail-on }}
+        ITTEN_BASELINE: ${{ inputs.baseline }}
+        ITTEN_WRITE_BASELINE: ${{ inputs.write-baseline }}
+        ITTEN_NAME: ${{ inputs.name }}
+        ITTEN_SERVE_TIMEOUT: ${{ inputs.serve-timeout }}
+        ITTEN_ENGINES: webkit
+        ITTEN_OUT: ${{ runner.temp }}/itten/${{ inputs.name }}
+      run: node "$GITHUB_ACTION_PATH/scripts/action/run.js"
+
+    - name: Upload the report
+      id: upload
+      if: always() && steps.inspect.outputs.report-dir != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ steps.inspect.outputs.report-dir }}
+        if-no-files-found: warn
+        overwrite: true
+
+    - name: Summary and pull request comment
+      if: always() && steps.inspect.outputs.report-dir != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ITTEN_OUT: ${{ steps.inspect.outputs.report-dir }}
+        ITTEN_NAME: ${{ inputs.name }}
+        ITTEN_COMMENT: ${{ inputs.comment }}
+        ITTEN_ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "$GITHUB_ACTION_PATH/scripts/action/report.js"
+
+    - name: Verdict
+      shell: bash
+      env:
+        FAILING: ${{ steps.inspect.outputs.failing }}
+        PROBLEMS: ${{ steps.inspect.outputs.problems }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ "${PROBLEMS:-1}" != "0" ]; then
+          echo "::error title=ITTEN::The inspection could not finish; see the job summary."
+          exit 1
+        fi
+        if [ "$FAILING" != "0" ]; then
+          echo "::error title=ITTEN::$FAILING finding(s) fail this run at fail-on $FAIL_ON; see the job summary or the pull request comment."
+          exit 1
+        fi

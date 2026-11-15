@@ -1,0 +1,73 @@
+# Runs the ITTEN action from this checkout against the fixtures, on every push
+# and pull request, and fails unless it reproduces the fixture test: every
+# planted defect caught, nothing else reported, nothing on the clean twins.
+name: Self-test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Inspect the test print and its clean twin
+        id: system
+        uses: ./
+        with:
+          static-dir: .
+          pages: |
+            fixtures/index.html
+            fixtures/clean.html
+          system: fixtures/itten.system.json
+          baseline: fixtures/itten-baseline.json
+          fail-on: never
+          name: itten-fixtures
+
+      - name: Inspect the distinct-value pair without a system
+        id: distinct
+        uses: ./
+        with:
+          static-dir: .
+          pages: |
+            fixtures/distinct.html
+            fixtures/distinct-clean.html
+          system: none
+          baseline: fixtures/itten-baseline.json
+          fail-on: never
+          name: itten-fixtures-distinct
+
+      - name: Score the action's reports against the planted defects
+        env:
+          SYSTEM_REPORTS: ${{ steps.system.outputs.report-dir }}
+          DISTINCT_REPORTS: ${{ steps.distinct.outputs.report-dir }}
+        run: node scripts/fixture-test.js --from "$SYSTEM_REPORTS" --from "$DISTINCT_REPORTS"
+
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Action tests
+        run: node scripts/action-test.js
