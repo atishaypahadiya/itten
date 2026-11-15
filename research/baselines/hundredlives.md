@@ -38,3 +38,24 @@ Earlier notes did not cover the counter, scroll hint, headline and anchor contra
 ## How it was run
 
 The page animates a WebGL scene. Chromium's default headless build renders WebGL in software, which slowed the page to about one frame every 8 seconds; the first run had not finished after ten minutes and was stopped. The inspector now launches the full Chromium build, which uses the GPU and ran the page at about 60 frames a second, and falls back to the default build if the full one is not installed.
+
+## 0.2: typography, motion, weight and rem
+
+- Run: 15 November 2026, inspector at commit `56ba1e2`, Chromium 159 (GPU rendering) and WebKit 27.2 on macOS, live page, no system file.
+- Command: `node inspector/inspect.js https://atishaypahadiya.github.io/HundredLives/ --out dist/runs/2026-11-15/hundredlives` (default four widths). Report and crops are in that folder (not committed); the run used to calibrate the checks is beside it, in `hundredlives.calibration`.
+- Result: 14 errors, 31 warnings, 31 info. The errors are the contrast and overflow findings above, unchanged.
+
+Without a system, durations and easings cannot be judged (`motion-timing`), and type steps cannot be matched on weight. Every finding from the 0.2 checks was looked at in its crop or rendered again at its width.
+
+| Check | Findings | Verdict |
+|---|---|---|
+| `spacing-unit` | 23 warnings | Confirmed. Every margin, padding and gap is written in px (`padding: 7px 11px`, `gap: 12px` and so on in the page's stylesheet), so at 200% text none of them grows: 23 distinct values on up to 105 elements each. The text is px too (`text-resize`, above), so today the page keeps its proportions by not growing at all. Moving type to rem without moving spacing would break them. |
+| `rag` | 1 warning | Confirmed. At 320 px "models with their own" stops a third short, because "computers" cannot fit. Rendered: `hundredlives/extra/hl-rag.png`. |
+| `text-wrap-balance` | 3 info | Confirmed. The experiment headings at 320 px, for example "Experiment 02: five versions / of Self". Rendered: `hundredlives/extra/hl-h3.png`. |
+| `text-wrap-pretty` | 20 info | Checked by sample, not one by one. |
+| Motion | none | 140 animations and transitions after hovering 9 elements and tabbing to 32 focus stops; the page has no buttons or toggles to click. Durations 600, 700, 800, 900 and 1000 ms, with `ease`; the grain loop is 1000 ms in `steps(4)`. Under Reduce Motion the grain loop stops and only the loading screen's opacity fade runs, which is allowed. Nothing flashes. Frames held 16.7 ms at full speed and with the CPU slowed 4×. |
+
+Running 0.2 on this page first found false positives, each fixed in the inspector and kept as a case on the fixture pages:
+
+- widows and rag holes in columns one or two words wide: text whose full lines average under 20 characters is no longer judged for either;
+- the story lines that fade in on scroll reverse their transitions as they cross the threshold, and a reversed transition runs shorter than declared (592 ms of 700): the declared duration is now the one judged.

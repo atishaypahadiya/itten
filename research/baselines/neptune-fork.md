@@ -32,3 +32,30 @@ WebKit found the same layout findings as Chromium at all four widths. Firefox wa
 
 - No contrast, overflow, clipping, overlap, target-size, near-miss or radius findings. The near-miss result was checked by hand: with every filter removed, the page has no pair of left edges 0.5 to 3 px apart within 96 px.
 - The svg plates are not judged: 148 labels at 12.5 px and others at 13, 14 and 19 px.
+
+## 0.2: typography, motion, weight and rem
+
+- Run: 15 November 2026, inspector at commit `56ba1e2`, Chromium 159 and WebKit 27.2 on macOS. The pinned site (neptune-fork commit `7162121`, folder `site/`) was served locally and inspected against neptune-fork's own `itten.system.json`, so this run is in system mode, unlike the one above.
+- Commands: `node inspector/inspect.js http://127.0.0.1:8791/ --system ../neptune-fork/itten.system.json --out dist/runs/2026-11-15/neptune-fork-main`, and the same for `/adams-challis/` into `dist/runs/2026-11-15/neptune-fork-adams-challis` (default four widths). Reports and crops are in those folders (not committed); the runs used to calibrate the checks are beside them, in the folders ending `.calibration`.
+- Result: main page 0 errors, 16 warnings, 28 info; Adams–Challis page 0 errors, 12 warnings, 23 info.
+
+Every finding from the 0.2 checks was looked at in its crop or rendered again at its width, and is confirmed below unless it says otherwise.
+
+| Check | Main | Adams–Challis | Verdict |
+|---|---|---|---|
+| `rag` | 12 warnings | 10 warnings | Confirmed. All at 320 px, where the measure is about 34 characters and the site sets no `hyphens`. Lines stop 26 to 70% short; with `hyphens: auto` the deepest hole would be 8 to 21%. Rendered with and without: `neptune-fork-adams-challis/extra/rag-before.png` and `rag-after.png`. One cause, one fix: `hyphens: auto` on body text, at least at phone widths. |
+| `widow` | 1 warning | none | Confirmed. "pre-registered." alone under eight lines in the Plate II caption, from 768 px up. Crop: `neptune-fork-main/crops/i040-1.png`. |
+| `type-scale` (weight) | 2 warnings | 2 warnings | Confirmed. The h3 headings are "the body step, bold", as the stylesheet says: 18 px (17 px at 320 px) at weight 600, on 7 and 8 headings. The system's steps at those sizes are body and body-phone at weight 400, so no step matches. Matched on size alone, as before, they passed as body. Add bold h3 steps to the system, or log them as an override. Crop: `neptune-fork-main/crops/i043-1.png`. |
+| `optical-margin` | 1 info | 5 info | Confirmed but marginal. The 42 px GFS Didot headings start 1 px inside the edge of the text below; at 400% the S and A do sit a hair in. |
+| `text-wrap-balance` | 5 info | 5 info | Confirmed by sample: two-line h3s at 320 px whose second line is a quarter of the first. |
+| `text-wrap-pretty` | 20 info | 13 info | Checked by sample, not one by one. |
+| `spacing-unit` | none | none | Spacing is written in rem, as the system's note says. |
+| Motion | none | none | No animation runs after load. Tabbing reaches 40 and 23 focus stops; their focus styles start 120 and 80 transitions, all 160 ms with `ease`, from the system. Three buttons were clicked on the main page. Nothing moves under Reduce Motion. Frames held 16.7 ms while tabbing, clicking and scrolling, at full speed and with the CPU slowed 4×, apart from one 133 ms frame while tabbing at full speed. |
+
+The one `spacing-scale` warning on the main page is the fluid side padding (`--gutter`, 16 to 56 px), logged in neptune-fork's overrides. With 0.2 it can be declared in the system instead, as a `spacing.fluid` range.
+
+Running 0.2 on this site first found three false positives, each fixed in the inspector and kept as a case on the fixture pages:
+
+- the plates draw their svg again on every resize, with path ids from a counter (`arc-3`, then `arc-15`), which read as late content;
+- references ending on a DOI read as widows;
+- a 1 px optical offset was a warning; it is now info, and 2 px or more is a warning.
