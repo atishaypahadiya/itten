@@ -1,5 +1,7 @@
 // Renders report.json as a single static HTML page.
 
+import { groupInfo, place, template, byPlace } from './group.js';
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const HEADINGS = { error: 'Errors', warning: 'Warnings', info: 'Information' };
@@ -77,11 +79,26 @@ export function renderHtml(r) {
       <tbody>${checks.map(([id, c]) => `<tr><td><code>${id}</code></td><td class="n">${c.error || ''}</td><td class="n">${c.warning || ''}</td><td class="n">${c.info || ''}</td></tr>`).join('')}</tbody>
     </table>` : '<p>No findings.</p>';
 
-  const issue = (it) => `
+  const seenText = (it) => Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)}${/→/.test(w) ? '' : ' px'}`).join('; ');
+  // Repeated info findings of one check in one table or list: one note.
+  const group = (g) => {
+    const noun = /(^| > )table(:nth-of-type\(\d+\))?$/.test(g.container) ? 'cells' : 'items';
+    const t = template(g.items.map((it) => it.message));
+    const rows = g.items.map((it, i) => ({ it, at: place(it.elements[0].sel, g.container), part: t.parts[i] })).sort((a, b) => byPlace(a.at, b.at));
+    return `
+    <article>
+      <h3>${esc(g.title)}</h3>
+      <p>${g.items.length} ${noun} in <code>${esc(g.container)}</code>${t.shared ? `: ${esc(t.shared)}` : ', one finding each:'}</p>
+      <ul class="els">${rows.map(({ it, at, part }) => `<li id="${it.id}">${esc(at)}: ${esc(part)} <span class="lbl">${it.id} · ${seenText(it)}${r.baseline?.found && r.baseline.new.includes(it.id) ? ' · new since the baseline' : ''}</span></li>`).join('')}</ul>
+      <p class="meta">${esc(g.items[0].rule)}</p>
+    </article>`;
+  };
+
+  const issue = (it) => it.group ? group(it) : `
     <article id="${it.id}">
       <h3>${esc(it.title)}</h3>
       <p>${esc(it.message)}</p>
-      <p class="meta">${r.baseline?.found && r.baseline.new.includes(it.id) ? 'New since the baseline · ' : ''}${esc(it.rule)} · ${it.id} · seen at ${Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ')}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
+      <p class="meta">${r.baseline?.found && r.baseline.new.includes(it.id) ? 'New since the baseline · ' : ''}${esc(it.rule)} · ${it.id} · seen at ${seenText(it)}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
       <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}</span></li>`).join('')}${(it.resources || []).map((u) => `<li><code>${esc(u)}</code></li>`).join('')}</ul>
       ${it.crops.map((c) => `<figure><img src="${esc(c.path)}" alt="Crop of ${esc(it.title.toLowerCase())} at ${esc(c.at)}, zoomed ${c.zoom} times" loading="lazy"><figcaption>${esc(c.at)}, ${c.zoom}×. Magenta: the elements involved. Blue: the edges compared.</figcaption></figure>`).join('')}
     </article>`;
@@ -89,7 +106,9 @@ export function renderHtml(r) {
   const sections = ['error', 'warning', 'info'].map((sev) => {
     const items = r.issues.filter((i) => i.severity === sev);
     if (!items.length) return '';
-    return `<section><h2>${HEADINGS[sev]} (${items.length})</h2><p class="note">${NOTES[sev]}</p>${items.map(issue).join('')}</section>`;
+    const shown = sev === 'info' ? groupInfo(items) : items;
+    const notes = shown.length < items.length ? `, in ${plural(shown.length, 'note')}` : '';
+    return `<section><h2>${HEADINGS[sev]} (${items.length}${notes})</h2><p class="note">${NOTES[sev]}</p>${shown.map(issue).join('')}</section>`;
   }).join('');
 
   const dist = (a) => a.map(([v, n]) => `${v} (${n})`).join(', ') || 'none';

@@ -79,6 +79,11 @@ export async function run() {
     ok(!md.includes('@someone') && !md.includes('<b>'), 'page text cannot mention people or open HTML');
     ok(/No baseline/.test(md) && /This check fails: 1 error in all/.test(md), 'states the verdict and the missing baseline');
     ok(render({ ...s, pages: Array(400).fill(s.pages[0]) }, { limit: 5000 }).length <= 5000, 'the comment is cut to the limit');
+    // Info findings repeated across one table's cells: one line, naming the cells.
+    const cell = (n) => ({ id: `i00${n}`, check: 'text-wrap-pretty', title: 'Last line with one word', severity: 'info', message: `The last line holds one word, "w${n}". More.`, element: `#t > table > tbody > tr:nth-of-type(${n}) > td:nth-of-type(2)` });
+    const g = render({ ...s, baseline: 'itten-baseline.json', pages: [{ ...s.pages[0], baseline: { found: true, new: [cell(1), cell(2), cell(3), { ...s.pages[0].top[0] }], worse: [], fixed: [], sameWidths: true } }] });
+    ok(/Info · Last line with one word: 3 cells in `#t > table` \(row 1, cell 2; row 2, cell 2; row 3, cell 2\)/.test(g) && !/"w2"/.test(g), 'repeated info findings in one table are one line');
+    ok(/Error · Text contrast/.test(g), 'an error next to them stays a line of its own');
 
     // The comment, against a stand-in for the GitHub API.
     const comments = [];

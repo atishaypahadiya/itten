@@ -1,6 +1,8 @@
 // The ITTEN action's summary as Markdown: for the job summary and for the one
 // comment it keeps on a pull request. Plain text and tables, nothing more.
 
+import { groupInfo, place } from '../../inspector/group.js';
+
 export const marker = (name) => `<!-- itten-action:${name} -->`;
 
 const SEV = { error: 'Error', warning: 'Warning', info: 'Info' };
@@ -18,7 +20,15 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const list = (xs) => xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs.at(-1) : xs.join('');
 const ENGINE = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
 
-const line = (f, page, many) => `${SEV[f.severity]} · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${first(f.message)}${f.element ? ' ' + code(f.element) : ''}`;
+const line = (f, page, many) => f.group
+  ? `Info · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${f.items.length} ${/(^| > )table(:nth-of-type\(\d+\))?$/.test(f.container) ? 'cells' : 'items'} in ${code(f.container)} (${f.items.slice(0, 6).map((i) => clean(place(i.element, f.container))).join('; ')}${f.items.length > 6 ? `; and ${f.items.length - 6} more` : ''})`
+  : `${SEV[f.severity]} · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${first(f.message)}${f.element ? ' ' + code(f.element) : ''}`;
+// Per page, repeated info findings in one table or list become one line.
+const grouped = (pairs) => {
+  const out = [];
+  for (const page of [...new Set(pairs.map((x) => x.p))]) out.push(...groupInfo(pairs.filter((x) => x.p === page).map((x) => x.f), (f) => f.element).map((f) => ({ f, p: page })));
+  return out;
+};
 
 export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment = false, limit = 60000 } = {}) {
   const out = [];
@@ -46,8 +56,8 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
     out.push('');
 
     if (s.baseline) {
-      const fresh = pages.flatMap((p) => [...(p.baseline?.new ?? []), ...(p.baseline?.worse ?? [])].map((f) => ({ f, p })));
-      const fixed = pages.flatMap((p) => (p.baseline?.fixed ?? []).map((f) => ({ f, p })));
+      const fresh = grouped(pages.flatMap((p) => [...(p.baseline?.new ?? []), ...(p.baseline?.worse ?? [])].map((f) => ({ f, p }))));
+      const fixed = grouped(pages.flatMap((p) => (p.baseline?.fixed ?? []).map((f) => ({ f, p }))));
       out.push(`#### New since ${code(s.baseline)}`, '');
       if (fresh.length) out.push(...fresh.slice(0, 15).map(({ f, p }) => `- ${line(f, p.page, many)}${f.was ? ` (was ${f.was})` : ''}`), ...(fresh.length > 15 ? [`- and ${fresh.length - 15} more in the report`] : []));
       else out.push('Nothing new.');
