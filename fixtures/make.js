@@ -2,7 +2,11 @@
 // defects.json from the table below, so the three never drift apart.
 // Usage: node fixtures/make.js
 // Each row: id, check, title, what is planted, what the twin does instead,
-// the specimen markup, and the planted CSS (index.html only).
+// the specimen markup, the planted CSS (index.html only), and optional extra
+// fields for defects.json. Where the defect is in a script rather than in
+// CSS, the markup is a function of clean (true for the twin) and the CSS is
+// empty. A defect with a resource is also matched by a finding that names
+// that file.
 
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -26,6 +30,16 @@ const S = [
   ['d16', 'type-scale', 'Undeclared fluid size', 'Planted: a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported.', 'The lead is set at 16 px.', `<p class="lead">A lead paragraph that grows with the window.</p>`, `#d16 .lead { font-size: clamp(1rem, 0.875rem + 0.625vw, 1.125rem); line-height: 24px; }`],
   ['d17', 'text-resize', 'Text locked in px', 'Planted: a caption set at 14px, which stays 14 px when the reader doubles the browser text size.', 'The caption is set at 0.875rem, so it follows the setting.', `<p class="fine-print">Set in pixels, deaf to the reader.</p>`, `#d17 .fine-print { font-size: 14px; }`],
   ['d18', 'type-scale', 'Two steps at one size', 'Planted: a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.', 'The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well.', `<p class="label">A label at the body size, set tighter</p>`, `#d18 .label { line-height: 1.375rem; }`],
+  ['d19', 'page-load', 'Failed request', 'Planted: the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised.', 'The figure draws from d19-data.json, which exists.', (clean) => `<div class="d19-figure"></div>
+    <script>
+      fetch('${clean ? 'd19-data.json' : 'd19-missing.json'}').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then((d) => { document.querySelector('.d19-figure').innerHTML = '<p>' + d.label + '</p>'; })
+        .catch((e) => { document.querySelector('.d19-figure').innerHTML = '<p>This figure could not be drawn: ' + e.message + '</p>'; });
+    </script>`, '', { resource: 'd19-missing.json' }],
+  ['d20', 'page-load', 'Drawn after measuring', 'Planted: the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.', 'The figure draws as the page is read, before the load event.', (clean) => `<div class="d20-figure"></div>
+    <script>
+      ${clean ? "document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';" : "addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));"}
+    </script>`, ''],
 ];
 const canvasScript = `<script>
   for (const c of document.querySelectorAll('.photo canvas')) {
@@ -48,7 +62,7 @@ const page = (clean) => `<!doctype html>
 <link rel="stylesheet" href="fixture.css">${clean ? '' : `
 <style id="planted">
 /* One planted defect per section. fixtures/defects.json lists them. */
-${S.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
+${S.filter((s) => s[6]).map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
 </style>`}
 </head>
 <body>
@@ -67,7 +81,7 @@ ${S.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
 ${S.map((s) => `  <section id="${s[0]}">
     <h2>${s[2]}</h2>
     <p class="small">${clean ? s[4] : s[3]}</p>
-    ${s[5]}
+    ${typeof s[5] === 'function' ? s[5](clean) : s[5]}
   </section>`).join('\n')}
 </main>
 ${canvasScript}
@@ -79,6 +93,7 @@ writeFileSync(dir + 'index.html', page(false));
 writeFileSync(dir + 'clean.html', page(true));
 writeFileSync(dir + 'defects.json', JSON.stringify({
   page: 'fixtures/index.html', twin: 'fixtures/clean.html', system: 'fixtures/itten.system.json',
-  note: 'Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section.',
-  defects: S.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), css: s[6], fixedInTwin: s[4] })),
+  note: 'Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect\'s resource.',
+  defects: S.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), ...(s[6] ? { css: s[6] } : { markup: s[5](false) }), fixedInTwin: s[4], ...(s[7] || {}) })),
 }, null, 2) + '\n');
+writeFileSync(dir + 'd19-data.json', JSON.stringify({ label: 'Drawn from d19-data.json' }) + '\n');

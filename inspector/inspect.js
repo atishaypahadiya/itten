@@ -6,6 +6,7 @@
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
 //        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--no-engines] [--fail-on error|warning]
+//        [--wait-for <selector>] [--settle <ms>]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -21,6 +22,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = JSON.parse(readFileSync(join(HERE, '..', 'schema', 'system.schema.json'), 'utf8'));
 
 export const CHECKS = {
+  'page-load': { title: 'Page load', rule: 'CRF-15 · FBK-04' },
   'contrast': { title: 'Text contrast against rendered pixels', rule: 'CRF-14 · COL-01 · WCAG 1.4.3' },
   'font-fallback': { title: 'Font fallback', rule: 'CRF-13' },
   'overflow': { title: 'Overflow', rule: 'CRF-16 · LAY-03 · WCAG 1.4.10' },
@@ -79,6 +81,7 @@ const rangeText = (ws) => {
   }
   return out.join(', ');
 };
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const families = (stack) => stack.match(/"[^"]*"|'[^']*'|[^,]+/g).map((f) => f.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const loose = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a)); };
@@ -94,9 +97,12 @@ async function settle(page) {
   await page.waitForTimeout(120);
 }
 
-async function load(page, url) {
+// Returns whether the network went quiet within 10 s of the load event and,
+// with o.waitFor, whether that selector appeared within 30 s.
+async function load(page, url, o = {}) {
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
-  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  const networkIdle = await page.waitForLoadState('networkidle', { timeout: 10000 }).then(() => true, () => false);
+  const waited = o.waitFor ? await page.waitForSelector(o.waitFor, { state: 'attached', timeout: 30000 }).then(() => true, () => false) : null;
   // Scroll through once so lazy content and reveal-on-scroll elements render.
   await page.evaluate(async () => {
     const step = innerHeight * 0.8;
@@ -105,7 +111,53 @@ async function load(page, url) {
     scrollTo(0, 0);
     await document.fonts.ready;
   });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(500 + (o.settle || 0));
+  // Measuring starts here: note what the page has drawn so far.
+  await page.evaluate(() => window.__ittenLate?.start());
+  return { networkIdle, waited };
+}
+
+// ------------------------------------------------------ late content
+// Installed before any page script runs. start() notes every element drawn
+// when measuring begins, at the first width. late(), called back at that
+// width once the passes are done, returns the elements drawn now that were
+// not then: new nodes whose selector and text are also new. A part the page
+// swaps out at one width and back at another keeps its selector and text, so
+// it is not counted. Each element's time is when it, or the nearest ancestor,
+// was added (ms after start), from a mutation observer.
+function lateInit() {
+  const L = (window.__ittenLate = { mark: null, times: new WeakMap() });
+  const sel = (el) => {
+    if (el.id && /^[A-Za-z][\w-]*$/.test(el.id) && document.querySelectorAll('#' + el.id).length === 1) return '#' + el.id;
+    if (el === document.body) return 'body';
+    const p = el.parentElement, same = p ? [...p.children].filter((c) => c.localName === el.localName) : [];
+    return (p ? sel(p) + ' > ' : '') + el.localName + (same.length > 1 ? `:nth-of-type(${same.indexOf(el) + 1})` : '');
+  };
+  const own = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join(' ').replace(/\s+/g, ' ').trim();
+  const key = (el) => sel(el) + '|' + own(el).slice(0, 80);
+  const drawn = () => [...document.body.querySelectorAll('*')].filter((el) => !/^(script|style|template|noscript)$/.test(el.localName) && el.getClientRects().length);
+  const ignored = (el) => { const h = el.closest('[data-itten-ignore]'); return !!h && /(^|\s)(page-load|all)(\s|$)/.test(h.getAttribute('data-itten-ignore')); };
+  L.start = () => {
+    const els = drawn();
+    L.mark = performance.now(); L.before = new WeakSet(els); L.keys = new Set(els.map(key));
+  };
+  L.late = () => {
+    if (L.mark === null) return [];
+    const els = drawn().filter((el) => !L.before.has(el) && !L.keys.has(key(el)) && !ignored(el));
+    const set = new Set(els);
+    return els.filter((el) => !set.has(el.parentElement)).slice(0, 50).map((el) => {
+      let a = el, t;
+      while (a && (t = L.times.get(a)) === undefined) a = a.parentElement;
+      let text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text.length > 40) text = text.slice(0, 39) + '…';
+      return { t: t === undefined ? null : Math.round(t), sel: sel(el), label: el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (text ? ` "${text}"` : '') };
+    });
+  };
+  new MutationObserver((list) => {
+    if (L.mark === null) return;
+    const t = performance.now() - L.mark;
+    for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1 && !L.times.has(n)) L.times.set(n, t);
+  }).observe(document, { childList: true, subtree: true });
 }
 
 // ---------------------------------------------------------- hairline render
@@ -174,6 +226,8 @@ export async function inspect(url, o = {}) {
   const sizes = {};
   const obs = { spacing: new Map(), type: new Map(), labels: new Map() };
   let cropCount = 0, idCount = 0;
+  const failed = new Map();
+  let watching = true;
 
   const merge = async (page, raw, pass) => {
     if (raw.check === 'hairline-subpixel') await judgeHairline(page, raw, pass);
@@ -216,7 +270,7 @@ export async function inspect(url, o = {}) {
   const addFinding = async (page, f) => {
     const w = f.widths[0];
     const mode = f.mode || 'light';
-    const it = { id: `i${String(++idCount).padStart(3, '0')}`, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}` };
+    const it = { id: `i${String(++idCount).padStart(3, '0')}`, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
     issues.set(f.check + '|' + f.key, it);
     await page.setViewportSize({ width: w, height: VIEW_H });
     await settle(page);
@@ -263,22 +317,78 @@ export async function inspect(url, o = {}) {
     }
   };
 
+  // The page measured may not be the page people see: a request failed, the
+  // network never went quiet, the --wait-for selector never appeared, or
+  // elements appeared after measuring began.
+  const pageLoadFindings = async (page, page2, loaded) => {
+    const at = [widths[0]];
+    const req = [...failed.values()];
+    if (req.length) {
+      const list = req.slice(0, 8).map((r) => `${r.method} ${r.url} (${r.type}, ${r.why})`).join('; ');
+      await addFinding(page, { check: 'page-load', severity: 'error', key: 'requests', widths: at, count: req.length, elements: [], resources: req.map((r) => r.url),
+        message: `${plural(req.length, 'request')} failed while the page was measured: ${list}${req.length > 8 ? `; and ${req.length - 8} more` : ''}. What was measured may be the page's error state. Fix the requests, then inspect again.` });
+    }
+    if (!loaded.networkIdle) {
+      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'busy', widths: at, count: 1, elements: [],
+        message: 'The network did not go quiet within 10 s of the load event, so the page was measured while requests were still running. If it draws from them, pass --wait-for with a selector for what appears last, or --settle with a wait in ms.' });
+    }
+    if (loaded.waited === false) {
+      await addFinding(page, { check: 'page-load', severity: 'error', key: 'wait-for', widths: at, count: 1, elements: [],
+        message: `--wait-for ${o.waitFor}: no element matched within 30 s of the load event, so the page was measured without it.` });
+    }
+    // Back at the first width and in light, where measuring began.
+    const late = new Map(), missedSet = new Set();
+    let unknown = false;
+    for (const p of [page, page2]) {
+      await p.setViewportSize({ width: widths[0], height: VIEW_H });
+      await p.emulateMedia({ colorScheme: 'light' });
+      await p.evaluate(() => scrollTo(0, 0));
+      await settle(p);
+      const els = await p.evaluate(() => window.__ittenLate?.late() ?? []);
+      if (!els.length) continue;
+      const known = els.filter((e) => e.t !== null).map((e) => e.t);
+      if (known.length < els.length) unknown = true;
+      const last = known.length ? Math.max(...known) : Infinity;
+      for (const e of els) if (!late.has(e.sel)) late.set(e.sel, e);
+      for (const [label, t] of p.passTimes) if (t < last) missedSet.add(label);
+    }
+    if (late.size && missedSet.size) {
+      const els = [...late.values()].sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
+      const ts = els.filter((e) => e.t !== null).map((e) => e.t);
+      const s = (ms) => (ms / 1000).toFixed(1);
+      const when = !ts.length || unknown ? 'after measuring began' : ts[0] === ts.at(-1) ? `${s(ts[0])} s after measuring began` : `${s(ts[0])} to ${s(ts.at(-1))} s after measuring began`;
+      const missed = [...missedSet];
+      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'late', widths: at, count: els.length, elements: els.map(({ sel, label }) => ({ sel, label })),
+        message: `${plural(els.length, 'element')} appeared ${when}, so ${unknown ? 'some passes may have' : `${missed.length} ${missed.length === 1 ? 'pass' : 'passes'}`} measured the page without ${els.length === 1 ? 'it' : 'them'}${unknown ? '' : ` (${missed.slice(0, 6).join('; ')}${missed.length > 6 ? '; …' : ''})`}. The page was still drawing: a timer, an animation-frame chain or a slow request. Pass --wait-for with a selector for what appears last, or --settle with a wait in ms. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore="page-load".` });
+    }
+  };
+
   const runPass = async (page, pass, extra = {}) => {
     await page.setViewportSize({ width: pass.w, height: VIEW_H });
     await page.evaluate(() => scrollTo(0, 0));
     await settle(page);
     const res = await page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, ...extra });
+    // When the pass measured, in ms after the start of measuring.
+    if (page.passTimes) page.passTimes.push([pass.label, await page.evaluate(() => (window.__ittenLate?.mark == null ? 0 : performance.now() - window.__ittenLate.mark))]);
     return res;
   };
 
   try {
     // Pass set 1: light, 100% text, every width; contrast and fonts at key widths, light and dark.
     const ctx = await browser.newContext({ viewport: { width: widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
+    await ctx.addInitScript(lateInit);
+    // Requests that fail or answer 400 or more, on every Chromium load. A
+    // page that catches the failure and shows a message raises no page error,
+    // so without this the report would measure the error state as the page.
+    const fail = (url, method, type, why) => { if (watching && !failed.has(url)) failed.set(url, { url, method, type, why }); };
+    ctx.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
+    ctx.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
     const page = await ctx.newPage();
+    page.passTimes = [];
     const consoleErrors = [];
     page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
     log(`Loading ${url}`);
-    await load(page, url);
+    const loaded = await load(page, url, o);
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
 
@@ -318,9 +428,10 @@ export async function inspect(url, o = {}) {
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
     const page2 = await ctx.newPage();
+    page2.passTimes = [];
     const cdp2 = await ctx.newCDPSession(page2);
     await cdp2.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-    await load(page2, url);
+    await load(page2, url, o);
     for (const w of widths) {
       const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
       const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1) });
@@ -346,12 +457,14 @@ export async function inspect(url, o = {}) {
           elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k })) });
       }
     }
+    await pageLoadFindings(page, page2, loaded);
+    watching = false;
     await ctx.close();
 
     // Pass set 3: device pixel ratio 2, hairlines only.
     const ctx2 = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
     const page3 = await ctx2.newPage();
-    await load(page3, url);
+    await load(page3, url, o);
     for (const w of [keyWidths[0], keyWidths.at(-1)]) {
       const pass = { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] };
       const res = await runPass(page3, pass);
@@ -375,7 +488,7 @@ export async function inspect(url, o = {}) {
         engines.browsers[name] = eb.version();
         const ectx = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
         const ep = await ectx.newPage();
-        await load(ep, url);
+        await load(ep, url, o);
         for (const w of engines.widths) {
           const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
           const res = await runPass(ep, pass);
@@ -451,6 +564,7 @@ export async function inspect(url, o = {}) {
       textScaling,
       engines,
       pageErrors: [...new Set(consoleErrors)].slice(0, 20),
+      load: { networkIdle: loaded.networkIdle, waitFor: o.waitFor ?? null, waited: loaded.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()] },
       issues: list,
     };
     if (outDir) {
@@ -481,7 +595,6 @@ function scaleFindings(obs, system, widths, distinct) {
   const frac = (v) => Math.abs(v - Math.round(v)) > 0.01;
   const label = (sel) => obs.labels.get(sel) || sel;
   const near = (scale, v) => [[...scale].reverse().find((x) => x < v), scale.find((x) => x > v)].filter((x) => x !== undefined).join(' or ');
-  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const sortW = (ws) => [...new Set(ws)].sort((a, b) => a - b);
   const curve = (byW) => widths.map((w) => (byW.has(w) ? JSON.stringify(byW.get(w)) : '')).join(',');
 
@@ -765,6 +878,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     widths: args.widths ? parseWidths(args.widths) : undefined,
     keyWidths: args['key-widths'] ? parseWidths(args['key-widths']) : undefined,
     engines: args['no-engines'] ? [] : undefined,
+    waitFor: typeof args['wait-for'] === 'string' ? args['wait-for'] : undefined,
+    settle: args.settle ? Number(args.settle) : undefined,
   });
   const s = report.summary;
   console.log(`\n${s.error} errors, ${s.warning} warnings, ${s.info} info. Report: ${join(out, 'report.html')}`);

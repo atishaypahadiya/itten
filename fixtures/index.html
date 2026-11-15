@@ -149,6 +149,24 @@
     <p class="small">Planted: a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.</p>
     <p class="label">A label at the body size, set tighter</p>
   </section>
+  <section id="d19">
+    <h2>Failed request</h2>
+    <p class="small">Planted: the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised.</p>
+    <div class="d19-figure"></div>
+    <script>
+      fetch('d19-missing.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then((d) => { document.querySelector('.d19-figure').innerHTML = '<p>' + d.label + '</p>'; })
+        .catch((e) => { document.querySelector('.d19-figure').innerHTML = '<p>This figure could not be drawn: ' + e.message + '</p>'; });
+    </script>
+  </section>
+  <section id="d20">
+    <h2>Drawn after measuring</h2>
+    <p class="small">Planted: the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.</p>
+    <div class="d20-figure"></div>
+    <script>
+      addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));
+    </script>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {

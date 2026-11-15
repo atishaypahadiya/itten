@@ -14,6 +14,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fixtures');
 
 const inSection = (issue, id) => issue.elements.some((e) => e.sel === '#' + id || e.sel.startsWith('#' + id + ' '));
+// A finding names a defect when it names an element in the defect's section,
+// or the file the defect requests (failed requests have no element).
+const names = (issue, d) => inSection(issue, d.id) || (!!d.resource && (issue.resources || []).some((u) => new URL(u).pathname.endsWith('/' + d.resource)));
 
 export async function run({ full = false, quiet = true } = {}) {
   const spec = JSON.parse(readFileSync(join(ROOT, 'fixtures', 'defects.json'), 'utf8'));
@@ -27,10 +30,10 @@ export async function run({ full = false, quiet = true } = {}) {
     const twin = await inspect(`http://127.0.0.1:${port}/fixtures/clean.html`, { ...opts, out: join(OUT, 'clean-twin') });
 
     const rows = spec.defects.map((d) => {
-      const hits = page.issues.filter((i) => i.check === d.check && inSection(i, d.id));
+      const hits = page.issues.filter((i) => i.check === d.check && names(i, d));
       return { ...d, caught: hits.length > 0, issues: hits.map((i) => i.id) };
     });
-    const matched = (i) => spec.defects.some((d) => d.check === i.check && inSection(i, d.id));
+    const matched = (i) => spec.defects.some((d) => d.check === i.check && names(i, d));
     const truePos = page.issues.filter(matched);
     const falsePos = [...page.issues.filter((i) => !matched(i)), ...twin.issues];
     const caught = rows.filter((r) => r.caught).length;

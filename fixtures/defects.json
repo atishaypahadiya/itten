@@ -2,7 +2,7 @@
   "page": "fixtures/index.html",
   "twin": "fixtures/clean.html",
   "system": "fixtures/itten.system.json",
-  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section.",
+  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect's resource.",
   "defects": [
     {
       "id": "d01",
@@ -147,6 +147,23 @@
       "planted": "a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither.",
       "css": "#d18 .label { line-height: 1.375rem; }",
       "fixedInTwin": "The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well."
+    },
+    {
+      "id": "d19",
+      "check": "page-load",
+      "title": "Failed request",
+      "planted": "the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised.",
+      "markup": "<div class=\"d19-figure\"></div>\n    <script>\n      fetch('d19-missing.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n        .then((d) => { document.querySelector('.d19-figure').innerHTML = '<p>' + d.label + '</p>'; })\n        .catch((e) => { document.querySelector('.d19-figure').innerHTML = '<p>This figure could not be drawn: ' + e.message + '</p>'; });\n    </script>",
+      "fixedInTwin": "The figure draws from d19-data.json, which exists.",
+      "resource": "d19-missing.json"
+    },
+    {
+      "id": "d20",
+      "check": "page-load",
+      "title": "Drawn after measuring",
+      "planted": "the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.",
+      "markup": "<div class=\"d20-figure\"></div>\n    <script>\n      addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));\n    </script>",
+      "fixedInTwin": "The figure draws as the page is read, before the load event."
     }
   ]
 }

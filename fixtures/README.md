@@ -31,6 +31,8 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 | d16 | `type-scale` | a lead paragraph set with clamp() from 16 to 18 px, a range the system does not declare. The h1 on both pages is fluid too, but declared, so it must not be reported. | The lead is set at 16 px. |
 | d17 | `text-resize` | a caption set at 14px, which stays 14 px when the reader doubles the browser text size. | The caption is set at 0.875rem, so it follows the setting. |
 | d18 | `type-scale` | a label at the body size with a 22 px line height. The system has two 16 px steps, body at 24 px and label at 20 px, so it fits neither. | The label is set 16/20 at weight 600, the label step. It shares its size with the body step, so it must be matched by its line height as well. |
+| d19 | `page-load` | the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised. | The figure draws from d19-data.json, which exists. |
+| d20 | `page-load` | the figure draws 2.5 s after the load event, by which time the inspector has begun measuring. | The figure draws as the page is read, before the load event. |
 
 d10 only shows at 320 px wide, d12 and d17 only when the browser text size is doubled, and d14 only at a device pixel ratio of 1. They test that the sweep, the 200% text pass and the pixel-ratio pass each run.
 
@@ -41,6 +43,6 @@ node scripts/fixture-test.js          # four widths, about 40 seconds
 node scripts/fixture-test.js --full   # 41 widths, about a minute
 ```
 
-A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the two reports under `dist/fixtures/`.
+A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the two reports under `dist/fixtures/`.
 
 Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 17 of 17 and precision 21 of 21, with WebKit included. The 21 findings for 17 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system.

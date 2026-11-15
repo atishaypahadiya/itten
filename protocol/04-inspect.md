@@ -26,6 +26,8 @@ node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.jso
 | `--widths a:b:step` or `a,b,c` | Any other set of widths. |
 | `--key-widths a,b,c` | Widths for the contrast and font passes. Default `320,768,1440`. |
 | `--no-engines` | Skip the WebKit and Firefox pass. |
+| `--wait-for <selector>` | After the network goes quiet, wait up to 30 s for an element matching the selector before measuring, on every load. Use it for pages that draw from data or on a timer: name what appears last. |
+| `--settle <ms>` | Wait this much longer before measuring, on every load. |
 | `--fail-on error` or `warning` | Exit with code 1 when findings of that severity or worse exist, for CI. |
 | `--validate <path>` | Only validate a system file against `schema/system.schema.json`. |
 
@@ -41,7 +43,7 @@ A default run on a typical page takes under a minute; `--full` takes one to thre
 | Device pixels | first and last key width | light | default | `hairline-subpixel` at a device pixel ratio of 2 |
 | Other engines | 320, 768, 1440 and 1920 px | light | default | the layout checks except `spacing-scale` and `type-scale`, in WebKit and Firefox |
 
-The page is loaded once per pass set and scrolled to the bottom and back, so lazy content and reveal-on-scroll elements render. The viewport is 900 px tall. Doubling the browser's default font size is the setting people change in their browser preferences; text set in `px` ignores it, and the report says how much of the page did. Browser zoom is covered by the width sweep, since 200% zoom at 1280 px lays out like 640 px.
+The page is loaded once per pass set: the inspector waits for the load event, for the network to go quiet (up to 10 s), for `--wait-for` and `--settle` if given, then scrolls to the bottom and back, so lazy content and reveal-on-scroll elements render, waits for fonts and 500 ms, and starts measuring. Every request that fails or answers 400 or more is recorded, and what the page has drawn at that moment is noted, so that content drawn later can be reported (see `page-load`). The viewport is 900 px tall. Doubling the browser's default font size is the setting people change in their browser preferences; text set in `px` ignores it, and the report says how much of the page did. Browser zoom is covered by the width sweep, since 200% zoom at 1280 px lays out like 640 px.
 
 ## The checks
 
@@ -49,6 +51,7 @@ Severity follows the precedence in `ITTEN.md`. An **error** breaks an accessibil
 
 | Check | Severity | What it measures | Rule |
 |---|---|---|---|
+| `page-load` | error, or warning | Whether the page measured is the page people see. Error when a request failed or answered 400 or more (a page that catches the failure and shows a message raises no script error, so its error state would otherwise be measured as the page), or when the `--wait-for` selector never appeared. Warning when the network did not go quiet within 10 s of the load event, or when elements appeared after measuring began. For the last, the inspector returns to the first width once the passes are done and compares what is drawn with what was drawn when measuring began: elements that are new, with a selector and text that are also new, appeared late. Parts the page swaps at one width and back at another keep their selector and text and are not counted. The finding names the passes that ran before the content appeared. | CRF-15, FBK-04 |
 | `contrast` | error, or warning | The text colour against the pixels rendered behind it. The page is screenshotted twice with all text made transparent, 400 ms apart; the background is sampled across each line of text, and the text colour (with its opacity) is composited over each sample. Error when the median sample is below 4.5:1 (3:1 for large text); warning when the worst tenth is. This sees images, video, gradients, canvas and WebGL behind text, which computed styles cannot. | CRF-14, COL-01 |
 | `font-fallback` | error, or warning | The font that actually drew each text run, from the browser's rendering engine, against the family requested. Error when a web font failed to load or when text renders in a fallback; warning when some glyphs come from another font, when a family is not in the system, or when a form control's computed family differs from the page's (the browser's control font), even if the control holds no text yet. | CRF-13 |
 | `overflow` | error | The page scrolling sideways (and the element or word that causes it), or text spilling out of the painted box that contains it. | CRF-16, LAY-03 |
