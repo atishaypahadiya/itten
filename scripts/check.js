@@ -140,6 +140,7 @@ try {
   if (t.invalid.map((x) => x.repo).join() !== 'test/delta') fail('Telemetry', 'expected test/delta, and only it, to be rejected as invalid');
   if (t.projects.some((p) => p.repo === 'test/epsilon')) fail('Telemetry', 'read the overrides of a repository without ITTEN');
   if (t.rules.find((x) => x.rule === 'LAY-10')?.projects.length !== 2) fail('Telemetry', 'LAY-10 should count two projects');
+  if (t.forks.map((x) => x.repo).join() !== 'test/theta' || t.projects.some((p) => p.repo === 'test/theta') || t.rules.some((x) => x.projects.includes('test/theta'))) fail('Telemetry', 'counted the fork test/theta, or did not list it as a fork');
   try { ghSource('test').read('test/x', 'package.json'); fail('Telemetry', 'the GitHub source read a file other than .gitmodules and itten.overrides.json'); } catch { /* refused, as it should */ }
 } catch (e) {
   fail('Overrides', `the overrides and telemetry checks could not run: ${e.message.split('\n')[0]}`);

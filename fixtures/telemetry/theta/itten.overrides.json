@@ -1,0 +1,22 @@
+{
+  "overrides": [
+    {
+      "rule": "CRF-16",
+      "check": "overflow",
+      "selector": ".gallery",
+      "reason": "The gallery scrolls sideways on purpose; it has its own scroll bar and arrows.",
+      "date": "2026-11-02",
+      "itten": "0.3.0",
+      "floors": true
+    },
+    {
+      "rule": "LAY-10",
+      "check": "near-miss-edge",
+      "selector": ".hero h1",
+      "reason": "Optical alignment of the open \"T\" in the display face.",
+      "date": "2026-11-03",
+      "itten": "0.3.0",
+      "floors": true
+    }
+  ]
+}
