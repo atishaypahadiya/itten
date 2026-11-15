@@ -13,7 +13,7 @@
     <p>The same page as the test print with every planted defect fixed. The inspector should report nothing&nbsp;here.</p>
     <figure>
       <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
-      <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="diagram" role="img" aria-label="Three bars drawn with div elements"><span></span><span></span><span></span></div>
       <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is&nbsp;inside.</figcaption>
     </figure>
   </header>
@@ -255,6 +255,16 @@
     <h2>Words broken without a hyphen</h2>
     <p class="small">The table is laid out automatically without break-word, so the first column is as wide as its longest&nbsp;word.</p>
     <table class="data"><tbody><tr><td class="name">Bouvard's tables</td><td>1821</td></tr><tr><td class="name">Le Verrier's orbit</td><td>1846</td></tr></tbody></table>
+  </section>
+  <section id="d45">
+    <h2>Spacing in a table in a figure</h2>
+    <p class="small">The cells are padded 4 px above and below, from the&nbsp;scale.</p>
+    <figure><table class="data"><tbody><tr><td>Bouvard</td><td>1821</td></tr><tr><td>Le Verrier</td><td>1846</td></tr></tbody></table><figcaption class="small">Table 1. Two tables of Uranus.</figcaption></figure>
+  </section>
+  <section id="d46">
+    <h2>Hole in the rag in a table cell</h2>
+    <p class="small">hyphens: auto, as on the table's cells, fills the&nbsp;line.</p>
+    <figure><table class="data notes"><tbody><tr><td>1846</td></tr><tr><td>Our correspondents were uncompromisingly incomprehensible about the communications infrastructure and its notoriously unpredictable upkeep and&nbsp;maintenance.</td></tr></tbody></table><figcaption class="small">Table 2. A dated&nbsp;note.</figcaption></figure>
   </section>
 </main>
 <script>

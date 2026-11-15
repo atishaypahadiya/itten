@@ -64,7 +64,7 @@ export function typography(opts) {
   // ------------------------------------------------------------ text blocks
   const GRAPHIC = 'svg, canvas, img, video, picture, iframe, object, embed, math, audio, [role="img"]';
   const SKIP = new Set(['script', 'style', 'template', 'noscript', 'textarea', 'select', 'option', 'input', 'button', 'pre', 'code']);
-  const inGraphic = (el) => !!el.closest(GRAPHIC) || (!!el.closest('figure') && !el.closest('figcaption'));
+  const inGraphic = (el) => !!el.closest(GRAPHIC);
   const blocks = [];
   for (const el of document.body.querySelectorAll('*')) {
     if (SKIP.has(el.localName) || blocks.length >= 800) continue;

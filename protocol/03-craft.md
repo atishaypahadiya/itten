@@ -6,7 +6,7 @@ Every value these rules refer to comes from the project's `itten.system.json` (`
 
 Strength follows `reference/README.md`. MUST: a violation is a defect. SHOULD: deviate only with a logged override (DEC-08). No rule here can lower an accessibility floor (`ITTEN.md`, precedence).
 
-Each rule names how it is verified: by an inspector check (`protocol/04-inspect.md`), or by a manual method where the inspector cannot judge. The inspector does not look inside `svg`, `canvas` or figure graphics, does not exercise focus, active, disabled, empty, loading or error states, and does not judge icon centring, icon stroke or text-box trim. It hovers elements only to record their transitions.
+Each rule names how it is verified: by an inspector check (`protocol/04-inspect.md`), or by a manual method where the inspector cannot judge. The inspector does not look inside drawn content (`svg`, `canvas`, images, video, `role="img"`), does not exercise focus, active, disabled, empty, loading or error states, and does not judge icon centring, icon stroke or text-box trim. It hovers elements only to record their transitions.
 
 ## Spacing and edges
 

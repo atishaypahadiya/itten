@@ -86,6 +86,10 @@
 /* d44 broken-word */
 #d44 .data { table-layout: fixed; width: 160px; }
 #d44 .data .name { width: 72px; overflow-wrap: break-word; }
+/* d45 spacing-scale */
+#d45 .data td { padding: 0.3125rem 0.5rem; }
+/* d46 rag */
+#d46 .notes td { hyphens: manual; }
 </style>
 </head>
 <body>
@@ -95,7 +99,7 @@
     <p>Each section plants one defect for one inspector check. The clean twin, clean.html, is the same page with every defect fixed.</p>
     <figure>
       <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
-      <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="diagram" role="img" aria-label="Three bars drawn with div elements"><span></span><span></span><span></span></div>
       <figcaption class="small">A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.</figcaption>
     </figure>
   </header>
@@ -348,6 +352,16 @@
     <h2>Words broken without a hyphen</h2>
     <p class="small">Planted: the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen ("Bouvar|d's", "Verrier'|s"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.</p>
     <table class="data"><tbody><tr><td class="name">Bouvard's tables</td><td>1821</td></tr><tr><td class="name">Le Verrier's orbit</td><td>1846</td></tr></tbody></table>
+  </section>
+  <section id="d45">
+    <h2>Spacing in a table in a figure</h2>
+    <p class="small">Planted: the table's cells are padded 5 px above and below. The scale has 4 and 8. A figure's table is text, measured like the rest of the page.</p>
+    <figure><table class="data"><tbody><tr><td>Bouvard</td><td>1821</td></tr><tr><td>Le Verrier</td><td>1846</td></tr></tbody></table><figcaption class="small">Table 1. Two tables of Uranus.</figcaption></figure>
+  </section>
+  <section id="d46">
+    <h2>Hole in the rag in a table cell</h2>
+    <p class="small">Planted: hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.</p>
+    <figure><table class="data notes"><tbody><tr><td>1846</td></tr><tr><td>Our correspondents were uncompromisingly incomprehensible about the communications infrastructure and its notoriously unpredictable upkeep and maintenance.</td></tr></tbody></table><figcaption class="small">Table 2. A dated note.</figcaption></figure>
   </section>
 </main>
 <script>

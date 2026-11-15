@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url';
 // a widow that appears on one and not another is luck, not a fixed defect.
 // d23's specimens are left alone: they are the cases the widow check must
 // not report.
-const tie = (html) => html.replace(/ ([^\s<>]+)(?=<\/(?:p|figcaption)>|$)/g, '&nbsp;$1');
-const TIE = new Set(['d16', 'd22', 'd25', 'd27', 'd29', 'd30']);
+const tie = (html) => html.replace(/ ([^\s<>]+)(?=<\/(?:p|figcaption|td)>|$)/g, '&nbsp;$1');
+const TIE = new Set(['d16', 'd22', 'd25', 'd27', 'd29', 'd30', 'd46']);
 const specimen = (s, clean) => { const m = typeof s[5] === 'function' ? s[5](clean) : s[5]; return clean && TIE.has(s[0]) ? tie(m) : m; };
 const S = [
   ['d01', 'spacing-scale', 'Spacing off the scale', 'Planted: 13 px padding above and below the text. The scale has 12 and 16.', 'The padding is 12 px above and below, from the scale.', `<div class="tint d01">A padded box</div>`, `.d01 { padding: 0.8125rem 1rem; }`],
@@ -105,6 +105,8 @@ const S = [
     </script>${clean ? '' : `
     <style>#d43 .toggle { transition-property: margin-left; } #d43 .toggle[aria-pressed="true"] { transform: none; margin-left: 0.5rem; }</style>`}`, ''],
   ['d44', 'broken-word', 'Words broken without a hyphen', 'Planted: the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen ("Bouvar|d\'s", "Verrier\'|s"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.', 'The table is laid out automatically without break-word, so the first column is as wide as its longest word.', `<table class="data"><tbody><tr><td class="name">Bouvard\'s tables</td><td>1821</td></tr><tr><td class="name">Le Verrier\'s orbit</td><td>1846</td></tr></tbody></table>`, `#d44 .data { table-layout: fixed; width: 160px; }\n#d44 .data .name { width: 72px; overflow-wrap: break-word; }`],
+  ['d45', 'spacing-scale', 'Spacing in a table in a figure', 'Planted: the table\'s cells are padded 5 px above and below. The scale has 4 and 8. A figure\'s table is text, measured like the rest of the page.', 'The cells are padded 4 px above and below, from the scale.', `<figure><table class="data"><tbody><tr><td>Bouvard</td><td>1821</td></tr><tr><td>Le Verrier</td><td>1846</td></tr></tbody></table><figcaption class="small">Table 1. Two tables of Uranus.</figcaption></figure>`, `#d45 .data td { padding: 0.3125rem 0.5rem; }`],
+  ['d46', 'rag', 'Hole in the rag in a table cell', 'Planted: hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.', 'hyphens: auto, as on the table\'s cells, fills the line.', `<figure><table class="data notes"><tbody><tr><td>1846</td></tr><tr><td>Our correspondents were uncompromisingly incomprehensible about the communications infrastructure and its notoriously unpredictable upkeep and maintenance.</td></tr></tbody></table><figcaption class="small">Table 2. A dated note.</figcaption></figure>`, `#d46 .notes td { hyphens: manual; }`],
 ];
 // Distinct-value mode: the same idea, inspected without a system file.
 // Nothing says which fluid values are deliberate, so each fluid range must
@@ -174,7 +176,7 @@ ${S.filter((s) => s[6]).map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
       : 'Each section plants one defect for one inspector check. The clean twin, clean.html, is the same page with every defect fixed.'}</p>
     <figure>
       <svg viewBox="0 0 720 80" width="100%" height="80" role="img" aria-label="Five bars of different heights"><rect x="0" y="0" width="720" height="80" fill="none"/><g fill="currentColor"><rect x="0" y="50" width="137.3" height="30" rx="3"/><rect x="145.7" y="30" width="137.3" height="50" rx="5"/><rect x="291.4" y="10" width="137.3" height="70" rx="2"/></g><text x="440" y="40" font-size="13.7" fill="currentColor">svg text at 13.7</text></svg>
-      <div class="diagram" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="diagram" role="img" aria-label="Three bars drawn with div elements"><span></span><span></span><span></span></div>
       <figcaption class="small">${(clean ? tie : String)('A figure. Its svg uses a 13.7 px text size and odd radii, and its div diagram uses fractional padding. The inspector measures the outer boxes and skips what is inside.')}</figcaption>
     </figure>
   </header>
