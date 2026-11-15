@@ -204,8 +204,8 @@
     </script>
   </section>
   <section id="d20">
-    <h2>Drawn after measuring</h2>
-    <p class="small">Planted: the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.</p>
+    <h2>Drawn after the page went still</h2>
+    <p class="small">Planted: the figure draws 2.5 s after the load event, long after the page has gone still (nothing added for the settle window, 0.5 to 1.5 s).</p>
     <div class="d20-figure"></div>
     <script>
       addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));

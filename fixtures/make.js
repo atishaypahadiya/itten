@@ -47,7 +47,7 @@ const S = [
         .then((d) => { document.querySelector('.d19-figure').innerHTML = '<p>' + d.label + '</p>'; })
         .catch((e) => { document.querySelector('.d19-figure').innerHTML = '<p>This figure could not be drawn: ' + e.message + '</p>'; });
     </script>`, '', { resource: 'd19-missing.json' }],
-  ['d20', 'page-load', 'Drawn after measuring', 'Planted: the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.', 'The figure draws as the page is read, before the load event.', (clean) => `<div class="d20-figure"></div>
+  ['d20', 'page-load', 'Drawn after the page went still', 'Planted: the figure draws 2.5 s after the load event, long after the page has gone still (nothing added for the settle window, 0.5 to 1.5 s).', 'The figure draws as the page is read, before the load event.', (clean) => `<div class="d20-figure"></div>
     <script>
       ${clean ? "document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';" : "addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));"}
     </script>

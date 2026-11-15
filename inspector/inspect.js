@@ -131,9 +131,10 @@ async function settle(page) {
   await page.waitForTimeout(120);
 }
 
-// Returns whether the network went quiet within 10 s of the load event and,
-// with o.waitFor, whether that selector appeared within 30 s.
-async function load(page, url, o = {}) {
+// Returns whether the network went quiet within 10 s of the load event,
+// with o.waitFor whether that selector appeared within 30 s, and whether the
+// page went still (see waitStill) at least `until` ms after the load event.
+async function load(page, url, o = {}, T = null, until = 0) {
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
   const networkIdle = await page.waitForLoadState('networkidle', { timeout: 10000 }).then(() => true, () => false);
   const waited = o.waitFor ? await page.waitForSelector(o.waitFor, { state: 'attached', timeout: 30000 }).then(() => true, () => false) : null;
@@ -146,21 +147,36 @@ async function load(page, url, o = {}) {
     await document.fonts.ready;
   });
   await page.waitForTimeout(500 + (o.settle || 0));
-  // Measuring starts here: note what the page has drawn so far.
-  await page.evaluate(() => window.__ittenLate?.start());
-  return { networkIdle, waited };
+  const still = T ? (await waitStill(page, T, until)).still : null;
+  return { networkIdle, waited, still };
+}
+
+// The watch load, at the first width: nothing is scrolled or measured, so
+// what the page adds and when is its own doing. It runs until the horizon
+// and then until the page has been still for the settle window, at most
+// the ceiling. Returns the late elements and when the last one came.
+async function watchLoad(page, url, o, T) {
+  await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+  const networkIdle = await page.waitForLoadState('networkidle', { timeout: 10000 }).then(() => true, () => false);
+  const waited = o.waitFor ? await page.waitForSelector(o.waitFor, { state: 'attached', timeout: 30000 }).then(() => true, () => false) : null;
+  const st = await waitStill(page, T, T.horizon);
+  const late = await page.evaluate(() => window.__ittenLate?.late() ?? []);
+  const until = late.length ? Math.max(...late.map((e) => e.t)) : 0;
+  return { networkIdle, waited, still: st.still, quietAt: st.quietAt == null ? null : Math.round(st.quietAt), watched: Math.round(st.sinceLoad ?? 0), late, until };
 }
 
 // ------------------------------------------------------ late content
-// Installed before any page script runs. start() notes every element drawn
-// when measuring begins, at the first width. late(), called back at that
-// width once the passes are done, returns the elements drawn now that were
-// not then: new nodes whose selector and text are also new. A part the page
-// swaps out at one width and back at another keeps its selector and text, so
-// it is not counted. Each element's time is when it, or the nearest ancestor,
-// was added (ms after start), from a mutation observer.
-function lateInit() {
-  const L = (window.__ittenLate = { mark: null, times: new WeakMap() });
+// Installed before any page script runs, with the settle window W in ms.
+// It notes when each element is added and when the page first goes still:
+// W ms after the load event, or after the last element added since, with
+// nothing added. Elements added after that, still drawn, and whose selector
+// and text were not drawn when the page went still, are late: anything that
+// takes the page as finished once it goes still (a screenshot, a test, a
+// reader) sees it without them. Times come from the page's own clock, in ms
+// after the load event, so they do not depend on when the inspector looks.
+// Elements the inspector adds (style, data-itten-*) are not counted.
+function lateInit(W) {
+  const L = (window.__ittenLate = { W, loadAt: null, lastAdd: 0, quietAt: null, times: new WeakMap() });
   const sel = (el) => {
     if (el.id && /^[A-Za-z][\w-]*$/.test(el.id) && document.querySelectorAll('#' + el.id).length === 1) return '#' + el.id;
     if (el === document.body) return 'body';
@@ -171,29 +187,69 @@ function lateInit() {
   // Ids that differ only by a counter (arc-3, arc-15) name the same thing
   // drawn again, as a chart does on every resize.
   const key = (el) => sel(el).replace(/#[A-Za-z][\w-]*/g, (id) => id.replace(/\d+/g, 'N')) + '|' + own(el).slice(0, 80);
-  const drawn = () => [...document.body.querySelectorAll('*')].filter((el) => !/^(script|style|template|noscript)$/.test(el.localName) && el.getClientRects().length);
-  const ignored = (el) => { const h = el.closest('[data-itten-ignore]'); return !!h && /(^|\s)(page-load|all)(\s|$)/.test(h.getAttribute('data-itten-ignore')); };
-  L.start = () => {
-    const els = drawn();
-    L.mark = performance.now(); L.before = new WeakSet(els); L.keys = new Set(els.map(key));
+  const UNDRAWN = /^(script|style|template|noscript|link|meta|title|base)$/;
+  const drawn = () => (document.body ? [...document.body.querySelectorAll('*')] : []).filter((el) => !UNDRAWN.test(el.localName) && el.getClientRects().length);
+  const ignored = (el) => { const h = el.closest?.('[data-itten-ignore]'); return !!h && /(^|\s)(page-load|all)(\s|$)/.test(h.getAttribute('data-itten-ignore')); };
+  const ours = (el) => [...el.attributes].some((a) => a.name.startsWith('data-itten-') && a.name !== 'data-itten-ignore');
+  // When an element, or the nearest ancestor, was added.
+  const added = (el) => { let a = el, t; while (a && (t = L.times.get(a)) === undefined) a = a.parentElement; return t; };
+  new MutationObserver((list) => {
+    const t = performance.now();
+    for (const m of list) for (const n of m.addedNodes) {
+      if (n.nodeType !== 1 || UNDRAWN.test(n.localName) || ours(n) || ignored(n)) continue;
+      if (!L.times.has(n)) L.times.set(n, t);
+      L.lastAdd = t;
+    }
+  }).observe(document, { childList: true, subtree: true });
+  const watch = () => {
+    const from = Math.max(L.lastAdd, L.loadAt), still = performance.now() - from;
+    if (still < W) { setTimeout(watch, Math.max(20, W - still)); return; }
+    L.quietAt = from + W;
+    const before = drawn().filter((el) => !(added(el) > L.quietAt));
+    L.keys = new Set(before.map(key));
+  };
+  addEventListener('load', () => { L.loadAt = performance.now(); setTimeout(watch, W); });
+  // For the inspector, in ms after the load event (null before it).
+  L.status = () => {
+    if (L.loadAt === null) return { sinceLoad: null };
+    const now = performance.now(), from = Math.max(L.lastAdd, L.loadAt);
+    return { sinceLoad: now - L.loadAt, still: now - from, quietAt: L.quietAt === null ? null : L.quietAt - L.loadAt };
   };
   L.late = () => {
-    if (L.mark === null) return [];
-    const els = drawn().filter((el) => !L.before.has(el) && !L.keys.has(key(el)) && !ignored(el));
+    if (L.quietAt === null) return [];
+    const els = drawn().filter((el) => added(el) > L.quietAt && !L.keys.has(key(el)) && !ignored(el));
     const set = new Set(els);
     return els.filter((el) => !set.has(el.parentElement)).slice(0, 50).map((el) => {
-      let a = el, t;
-      while (a && (t = L.times.get(a)) === undefined) a = a.parentElement;
       let text = (el.textContent || '').replace(/\s+/g, ' ').trim();
       if (text.length > 40) text = text.slice(0, 39) + '…';
-      return { t: t === undefined ? null : Math.round(t), sel: sel(el), label: el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (text ? ` "${text}"` : '') };
+      return { t: Math.round(added(el) - L.loadAt), sel: sel(el), label: el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (text ? ` "${text}"` : '') };
     });
   };
-  new MutationObserver((list) => {
-    if (L.mark === null) return;
-    const t = performance.now() - L.mark;
-    for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1 && !L.times.has(n)) L.times.set(n, t);
-  }).observe(document, { childList: true, subtree: true });
+}
+
+// How long to wait for a page to go still, from the benchmark index of the
+// machine (motion.js, Lighthouse's units). 500 ms with nothing added on a
+// machine at 1600, Lighthouse's high-end desktop, or faster; longer on a
+// slower or busier machine, up to 1.5 s. The watch for late content lasts
+// 5 s on the same scale. No wait runs past the ceiling, 15 s.
+export function settleTiming(index) {
+  const scale = Math.min(3, Math.max(1, 1600 / index));
+  return { index, scale: Math.round(scale * 100) / 100, window: Math.round(500 * scale), horizon: Math.round(5000 * scale), ceiling: 15000 };
+}
+
+// Until the page has added nothing for the settle window, and it is at
+// least `until` ms after the load event; at most the ceiling (or until plus
+// the window, if longer) from now.
+async function waitStill(page, T, until = 0) {
+  const deadline = Date.now() + Math.max(T.ceiling, until + T.window);
+  for (;;) {
+    const s = await page.evaluate(() => window.__ittenLate?.status() ?? null).catch(() => null);
+    if (!s) return { still: null };
+    if (s.sinceLoad !== null && s.sinceLoad >= until && s.still >= T.window) return { ...s, stillFor: s.still, still: true };
+    if (Date.now() >= deadline) return { ...s, stillFor: s.still, still: false };
+    const need = s.sinceLoad === null ? 100 : Math.max(until - s.sinceLoad, T.window - s.still);
+    await page.waitForTimeout(Math.min(Math.max(need, 20), 250));
+  }
 }
 
 // ---------------------------------------------------------- hairline render
@@ -265,6 +321,26 @@ export async function inspect(url, o = {}) {
   const failed = new Map();
   let watching = true;
   let motion = null;
+  let remeasured = 0;
+  let watched = { until: 0 };
+  // How long the page must go without adding an element before it is
+  // measured, scaled to this machine (settleTiming).
+  const bench = await browser.newPage();
+  const T = settleTiming(Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex)));
+  await bench.close();
+  log(`Settle: benchmark index ${T.index}, still for ${T.window} ms, late content watched for ${(T.horizon / 1000).toFixed(1)} s, ceiling ${T.ceiling / 1000} s`);
+  // A measurement taken while the page added elements is taken again once
+  // it has been still for the settle window, up to three times.
+  const measured = async (page, fn) => {
+    for (let i = 0; ; i++) {
+      const mark = await page.evaluate(() => performance.now());
+      const r = await fn();
+      const changed = await page.evaluate((m) => (window.__ittenLate?.lastAdd ?? 0) > m, mark).catch(() => false);
+      if (!changed || i === 2) return r;
+      remeasured++;
+      await waitStill(page, T);
+    }
+  };
 
   const merge = async (page, raw, pass) => {
     if (raw.check === 'hairline-subpixel') await judgeHairline(page, raw, pass);
@@ -355,48 +431,36 @@ export async function inspect(url, o = {}) {
   };
 
   // The page measured may not be the page people see: a request failed, the
-  // network never went quiet, the --wait-for selector never appeared, or
-  // elements appeared after measuring began.
-  const pageLoadFindings = async (page, page2, loaded) => {
+  // network never went quiet, the --wait-for selector never appeared, the
+  // page never went still, or elements appeared after it had gone still.
+  const pageLoadFindings = async (page, watched) => {
     const at = [widths[0]];
+    const sec = (ms) => (ms / 1000).toFixed(1);
     const req = [...failed.values()];
     if (req.length) {
       const list = req.slice(0, 8).map((r) => `${r.method} ${r.url} (${r.type}, ${r.why})`).join('; ');
       await addFinding(page, { check: 'page-load', severity: 'error', key: 'requests', mode: 'load', widths: at, count: req.length, elements: [], resources: req.map((r) => r.url),
         message: `${plural(req.length, 'request')} failed while the page was measured: ${list}${req.length > 8 ? `; and ${req.length - 8} more` : ''}. What was measured may be the page's error state. Fix the requests, then inspect again.` });
     }
-    if (!loaded.networkIdle) {
+    if (!watched.networkIdle) {
       await addFinding(page, { check: 'page-load', severity: 'warning', key: 'busy', mode: 'load', widths: at, count: 1, elements: [],
         message: 'The network did not go quiet within 10 s of the load event, so the page was measured while requests were still running. If it draws from them, pass --wait-for with a selector for what appears last, or --settle with a wait in ms.' });
     }
-    if (loaded.waited === false) {
+    if (watched.waited === false) {
       await addFinding(page, { check: 'page-load', severity: 'error', key: 'wait-for', mode: 'load', widths: at, count: 1, elements: [],
         message: `--wait-for ${o.waitFor}: no element matched within 30 s of the load event, so the page was measured without it.` });
     }
-    // Back at the first width and in light, where measuring began.
-    const late = new Map(), missedSet = new Set();
-    let unknown = false;
-    for (const p of [page, page2]) {
-      await p.setViewportSize({ width: widths[0], height: VIEW_H });
-      await p.emulateMedia({ colorScheme: 'light' });
-      await p.evaluate(() => scrollTo(0, 0));
-      await settle(p);
-      const els = await p.evaluate(() => window.__ittenLate?.late() ?? []);
-      if (!els.length) continue;
-      const known = els.filter((e) => e.t !== null).map((e) => e.t);
-      if (known.length < els.length) unknown = true;
-      const last = known.length ? Math.max(...known) : Infinity;
-      for (const e of els) if (!late.has(e.sel)) late.set(e.sel, e);
-      for (const [label, t] of p.passTimes) if (t < last) missedSet.add(label);
+    if (watched.still === false) {
+      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'never-still', mode: 'load', widths: at, count: 1, elements: [],
+        message: `The page kept adding elements for ${sec(watched.watched)} s after the load event and never went ${T.window} ms without one, so it was measured while still drawing. Content that changes on purpose, such as a carousel or a live feed, can be marked data-itten-ignore="page-load".` });
     }
-    if (late.size && missedSet.size) {
-      const els = [...late.values()].sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
-      const ts = els.filter((e) => e.t !== null).map((e) => e.t);
-      const s = (ms) => (ms / 1000).toFixed(1);
-      const when = !ts.length || unknown ? 'after measuring began' : ts[0] === ts.at(-1) ? `${s(ts[0])} s after measuring began` : `${s(ts[0])} to ${s(ts.at(-1))} s after measuring began`;
-      const missed = [...missedSet];
+    const els = watched.late;
+    if (els.length) {
+      const ts = els.map((e) => e.t).sort((a, b) => a - b);
+      const when = ts[0] === ts.at(-1) ? `${sec(ts[0])} s` : `${sec(ts[0])} to ${sec(ts.at(-1))} s`;
+      const them = els.length === 1 ? 'it' : 'them';
       await addFinding(page, { check: 'page-load', severity: 'warning', key: 'late', widths: at, count: els.length, elements: els.map(({ sel, label }) => ({ sel, label })),
-        message: `${plural(els.length, 'element')} appeared ${when}, so ${unknown ? 'some passes may have' : `${missed.length} ${missed.length === 1 ? 'pass' : 'passes'}`} measured the page without ${els.length === 1 ? 'it' : 'them'}${unknown ? '' : ` (${missed.slice(0, 6).join('; ')}${missed.length > 6 ? '; …' : ''})`}. The page was still drawing: a timer, an animation-frame chain or a slow request. Pass --wait-for with a selector for what appears last, or --settle with a wait in ms. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore="page-load".` });
+        message: `${plural(els.length, 'element')} appeared ${when} after the load event, after the page had gone still at ${sec(watched.quietAt)} s (nothing added for ${T.window} ms). A screenshot, a test or a reader that takes the page as finished once it goes still sees the page without ${them}; the inspector waited for ${them} before measuring. The page was still drawing: a timer, an animation-frame chain or a slow request. If it is meant to, pass --wait-for with a selector for what appears last. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore="page-load".` });
     }
   };
 
@@ -404,28 +468,30 @@ export async function inspect(url, o = {}) {
     await page.setViewportSize({ width: pass.w, height: VIEW_H });
     await page.evaluate(() => scrollTo(0, 0));
     await settle(page);
-    const res = await page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, identifier: IDENTIFIER, ...extra });
-    // When the pass measured, in ms after the start of measuring.
-    if (page.passTimes) page.passTimes.push([pass.label, await page.evaluate(() => (window.__ittenLate?.mark == null ? 0 : performance.now() - window.__ittenLate.mark))]);
-    return res;
+    await waitStill(page, T, watched.until);
+    return measured(page, () => page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, identifier: IDENTIFIER, ...extra }));
   };
 
   try {
     // Pass set 1: light, 100% text, every width; contrast and fonts at key widths, light and dark.
     const ctx = await browser.newContext({ viewport: { width: widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
-    await ctx.addInitScript(lateInit);
+    await ctx.addInitScript(lateInit, T.window);
     // Requests that fail or answer 400 or more, on every Chromium load. A
     // page that catches the failure and shows a message raises no page error,
     // so without this the report would measure the error state as the page.
     const fail = (url, method, type, why) => { if (watching && !failed.has(url)) failed.set(url, { url, method, type, why }); };
     ctx.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
     ctx.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
+    // The watch load: when the page goes still, and what it adds after.
+    log(`Loading ${url}`);
+    const wpage = await ctx.newPage();
+    watched = await watchLoad(wpage, url, o, T);
+    await wpage.close();
+    log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${(watched.quietAt / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
     const page = await ctx.newPage();
-    page.passTimes = [];
     const consoleErrors = [];
     page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
-    log(`Loading ${url}`);
-    const loaded = await load(page, url, o);
+    await load(page, url, o, T, watched.until);
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
 
@@ -445,7 +511,7 @@ export async function inspect(url, o = {}) {
       for (const [sel, ...v] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
       for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
       for (const raw of res.issues) await merge(page, raw, pass);
-      const ty = await page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER });
+      const ty = await measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER }));
       for (const raw of ty.issues) await merge(page, raw, pass);
       log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     }
@@ -471,10 +537,9 @@ export async function inspect(url, o = {}) {
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
     const page2 = await ctx.newPage();
-    page2.passTimes = [];
     const cdp2 = await ctx.newCDPSession(page2);
     await cdp2.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-    await load(page2, url, o);
+    await load(page2, url, o, T, watched.until);
     for (const w of widths) {
       const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
       const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true });
@@ -502,14 +567,15 @@ export async function inspect(url, o = {}) {
       }
     }
     for (const f of spacingUnitFindings(obs)) await addFinding(page2, f);
-    await pageLoadFindings(page, page2, loaded);
+    await pageLoadFindings(page, watched);
     watching = false;
     await ctx.close();
 
     // Pass set 3: device pixel ratio 2, hairlines only.
     const ctx2 = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
+    await ctx2.addInitScript(lateInit, T.window);
     const page3 = await ctx2.newPage();
-    await load(page3, url, o);
+    await load(page3, url, o, T, watched.until);
     for (const w of [keyWidths[0], keyWidths.at(-1)]) {
       const pass = { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] };
       const res = await runPass(page3, pass);
@@ -519,7 +585,7 @@ export async function inspect(url, o = {}) {
 
     // Pass set 4: motion, in Chromium at the last key width, with motion
     // allowed and again with prefers-reduced-motion: reduce.
-    motion = await motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log);
+    motion = await motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log, T, watched.until);
 
     // Pass set 5: WebKit and Firefox, light, a few widths, layout checks only.
     const engines = { widths: o.engineWidths ?? DEFAULT_WIDTHS, checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
@@ -536,8 +602,9 @@ export async function inspect(url, o = {}) {
       try {
         engines.browsers[name] = eb.version();
         const ectx = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
+        await ectx.addInitScript(lateInit, T.window);
         const ep = await ectx.newPage();
-        await load(ep, url, o);
+        await load(ep, url, o, T, watched.until);
         for (const w of engines.widths) {
           const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
           const res = await runPass(ep, pass);
@@ -616,7 +683,9 @@ export async function inspect(url, o = {}) {
       engines,
       pageErrors: [...new Set(consoleErrors)].slice(0, 20),
       motion,
-      load: { networkIdle: loaded.networkIdle, waitFor: o.waitFor ?? null, waited: loaded.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()] },
+      load: { networkIdle: watched.networkIdle, waitFor: o.waitFor ?? null, waited: watched.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()],
+        timing: { benchmarkIndex: T.index, window: T.window, horizon: T.horizon, ceiling: T.ceiling },
+        watched: { for: watched.watched, still: watched.still, stillAt: watched.quietAt, late: watched.late.length, lastLate: watched.until }, remeasured },
       issues: list,
     };
     // Against a committed baseline: what this run adds and what it fixes.
@@ -975,12 +1044,13 @@ async function calibrate(page, cdp, reference) {
   return cpu;
 }
 
-async function motionPasses(browser, url, o, system, w, merge, log) {
+async function motionPasses(browser, url, o, system, w, merge, log, T, until) {
   const out = { width: w, animations: 0, durations: [], easings: [], frames: {}, interactions: {}, cpu: null };
   const runs = {};
   for (const mode of ['motion', 'reduced']) {
     const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference' });
     await ctx.addInitScript(motionInit);
+    await ctx.addInitScript(lateInit, T.window);
     // Clicks must not leave the page: what was recorded lives in it. Popups
     // are closed, and navigations of the page itself are aborted once it
     // has loaded; a same-document change (a hash, history.pushState) stays.
@@ -989,7 +1059,7 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
     page = await ctx.newPage();
     const cdp = await ctx.newCDPSession(page);
     try {
-      await load(page, url, o);
+      await load(page, url, o, T, until);
       await page.route('**/*', (r) => (r.request().isNavigationRequest() && r.request().frame() === page.mainFrame() ? r.abort() : r.continue()));
       const phase = (p) => page.evaluate((x) => window.__ittenMotion?.setPhase(x), p);
       // Until no animation that ends is still running: 50 ms to 1.2 s.
