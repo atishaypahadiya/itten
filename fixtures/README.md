@@ -7,14 +7,15 @@ A test print for the inspector, in the way a 3D printer's calibration model exer
 - `itten.system.json` is the system both pages are built to.
 - `defects.json` lists the planted defects; `make.js` writes the two pages and `defects.json` from one table, so they cannot drift apart. Edit `make.js`, then run `node fixtures/make.js`.
 
-Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure. Every animation and transition uses the system's durations and easings and stops under `prefers-reduced-motion: reduce`; d31 to d35 each break one of these.
+Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure. Every animation and transition uses the system's durations and easings and stops under `prefers-reduced-motion: reduce`; d31 to d35 each break one of these. Every margin, padding and gap is written in rem, so it follows the text size, and the side padding in d40 follows the fluid range the system declares; d39 and d40 each break one of these. Widths stay in px.
 
-Four more things on both pages must not be reported, each found on a real site:
+Five more things on both pages must not be reported; the first four were found on real sites:
 
 - in d20, a small chart drawn again on every resize, its path id taken from a counter, so the id differs each time it is drawn (not late content);
 - in d23, a reference ending on a DOI alone on its last line (a citation ends on its link; not a widow);
 - in d23, a paragraph in a 104 px column without hyphenation, ending on one word (every line there is a fragment; not judged as a widow);
-- in d31, a 250 ms transition reversed after 150 ms, which the browser runs for less than 250 ms (the declared duration is judged, not the shortened one).
+- in d31, a 250 ms transition reversed after 150 ms, which the browser runs for less than 250 ms (the declared duration is judged, not the shortened one);
+- in d36, a bold run inside a regular paragraph (it takes the paragraph's step, so its weight is not judged).
 
 ## Planted defects
 
@@ -53,6 +54,11 @@ Four more things on both pages must not be reported, each found on a real site:
 | d33 | `motion-layout` | the hover transition animates width, so the page is laid out again on every frame. | The same growth as a scale transform. |
 | d34 | `frame-timing` | the box's scroll handler holds the main thread for 80 ms each time it fires. | The box has no scroll handler. |
 | d35 | `flash` | the panel alternates dark and light every 100 ms, five flashes a second over its whole area. | The panel alternates once a second. |
+| d36 | `type-scale` | regular text set at 16/20, the line height of the bold label step. Matched on size alone it passes as a label; at weight 400 it is body text, whose step sets 24. | The text keeps the body step's 24 px line height. Its bold run takes the paragraph's step on both pages. |
+| d37 | `type-scale` | 16 px text at weight 500. The steps at 16 px are body at 400 and label at 600. | The text is set at weight 400, the body step. |
+| d38 | `type-scale` | the pull quote is set in the text family. The quote step, 24/32 at weight 400, is set in the display family. | The pull quote is set in the display family, as its step says. |
+| d39 | `spacing-unit` | the box's padding is written as 12px 16px. At the default text size it matches the rem padding of every other box; at 200% text it stays put while the text doubles. | The padding is 0.75rem 1rem, as everywhere else on the page. |
+| d40 | `spacing-scale` | side padding from clamp(1rem, 5vw, 3rem). The system declares a fluid range from 16 px at 320 px wide to 48 px at 1120 px, which is clamp(1rem, 0.2rem + 4vw, 3rem); 5vw runs ahead of it between those widths. | The side padding follows the declared range. |
 
 ## Without a system
 
@@ -74,4 +80,4 @@ node scripts/fixture-test.js --full   # 41 widths, a minute or two
 
 A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
-Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 35 of 35 and precision 39 of 39, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 39 findings for 35 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.
+Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 40 of 40 and precision 45 of 45, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 45 findings for 40 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, d07 both fails to load and names a family outside the system, and d39's padding is reported once for each value, 12 px and 16 px. d07's missing font file is also listed in d19's failed-request finding, which is one finding.

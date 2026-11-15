@@ -61,6 +61,48 @@
           "description": "Every margin, padding and gap the build may use, in px, ascending. 0 is always allowed and need not be listed.",
           "$ref": "#/$defs/ascendingLengths"
         },
+        "fluid": {
+          "type": "array",
+          "description": "Fluid spacing: ranges that follow the viewport between two widths, as clamp(min, a + b·vw, max) does. A margin, padding or gap is on the system when it is a step of the scale or where one of these ranges puts it at that width (within 0.5 px). Write the limits in rem so they follow the text size too.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "min",
+              "max",
+              "minWidth",
+              "maxWidth"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "min": {
+                "type": "number",
+                "minimum": 0,
+                "description": "px at minWidth and below."
+              },
+              "max": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "px at maxWidth and above."
+              },
+              "minWidth": {
+                "type": "number",
+                "minimum": 0
+              },
+              "maxWidth": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "groupRatioMin": {
           "type": "number",
           "minimum": 1,

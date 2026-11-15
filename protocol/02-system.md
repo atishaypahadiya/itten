@@ -14,6 +14,8 @@ Work through `docs/teardown.md` category by category. For each value you carry i
 2. Find the base unit: the largest value that divides most of the repeated gaps within the measurement's uncertainty. If the inspiration has no clear unit, use 4 px (LAY-05).
 3. Write the scale as the repeated gaps, rounded to the unit, in ascending order. Six to twelve steps is typical. Add a step only when the teardown shows a gap the existing steps cannot express.
 4. Check the ratio between the gap separating groups and the gap inside them. Record it as `groupRatioMin`; it must be at least 2 unless the teardown shows the inspiration deliberately does otherwise (LAY-06).
+5. Where the inspiration's side margins or section gaps grow with the window, declare each such range in `spacing.fluid`, as a fluid type step is declared: a name, `min` at and below `minWidth`, `max` at and above `maxWidth`. Write it as `clamp(min, a + b·vw, max)` with the limits in rem (the same arithmetic as step 6 under Type). The inspector accepts a margin, padding or gap where a declared range puts it at that width, within 0.5 px, and reports any other value that follows the viewport.
+6. Write every step in rem in the build (24 px is `1.5rem`), so spacing follows the browser's text size (CRF-30).
 
 ### Type
 
@@ -21,7 +23,7 @@ Work through `docs/teardown.md` category by category. For each value you carry i
 2. Take the type sizes from the teardown's measured ratios, not its absolute sizes. Fix the body size first (from the brief and the platform minimum, TYP-01), then apply the measured ratios to it.
 3. Round every fixed size and line height to a whole pixel. Fractional sizes and sizes compounded from nested `em` values are reported by the inspector.
 4. Keep body leading between 1.2 and 1.45 (TYP-05) unless the brief overrides it.
-5. Give each step a name, a size, a line height, and the weight and family it uses. Use only these steps (TYP-06).
+5. Give each step a name, a size, a line height, and the weight and family it uses. Use only these steps (TYP-06). The inspector matches text to a step on its size, its weight and the role of its family (text or display, from `families`), so two steps may share a size when their weight or family tells them apart, as a 16/24 body at 400 and a 16/20 label at 600 do.
 6. A step may be fluid instead of fixed, when the inspiration's headings grow with the window. Give it `fluid` in place of `size`: the size at and below `minWidth`, the size at and above `maxWidth`, and those two widths. The browser then scales it in a straight line between them, which is what `clamp(min, a + b·vw, max)` produces. To write the clamp, take slope = (max − min) ÷ (maxWidth − minWidth), then `b` = slope × 100 vw and `a` = min − slope × minWidth, in rem. The inspector accepts the size the declared line gives at each width, within 0.25 px, fractions included, and reports any other fluid size. Give a fluid step a `lineHeight` in px, or a `leading` ratio of the size. A fixed line height keeps everything below the heading on whole pixels (CRF-08). Clamp limits in rem still follow the browser's text size; the inspector checks the declared range at the default text size only.
 
 ### Grid

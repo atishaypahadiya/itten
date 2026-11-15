@@ -12,15 +12,15 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const S = [
-  ['d01', 'spacing-scale', 'Spacing off the scale', 'Planted: 13 px padding above and below the text. The scale has 12 and 16.', 'The padding is 12 px above and below, from the scale.', `<div class="tint d01">A padded box</div>`, `.d01 { padding: 13px 16px; }`],
+  ['d01', 'spacing-scale', 'Spacing off the scale', 'Planted: 13 px padding above and below the text. The scale has 12 and 16.', 'The padding is 12 px above and below, from the scale.', `<div class="tint d01">A padded box</div>`, `.d01 { padding: 0.8125rem 1rem; }`],
   ['d02', 'type-scale', 'Compounded type size', 'Planted: 0.875em inside a 0.875rem parent, which renders at 12.25 px.', 'The note is set in rem, so it renders at 14 px, a step of the scale.', `<div class="d02"><p class="note">Small print in a smaller box.</p></div>`, `.d02 .note { font-size: 0.875em; line-height: 20px; }`],
   ['d03', 'near-miss-edge', 'Near-miss edge', 'Planted: the next line starts 2 px to the right of the text above it.', 'The next line shares the left edge of the text above it.', `<p class="d03">This line should share the left edge.</p>`, `.d03 { position: relative; left: 2px; }`],
-  ['d04', 'sibling-gaps', 'Unequal sibling gaps', 'Planted: the third item has an extra 8 px top margin, so the gaps run 8, 16, 8.', 'All four items are 8 px apart.', `<ul class="list"><li>First item</li><li>Second item</li><li>Third item</li><li>Fourth item</li></ul>`, `.list li:nth-child(3) { margin-top: 8px; }`],
+  ['d04', 'sibling-gaps', 'Unequal sibling gaps', 'Planted: the third item has an extra 8 px top margin, so the gaps run 8, 16, 8.', 'All four items are 8 px apart.', `<ul class="list"><li>First item</li><li>Second item</li><li>Third item</li><li>Fourth item</li></ul>`, `.list li:nth-child(3) { margin-top: 0.5rem; }`],
   ['d05', 'radius', 'Radius off the set', 'Planted: a 6 px radius. The set is 4 and 12.', 'A 4 px radius, from the set.', `<div class="tint d05">A rounded box</div>`, `.d05 { border-radius: 6px; }`],
   ['d06', 'radius-concentric', 'Non-concentric corners', 'Planted: the inner box keeps the outer 12 px radius inside a 4 px inset; concentric is 8 px.', 'The inner radius is 12 minus 4, so 8 px.', `<div class="outer"><div class="inner">A nested box</div></div>`, `.inner { border-radius: 12px; }`],
   ['d07', 'font-fallback', 'Font fallback', 'Planted: the first family points at a file that does not exist, so the text falls back to a platform font.', 'The text is set in the loaded web font.', `<p class="d07">This text should be in a web font.</p>`, `@font-face { font-family: "Fixture Missing"; src: url("missing-font.woff2") format("woff2"); }\n.d07 { font-family: "Fixture Missing", sans-serif; }`],
   ['d08', 'contrast', 'Contrast against rendered pixels', 'Planted: white text over a light raster image. Its computed background is transparent, so only the rendered pixels show the problem.', 'Dark text over the same light raster image.', `<div class="photo"><canvas width="720" height="96" aria-hidden="true"></canvas><p>Text over an image</p></div>`, `.photo p { color: #FFFFFF; }`],
-  ['d09', 'target-size', 'Target size', 'Planted: two 18 px icon buttons 4 px apart.', 'Two 44 px icon buttons 8 px apart.', `<div class="tools"><button type="button" aria-label="Add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></div>`, `.tools { gap: 4px; }\n.tools button { width: 18px; height: 18px; }\n.tools svg { width: 10px; height: 10px; }`],
+  ['d09', 'target-size', 'Target size', 'Planted: two 18 px icon buttons 4 px apart.', 'Two 44 px icon buttons 8 px apart.', `<div class="tools"><button type="button" aria-label="Add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></div>`, `.tools { gap: 0.25rem; }\n.tools button { width: 18px; height: 18px; }\n.tools svg { width: 10px; height: 10px; }`],
   ['d10', 'overflow', 'Page overflow at a narrow width', 'Planted: a box with a 336 px minimum width. At 320 px the page scrolls sideways; from 360 px it fits.', 'The box is never wider than its column.', `<div class="tint banner">A wide box</div>`, `.banner { min-width: 336px; }`],
   ['d11', 'overflow', 'Text spilling out of its box', 'Planted: a long word that cannot break, in a 96 px box.', 'The long word is allowed to break.', `<div class="tag">Uncompromisingly</div>`, `.tag { overflow-wrap: normal; }`],
   ['d12', 'clipping', 'Clipping at 200% text', 'Planted: a fixed 40 px height with overflow hidden. The text fits at the default text size and is cut off when the browser text size is doubled.', 'A 40 px minimum height, so the box grows with the text.', `<div class="fixed">Fits at 100%</div>`, `.fixed { height: 40px; overflow: hidden; }`],
@@ -71,6 +71,11 @@ const S = [
       document.querySelector('#d34 .scroller').addEventListener('scroll', () => { const t = performance.now(); while (performance.now() - t < 80) { /* busy */ } });
     </script>`}`, ''],
   ['d35', 'flash', 'Flashing', 'Planted: the panel alternates dark and light every 100 ms, five flashes a second over its whole area.', 'The panel alternates once a second.', `<div class="strobe" aria-hidden="true"></div>`, `#d35 .strobe { animation-duration: 100ms; }`],
+  ['d36', 'type-scale', 'Matched on weight', 'Planted: regular text set at 16/20, the line height of the bold label step. Matched on size alone it passes as a label; at weight 400 it is body text, whose step sets 24.', 'The text keeps the body step\'s 24 px line height. Its bold run takes the paragraph\'s step on both pages.', `<p class="tight">Regular text with a <strong>bold run</strong>.</p>`, `#d36 .tight { line-height: 1.25rem; }`],
+  ['d37', 'type-scale', 'Weight off the steps', 'Planted: 16 px text at weight 500. The steps at 16 px are body at 400 and label at 600.', 'The text is set at weight 400, the body step.', `<p class="medium">A weight no step has.</p>`, `#d37 .medium { font-weight: 500; }`],
+  ['d38', 'type-scale', 'Family of another role', 'Planted: the pull quote is set in the text family. The quote step, 24/32 at weight 400, is set in the display family.', 'The pull quote is set in the display family, as its step says.', `<p class="pull">A pull quote</p>`, `#d38 .pull { font-family: "Atkinson Hyperlegible Next", sans-serif; }`],
+  ['d39', 'spacing-unit', 'Spacing in px', 'Planted: the box\'s padding is written as 12px 16px. At the default text size it matches the rem padding of every other box; at 200% text it stays put while the text doubles.', 'The padding is 0.75rem 1rem, as everywhere else on the page.', `<div class="tint">Padding in rem</div>`, `#d39 .tint { padding: 12px 16px; }`],
+  ['d40', 'spacing-scale', 'Fluid spacing off its range', 'Planted: side padding from clamp(1rem, 5vw, 3rem). The system declares a fluid range from 16 px at 320 px wide to 48 px at 1120 px, which is clamp(1rem, 0.2rem + 4vw, 3rem); 5vw runs ahead of it between those widths.', 'The side padding follows the declared range.', `<div class="tint fluid-pad">Fluid side padding</div>`, `#d40 .fluid-pad { padding-inline: clamp(1rem, 5vw, 3rem); }`],
 ];
 // Distinct-value mode: the same idea, inspected without a system file.
 // Nothing says which fluid values are deliberate, so each fluid range must
@@ -78,7 +83,7 @@ const S = [
 // value in the sweep totals. The twin sets each at one fixed size instead.
 const D = [
   ['d21', 'type-scale', 'Fluid type without a system', 'Planted: a heading set with clamp() from 30 to 42 px between 750 and 1250 px wide. Without a system it must be listed once, as info.', 'The heading is set at 32 px.', `<p class="display">A fluid heading</p>`, `#d21 .display { font-size: clamp(1.875rem, 0.75rem + 2.4vw, 2.625rem); }`],
-  ['d22', 'spacing-scale', 'Fluid spacing without a system', 'Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.', 'The side padding is 24 px.', `<div class="tint gutter"><p>Side padding that grows with the window</p></div>`, `#d22 .gutter { padding: 12px round(clamp(16px, 4vw, 56px), 1px); }`],
+  ['d22', 'spacing-scale', 'Fluid spacing without a system', 'Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.', 'The side padding is 24 px.', `<div class="tint gutter"><p>Side padding that grows with the window</p></div>`, `#d22 .gutter { padding: 0.75rem round(clamp(1rem, 4vw, 3.5rem), 1px); }`],
 ];
 const distinctPage = (clean) => `<!doctype html>
 <html lang="en">
@@ -90,7 +95,7 @@ const distinctPage = (clean) => `<!doctype html>
 <style>
 /* Shared by both pages. */
 .display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
-.gutter { padding: 12px 24px; }
+.gutter { padding: 0.75rem 1.5rem; }
 </style>${clean ? '' : `
 <style id="planted">
 ${D.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}

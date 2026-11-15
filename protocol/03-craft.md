@@ -11,13 +11,18 @@ Each rule names how it is verified: by an inspector check (`protocol/04-inspect.
 ## Spacing and edges
 
 ### CRF-01 · Spacing comes only from the scale
-Strength: MUST · Verified by: `spacing-scale` (inspector); manual: compare gaps at 100% and 200% text
+Strength: MUST · Verified by: `spacing-scale` (inspector)
 
-Every margin, padding and gap is 0 or a value in `spacing.scale`. Combine scale values only where the result is also in the scale.
+Every margin, padding and gap is 0 or a value in `spacing.scale`, or lies on a fluid range declared in `spacing.fluid`. Combine scale values only where the result is also in the scale. Write each one in rem (CRF-30).
 
-Set spacing in the same unit as type, `rem`, so that when a reader doubles the browser's text size the gaps grow with the text and the rhythm between them holds. The scale is written in px at the default 16 px root; 24 px is set as `1.5rem`. Spacing in `px` stays put while the text doubles, so at 200% text a paragraph gap shrinks to half a line and groups run together.
+*Why:* a closed scale removes near-duplicates such as 13 px beside 12 px, which read as mistakes rather than decisions. Cites: LAY-05.
 
-*Why:* a closed scale removes near-duplicates such as 13 px beside 12 px, which read as mistakes rather than decisions, and a scale in the type's unit keeps its proportions to the text at every text size. Cites: LAY-05, TYP-03; WCAG 2.2 SC 1.4.4.
+### CRF-30 · Spacing follows the text size
+Strength: MUST · Verified by: `spacing-unit` (inspector)
+
+Set spacing in the same unit as type, `rem`, so that when a reader doubles the browser's text size the gaps grow with the text and the rhythm between them holds. The scale is written in px at the default 16 px root; 24 px is set as `1.5rem`. The limits of a fluid range are rem too: `clamp(1rem, 0.2rem + 4vw, 3rem)`. Spacing in `px` stays put while the text doubles, so at 200% text a paragraph gap shrinks to half a line and groups run together. Widths and borders are not spacing: a hairline stays 1 px, and a measure may be set in px or ch.
+
+*Why:* a scale in the type's unit keeps its proportions to the text at every text size. Cites: LAY-05, TYP-03; WCAG 2.2 SC 1.4.4.
 
 ### CRF-02 · Groups sit further apart than their contents
 Strength: MUST · Verified by: manual: for each grouped region (card, form section, list under a heading), read the largest gap inside a group and the gap between groups from the devtools box-model overlay, and check the ratio against `spacing.groupRatioMin`
@@ -67,16 +72,16 @@ With line height L, ascent A, descent D and cap height C, all in em as the brows
 ## Sizes
 
 ### CRF-06 · Type comes only from the type scale
-Strength: MUST · Verified by: `type-scale` (inspector); manual: compare computed `line-height`, `font-weight` and `letter-spacing` with the step in devtools
+Strength: MUST · Verified by: `type-scale` (inspector: size, line height, weight and family role); manual: compare computed `letter-spacing` with the step in devtools
 
-Every font size is a step in `type.scale`, used with that step's line height, weight, family and tracking. A new size is a change to the system, not a local decision.
+Every font size is a step in `type.scale`, used with that step's line height, weight, family and tracking. Text is matched to a step on its size, weight and family role together, so regular text cannot pass on a bold step's line height. A bold or italic run inside a paragraph, at the paragraph's size, belongs to the paragraph's step. A new size is a change to the system, not a local decision.
 
 *Why:* hierarchy needs a closed set of steps, and one-off sizes blur the distinction between levels. Cites: TYP-06, TYP-07.
 
 ### CRF-07 · No fractional or compounded sizes
 Strength: MUST · Verified by: `type-scale` and `spacing-scale` (inspector)
 
-Font sizes, line heights, margins, paddings and gaps resolve to whole CSS px. Set font sizes in `rem` or `px`, never in `em` or `%` on nested elements, where 0.8333em of 16 px gives 13.333 px and nesting compounds it further. Fluid sizes built with `clamp()` and viewport units land on fractions at most widths; change sizes at breakpoints instead, or log the fluid step as an override.
+Font sizes, line heights, margins, paddings and gaps resolve to whole CSS px. Set font sizes in `rem` or `px`, never in `em` or `%` on nested elements, where 0.8333em of 16 px gives 13.333 px and nesting compounds it further. Fluid sizes built with `clamp()` and viewport units land on fractions at most widths; change sizes at breakpoints instead, or declare the range in the system (a fluid step in `type.scale`, a range in `spacing.fluid`).
 
 *Why:* fractional sizes put text and edges on sub-pixel positions, which blurs them and creates near-misses, and they are never in the scale. Cites: TYP-06, LAY-05.
 
@@ -286,12 +291,12 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 
 | Rule | What it asks | Verified by | Pass |
 |---|---|---|---|
-| CRF-01 | Spacing only from the scale, in rem | `spacing-scale`; manual: gaps at 200% text | |
+| CRF-01 | Spacing only from the scale | `spacing-scale` | |
 | CRF-02 | Groups further apart than contents | manual: box-model overlay, ratio vs `groupRatioMin` | |
 | CRF-03 | One gap between siblings of one kind | `sibling-gaps` | |
 | CRF-04 | Shared edges, optical exceptions logged | `near-miss-edge` | |
 | CRF-05 | Text trimmed to cap height and baseline | manual: 400% crop, cap-top and baseline gaps | |
-| CRF-06 | Type only from the type scale | `type-scale`; manual: line height, weight, tracking | |
+| CRF-06 | Type only from the type scale | `type-scale`; manual: tracking | |
 | CRF-07 | No fractional or compounded sizes | `type-scale`, `spacing-scale` | |
 | CRF-08 | Hairlines on whole device pixels | `hairline-subpixel` | |
 | CRF-09 | Icon size and stroke matched to text | manual: formula vs computed `stroke-width`, 400% crop | |
@@ -315,6 +320,7 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 | CRF-27 | Transform and opacity, not layout | `motion-layout` | |
 | CRF-28 | Steady frames | `frame-timing`; manual: slower device | |
 | CRF-29 | No flashing above three a second | `flash` | |
+| CRF-30 | Spacing in rem, following the text size | `spacing-unit` | |
 
 ## Sources
 

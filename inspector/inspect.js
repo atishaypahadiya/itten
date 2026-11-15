@@ -34,6 +34,7 @@ export const CHECKS = {
   'spacing-scale': { title: 'Spacing off the scale', rule: 'CRF-01 · CRF-07 · LAY-05' },
   'type-scale': { title: 'Type off the scale', rule: 'CRF-06 · CRF-07 · TYP-06' },
   'text-resize': { title: 'Text ignores the browser text size', rule: 'CRF-16 · TYP-03 · WCAG 1.4.4' },
+  'spacing-unit': { title: 'Spacing ignores the browser text size', rule: 'CRF-30 · CRF-01 · WCAG 1.4.4' },
   'near-miss-edge': { title: 'Near-miss edges', rule: 'CRF-04 · LAY-09 · LAY-10' },
   'sibling-gaps': { title: 'Unequal sibling gaps', rule: 'CRF-03 · LAY-05' },
   'radius': { title: 'Radii outside the set', rule: 'CRF-11 · SHP-02' },
@@ -245,7 +246,7 @@ export async function inspect(url, o = {}) {
   const coverage = { graphics: 0, figureParts: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0, contrastSamples: 0, contrastSkipped: 0, fontGroups: 0 };
   const renderedFonts = new Map();
   const sizes = {};
-  const obs = { spacing: new Map(), type: new Map(), labels: new Map() };
+  const obs = { spacing: new Map(), spacing2: new Map(), type: new Map(), labels: new Map() };
   let cropCount = 0, idCount = 0;
   const failed = new Map();
   let watching = true;
@@ -427,7 +428,7 @@ export async function inspect(url, o = {}) {
       for (const [k, v] of Object.entries(res.data.graphicFontSizes)) distinct.insideGraphics[k] = Math.max(distinct.insideGraphics[k] ?? 0, v);
       distinct.perWidth.push({ w, fontSizes: Object.keys(res.data.fontSizes).length, spacing: Object.keys(res.data.spacing).length });
       for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing.has(k)) obs.spacing.set(k, new Map()); obs.spacing.get(k).set(w, v); }
-      for (const [sel, fs, lh] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, [fs, lh]); }
+      for (const [sel, ...v] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
       for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
       for (const raw of res.issues) await merge(page, raw, pass);
       const ty = await page.evaluate(typography, { checks: TYPO, system });
@@ -462,8 +463,9 @@ export async function inspect(url, o = {}) {
     await load(page2, url, o);
     for (const w of widths) {
       const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
-      const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1) });
+      const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true });
       if (w === keyWidths.at(-1)) sizes.doubled = res.data.textSizes;
+      for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing2.has(k)) obs.spacing2.set(k, new Map()); obs.spacing2.get(k).set(w, v); }
       for (const raw of res.issues) await merge(page2, raw, pass);
       log(`  ${pass.label}: ${res.issues.length} findings`);
     }
@@ -485,6 +487,7 @@ export async function inspect(url, o = {}) {
           elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k })) });
       }
     }
+    for (const f of spacingUnitFindings(obs)) await addFinding(page2, f);
     await pageLoadFindings(page, page2, loaded);
     watching = false;
     await ctx.close();
@@ -625,6 +628,33 @@ export function fluidAt(f, w) {
   return f.min + ((f.max - f.min) * (w - f.minWidth)) / (f.maxWidth - f.minWidth);
 }
 
+// Spacing that keeps its size when the browser's text size is doubled is set
+// in px: the gaps stay put while the text grows. Each margin, padding and gap
+// is compared with itself at 100% and 200% text, at the same width. Values
+// that follow the viewport (three or more across the sweep) are left to
+// spacing-scale: in a clamp() between its limits the vw part does not follow
+// the text by design, and whether the limits are in rem cannot be seen there.
+function spacingUnitFindings(obs) {
+  const groups = new Map();
+  for (const [k, byW] of obs.spacing) {
+    const at2 = obs.spacing2.get(k);
+    if (!at2 || new Set(byW.values()).size >= 3) continue;
+    const i = k.lastIndexOf('|'), sel = k.slice(0, i), prop = k.slice(i + 1);
+    for (const [w, v] of byW) {
+      if (v < 2 || !at2.has(w) || Math.abs(at2.get(w) - v) >= 0.5) continue;
+      let g = groups.get(v);
+      if (!g) groups.set(v, (g = { sels: [], props: new Set(), ws: new Set(), n: 0 }));
+      if (!g.sels.includes(sel)) { g.sels.push(sel); g.n++; }
+      g.props.add(prop); g.ws.add(w);
+    }
+  }
+  return [...groups].sort((a, b) => a[0] - b[0]).map(([v, g]) => ({
+    check: 'spacing-unit', severity: 'warning', key: 'px|' + v, mode: '200% text', count: g.n, widths: [...g.ws].sort((a, b) => a - b),
+    elements: g.sels.map((s) => ({ sel: s, label: obs.labels.get(s) || s })),
+    message: `${v} px of ${[...g.props].join(', ')} stays ${v} px when the browser's text size is doubled, on ${plural(g.n, 'element')}: it is set in px, so the text grows and the gap does not. Set spacing in rem, the unit of the type (${Math.round((v / 16) * 10000) / 10000}rem at the default 16 px).`,
+  }));
+}
+
 function scaleFindings(obs, system, widths, distinct) {
   const out = [];
   const frac = (v) => Math.abs(v - Math.round(v)) > 0.01;
@@ -700,10 +730,15 @@ function scaleFindings(obs, system, widths, distinct) {
   };
 
   // Spacing
+  // A value passes when it is a step of the scale, or when it is where a
+  // fluid range the system declares puts it at that width (within 0.5 px,
+  // fractions included, since clamp() lands between whole pixels).
   const sp = system?.spacing?.scale;
+  const spFluid = system?.spacing?.fluid || [];
   const spEntries = [...obs.spacing].map(([k, byW]) => { const i = k.lastIndexOf('|'); return { sel: k.slice(0, i), prop: k.slice(i + 1), byW }; });
   const spOn = (v) => !sp || sp.some((s) => Math.abs(s - v) < 0.05);
-  judge('spacing-scale', spEntries, (v) => !frac(v) && spOn(v), spOn, 'spacing scale', 'spacing');
+  const spFluidAt = (v, w) => spFluid.some((f) => Math.abs(fluidAt(f, w) - v) <= 0.5);
+  judge('spacing-scale', spEntries, (v, w) => (!frac(v) && spOn(v)) || spFluidAt(v, w), spOn, 'spacing scale', 'spacing');
 
   // Type sizes. A fixed step matches its size; a fluid step matches the size
   // it declares at that width, within FLUID_TOLERANCE px, fractions included.
@@ -715,14 +750,46 @@ function scaleFindings(obs, system, widths, distinct) {
   const tyOn = (v) => !steps || steps.some((x) => x.size && Math.abs(x.size - v) < 0.05);
   judge('type-scale', tyEntries, (v, w) => { if (!steps) return !frac(v); const c = stepsAt(v, w); return c.length > 0 && (!frac(v) || c.some((x) => x.fluid)); }, tyOn, 'type scale', 'type');
 
-  // Line heights of sizes that are steps. The text passes when any step that
-  // gives its size at that width also gives its line height.
+  // A step is matched on its size, its weight and the role of its family
+  // (text or display, from type.families), not on size alone: a bold 18/25
+  // heading is not judged as an 18/28 body step, and a regular paragraph
+  // does not pass on a bold step's line height. A step without a weight or
+  // family accepts any. A run (a strong or a link inside a paragraph, at the
+  // paragraph's size) takes the paragraph's step, so only its size counts.
+  const fams = system?.type?.families || [];
+  const norm = (n) => String(n || '').trim().replace(/^["']|["']$/g, '').toLowerCase();
+  const roleOf = (name) => { const n = norm(name); return n ? fams.find((f) => norm(f.name) === n || (f.fallback || []).some((x) => norm(x) === n && !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-\w+)$/.test(n)))?.role ?? null : null; };
+  const fits = (st, wt, fam) => (st.weight == null || Math.abs(st.weight - wt) < 1) && (!st.family || !roleOf(fam) || !roleOf(st.family) || roleOf(st.family) === roleOf(fam));
+  const stepText = (st) => `"${st.name}" (weight ${st.weight ?? 'any'}${st.family ? `, ${st.family}` : ''})`;
+  if (steps) {
+    const wg = new Map();
+    for (const [sel, byW] of obs.type) {
+      for (const [w, [fs, , wt, fam, run]] of byW) {
+        const c = stepsAt(fs, w);
+        if (!c.length || run || c.some((st) => fits(st, wt, fam))) continue;
+        const role = roleOf(fam);
+        const k = `${fs}|${wt}|${role}`;
+        let g = wg.get(k);
+        if (!g) wg.set(k, (g = { c, fs, wt, fam, role, sels: [], ws: [] }));
+        if (!g.sels.includes(sel)) g.sels.push(sel);
+        g.ws.push(w);
+      }
+    }
+    for (const [k, g] of wg) {
+      const weightOff = !g.c.some((st) => st.weight == null || Math.abs(st.weight - g.wt) < 1);
+      out.push({ check: 'type-scale', severity: 'warning', key: 'step|' + k, count: g.sels.length, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })),
+        message: `${g.fs} px at weight ${g.wt}${g.role ? ` in ${g.fam} (${g.role})` : ''} matches no step: ${weightOff ? 'no step at this size has this weight' : 'the steps at this size with this weight are set in a family of another role'}. The steps at ${g.fs} px are ${g.c.map(stepText).join(', ')}; on ${plural(g.sels.length, 'text element')}. Use a step's weight${g.role ? ' and family' : ''}, or add the step to the system.` });
+    }
+  }
+
+  // Line heights, against the steps that match the text on size, weight and
+  // role (a run: on size only).
   if (steps) {
     const lh = new Map();
     const lhOf = (st, fs) => st.lineHeight ?? fs * st.leading;
     for (const [sel, byW] of obs.type) {
-      for (const [w, [fs, l]] of byW) {
-        const cands = stepsAt(fs, w);
+      for (const [w, [fs, l, wt, fam, run]] of byW) {
+        const cands = stepsAt(fs, w).filter((st) => run || fits(st, wt, fam));
         if (!cands.length || (l !== 'normal' && cands.some((st) => Math.abs(l - lhOf(st, fs)) <= 0.5))) continue;
         const k = `${fs}/${l}`;
         let g = lh.get(k);
@@ -734,8 +801,8 @@ function scaleFindings(obs, system, widths, distinct) {
     for (const [k, g] of lh) {
       const sets = (st) => `${Math.round(lhOf(st, g.fs) * 100) / 100} px${st.leading && !st.lineHeight ? ` (${st.leading} × size)` : ''}`;
       const which = g.cands.length === 1
-        ? `the "${g.cands[0].name}" step sets ${sets(g.cands[0])}`
-        : `the ${g.cands.length} steps at this size set ${g.cands.map((st) => `${sets(st)} ("${st.name}")`).join(', ')}`;
+        ? `the "${g.cands[0].name}" step${g.cands[0].weight != null ? ` (weight ${g.cands[0].weight})` : ''} sets ${sets(g.cands[0])}`
+        : `the ${g.cands.length} steps at this size and weight set ${g.cands.map((st) => `${sets(st)} ("${st.name}")`).join(', ')}`;
       out.push({ check: 'type-scale', severity: 'warning', key: 'lh|' + k, count: g.sels.length, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })),
         message: `Line height ${g.l}${g.l === 'normal' ? '' : ' px'} at ${g.fs} px; ${which}; on ${plural(g.sels.length, 'text element')}.` });
     }

@@ -3,16 +3,18 @@
   "name": "ITTEN fixtures",
   "version": "1",
   "source": { "teardown": "fixtures/README.md" },
-  "spacing": { "scale": [4, 8, 12, 16, 24, 32, 40, 48, 64, 96], "groupRatioMin": 2 },
+  "spacing": { "scale": [4, 8, 12, 16, 24, 32, 40, 48, 64, 96], "fluid": [{ "name": "inset", "min": 16, "max": 48, "minWidth": 320, "maxWidth": 1120 }], "groupRatioMin": 2 },
   "type": {
     "families": [
-      { "name": "Atkinson Hyperlegible Next", "role": "text", "fallback": ["sans-serif"], "source": "library/assets/fonts/atkinson-hyperlegible-next, OFL 1.1" }
+      { "name": "Atkinson Hyperlegible Next", "role": "text", "fallback": ["sans-serif"], "source": "library/assets/fonts/atkinson-hyperlegible-next, OFL 1.1" },
+      { "name": "Bodoni Moda", "role": "display", "fallback": ["serif"], "source": "library/assets/fonts/bodoni-moda, OFL 1.1" }
     ],
     "scale": [
       { "name": "small", "size": 14, "lineHeight": 20, "weight": 400 },
       { "name": "body", "size": 16, "lineHeight": 24, "weight": 400 },
       { "name": "label", "size": 16, "lineHeight": 20, "weight": 600 },
       { "name": "title", "size": 24, "lineHeight": 32, "weight": 600 },
+      { "name": "quote", "size": 24, "lineHeight": 32, "weight": 400, "family": "Bodoni Moda" },
       { "name": "hero", "size": 64, "lineHeight": 72, "weight": 600 },
       { "name": "display", "fluid": { "min": 32, "max": 40, "minWidth": 320, "maxWidth": 960 }, "lineHeight": 48, "weight": 600 }
     ],

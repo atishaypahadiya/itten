@@ -8,13 +8,13 @@
 <style id="planted">
 /* One planted defect per section. fixtures/defects.json lists them. */
 /* d01 spacing-scale */
-.d01 { padding: 13px 16px; }
+.d01 { padding: 0.8125rem 1rem; }
 /* d02 type-scale */
 .d02 .note { font-size: 0.875em; line-height: 20px; }
 /* d03 near-miss-edge */
 .d03 { position: relative; left: 2px; }
 /* d04 sibling-gaps */
-.list li:nth-child(3) { margin-top: 8px; }
+.list li:nth-child(3) { margin-top: 0.5rem; }
 /* d05 radius */
 .d05 { border-radius: 6px; }
 /* d06 radius-concentric */
@@ -25,7 +25,7 @@
 /* d08 contrast */
 .photo p { color: #FFFFFF; }
 /* d09 target-size */
-.tools { gap: 4px; }
+.tools { gap: 0.25rem; }
 .tools button { width: 18px; height: 18px; }
 .tools svg { width: 10px; height: 10px; }
 /* d10 overflow */
@@ -71,6 +71,16 @@
 #d33 .grow:hover { transform: none; width: 176px; }
 /* d35 flash */
 #d35 .strobe { animation-duration: 100ms; }
+/* d36 type-scale */
+#d36 .tight { line-height: 1.25rem; }
+/* d37 type-scale */
+#d37 .medium { font-weight: 500; }
+/* d38 type-scale */
+#d38 .pull { font-family: "Atkinson Hyperlegible Next", sans-serif; }
+/* d39 spacing-unit */
+#d39 .tint { padding: 12px 16px; }
+/* d40 spacing-scale */
+#d40 .fluid-pad { padding-inline: clamp(1rem, 5vw, 3rem); }
 </style>
 </head>
 <body>
@@ -274,6 +284,31 @@
     <h2>Flashing</h2>
     <p class="small">Planted: the panel alternates dark and light every 100 ms, five flashes a second over its whole area.</p>
     <div class="strobe" aria-hidden="true"></div>
+  </section>
+  <section id="d36">
+    <h2>Matched on weight</h2>
+    <p class="small">Planted: regular text set at 16/20, the line height of the bold label step. Matched on size alone it passes as a label; at weight 400 it is body text, whose step sets 24.</p>
+    <p class="tight">Regular text with a <strong>bold run</strong>.</p>
+  </section>
+  <section id="d37">
+    <h2>Weight off the steps</h2>
+    <p class="small">Planted: 16 px text at weight 500. The steps at 16 px are body at 400 and label at 600.</p>
+    <p class="medium">A weight no step has.</p>
+  </section>
+  <section id="d38">
+    <h2>Family of another role</h2>
+    <p class="small">Planted: the pull quote is set in the text family. The quote step, 24/32 at weight 400, is set in the display family.</p>
+    <p class="pull">A pull quote</p>
+  </section>
+  <section id="d39">
+    <h2>Spacing in px</h2>
+    <p class="small">Planted: the box's padding is written as 12px 16px. At the default text size it matches the rem padding of every other box; at 200% text it stays put while the text doubles.</p>
+    <div class="tint">Padding in rem</div>
+  </section>
+  <section id="d40">
+    <h2>Fluid spacing off its range</h2>
+    <p class="small">Planted: side padding from clamp(1rem, 5vw, 3rem). The system declares a fluid range from 16 px at 320 px wide to 48 px at 1120 px, which is clamp(1rem, 0.2rem + 4vw, 3rem); 5vw runs ahead of it between those widths.</p>
+    <div class="tint fluid-pad">Fluid side padding</div>
   </section>
 </main>
 <script>

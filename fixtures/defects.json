@@ -9,7 +9,7 @@
       "check": "spacing-scale",
       "title": "Spacing off the scale",
       "planted": "13 px padding above and below the text. The scale has 12 and 16.",
-      "css": ".d01 { padding: 13px 16px; }",
+      "css": ".d01 { padding: 0.8125rem 1rem; }",
       "fixedInTwin": "The padding is 12 px above and below, from the scale."
     },
     {
@@ -33,7 +33,7 @@
       "check": "sibling-gaps",
       "title": "Unequal sibling gaps",
       "planted": "the third item has an extra 8 px top margin, so the gaps run 8, 16, 8.",
-      "css": ".list li:nth-child(3) { margin-top: 8px; }",
+      "css": ".list li:nth-child(3) { margin-top: 0.5rem; }",
       "fixedInTwin": "All four items are 8 px apart."
     },
     {
@@ -73,7 +73,7 @@
       "check": "target-size",
       "title": "Target size",
       "planted": "two 18 px icon buttons 4 px apart.",
-      "css": ".tools { gap: 4px; }\n.tools button { width: 18px; height: 18px; }\n.tools svg { width: 10px; height: 10px; }",
+      "css": ".tools { gap: 0.25rem; }\n.tools button { width: 18px; height: 18px; }\n.tools svg { width: 10px; height: 10px; }",
       "fixedInTwin": "Two 44 px icon buttons 8 px apart."
     },
     {
@@ -268,6 +268,46 @@
       "planted": "the panel alternates dark and light every 100 ms, five flashes a second over its whole area.",
       "css": "#d35 .strobe { animation-duration: 100ms; }",
       "fixedInTwin": "The panel alternates once a second."
+    },
+    {
+      "id": "d36",
+      "check": "type-scale",
+      "title": "Matched on weight",
+      "planted": "regular text set at 16/20, the line height of the bold label step. Matched on size alone it passes as a label; at weight 400 it is body text, whose step sets 24.",
+      "css": "#d36 .tight { line-height: 1.25rem; }",
+      "fixedInTwin": "The text keeps the body step's 24 px line height. Its bold run takes the paragraph's step on both pages."
+    },
+    {
+      "id": "d37",
+      "check": "type-scale",
+      "title": "Weight off the steps",
+      "planted": "16 px text at weight 500. The steps at 16 px are body at 400 and label at 600.",
+      "css": "#d37 .medium { font-weight: 500; }",
+      "fixedInTwin": "The text is set at weight 400, the body step."
+    },
+    {
+      "id": "d38",
+      "check": "type-scale",
+      "title": "Family of another role",
+      "planted": "the pull quote is set in the text family. The quote step, 24/32 at weight 400, is set in the display family.",
+      "css": "#d38 .pull { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }",
+      "fixedInTwin": "The pull quote is set in the display family, as its step says."
+    },
+    {
+      "id": "d39",
+      "check": "spacing-unit",
+      "title": "Spacing in px",
+      "planted": "the box's padding is written as 12px 16px. At the default text size it matches the rem padding of every other box; at 200% text it stays put while the text doubles.",
+      "css": "#d39 .tint { padding: 12px 16px; }",
+      "fixedInTwin": "The padding is 0.75rem 1rem, as everywhere else on the page."
+    },
+    {
+      "id": "d40",
+      "check": "spacing-scale",
+      "title": "Fluid spacing off its range",
+      "planted": "side padding from clamp(1rem, 5vw, 3rem). The system declares a fluid range from 16 px at 320 px wide to 48 px at 1120 px, which is clamp(1rem, 0.2rem + 4vw, 3rem); 5vw runs ahead of it between those widths.",
+      "css": "#d40 .fluid-pad { padding-inline: clamp(1rem, 5vw, 3rem); }",
+      "fixedInTwin": "The side padding follows the declared range."
     }
   ],
   "distinct": {
@@ -289,7 +329,7 @@
         "check": "spacing-scale",
         "title": "Fluid spacing without a system",
         "planted": "side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.",
-        "css": "#d22 .gutter { padding: 12px round(clamp(16px, 4vw, 56px), 1px); }",
+        "css": "#d22 .gutter { padding: 0.75rem round(clamp(1rem, 4vw, 3.5rem), 1px); }",
         "fixedInTwin": "The side padding is 24 px.",
         "severity": "info"
       }

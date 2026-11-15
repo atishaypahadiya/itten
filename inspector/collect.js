@@ -188,11 +188,13 @@ export function collect(opts) {
   // These two checks only observe here. Values are judged across the whole
   // width sweep in inspect.js, so that one fluid rule (clamp, vw) is one
   // finding rather than one finding per width.
-  if (want.has('spacing-scale')) {
+  // spacingObs: observe spacing without judging it, for the 200% text pass,
+  // where spacing-unit compares each value with the same one at 100%.
+  if (want.has('spacing-scale') || opts.spacingObs) {
     const PROPS = ['margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'row-gap', 'column-gap'];
     data.spacingObs = [];
     for (const e of visEntries) {
-      if (!live(e, 'spacing-scale')) continue;
+      if (!live(e, want.has('spacing-scale') ? 'spacing-scale' : 'spacing-unit')) continue;
       const flexGrid = /flex|grid/.test(e.s.display);
       const inline = e.s.display === 'inline';
       // CSS Typed OM tells px from % and auto; engines without it skip this.
@@ -220,7 +222,14 @@ export function collect(opts) {
       if (!want.has('type-scale') || !live(e, 'type-scale')) continue;
       data.fontSizes[fs] = (data.fontSizes[fs] || 0) + 1;
       const lh = e.s.lineHeight === 'normal' ? 'normal' : r2(parseFloat(e.s.lineHeight));
-      if (data.typeObs.length < 10000) { const k = sel(e.el); data.typeObs.push([k, fs, lh]); if (!(k in data.labels)) data.labels[k] = label(e.el); }
+      // A run: an inline element at the size of the block of text it sits
+      // in, such as a strong or a link inside a paragraph. It belongs to the
+      // block's step, so its weight is not judged on its own.
+      let b = e.parent;
+      while (b && isInline(b)) b = b.parent;
+      const run = isInline(e) && !!b && b.textNodes?.length > 0 && Math.abs(parseFloat(b.s.fontSize) - fs) < 0.05;
+      const family = e.s.fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
+      if (data.typeObs.length < 10000) { const k = sel(e.el); data.typeObs.push([k, fs, lh, parseFloat(e.s.fontWeight), family, run]); if (!(k in data.labels)) data.labels[k] = label(e.el); }
     }
   }
 
