@@ -581,13 +581,13 @@ export async function inspect(url, o = {}) {
       coverage,
       notJudged: [
         `Insides of graphics: svg, canvas, img, video, iframe, object, embed, math, role="img", and everything in a figure except its figcaption. Their outer boxes are measured. Skipped on this page: ${coverage.graphics} graphics and ${coverage.figureParts} figure parts.`,
-        'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not measured (CRF-15). Hover is used only to start transitions for the motion checks.',
+        'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not measured (CRF-15). Hover, focus and clicks are used only to start motion for the motion checks.',
         'Text drawn by ::before, ::after or ::marker, inside shadow DOM, or inside canvas and WebGL.',
         'Icon optical centring and stroke weight (CRF-09, CRF-10) and text-box trim (CRF-05).',
         'Moving backgrounds are sampled in two frames 400 ms apart, not at their worst frame.',
         `Fonts are judged against the fonts installed on this machine (${platform()}); another platform can fall back differently.`,
         'Layout checks run in the light scheme only; the dark scheme is checked for contrast and fonts.',
-        'Motion is recorded in Chromium at the last key width: animations running after load, transitions started by hovering each element that declares one, and frames while hovering and while scrolling the page and each scroll container by wheel. Focus, click and scripted interactions are not exercised, so motion they start is not judged.',
+        'Motion is recorded in Chromium at the last key width: animations running after load, and what hovering each element that declares a transition, tabbing through up to 40 focus stops, and clicking up to 15 buttons and toggles (twice, then Escape) start; frames while doing so and while scrolling the page and each scroll container by wheel, at 1x and again with the CPU slowed 4x. Links and submit buttons are not clicked, navigations are aborted, and motion that only scripts or timers start later is seen only if it runs while recording.',
         'Typographic checks judge the lines Chromium draws; WebKit and Firefox break lines a little differently. Printed pages are not paginated, so orphans and widows across pages are not judged.',
       ],
       summary: {
@@ -928,69 +928,138 @@ const MOVEMENT_PROPS = /^(transform|translate|rotate|scale|offset.*|background-p
 const FLASH_AREA = 21824;
 
 async function motionPasses(browser, url, o, system, w, merge, log) {
-  const out = { width: w, animations: 0, durations: [], easings: [], frames: {} };
+  const out = { width: w, animations: 0, durations: [], easings: [], frames: {}, interactions: {} };
   const runs = {};
   for (const mode of ['motion', 'reduced']) {
     const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference' });
     await ctx.addInitScript(motionInit);
-    const page = await ctx.newPage();
+    // Clicks must not leave the page: what was recorded lives in it. Popups
+    // are closed, and navigations of the page itself are aborted once it
+    // has loaded; a same-document change (a hash, history.pushState) stays.
+    let page = null;
+    ctx.on('page', (p) => { if (page && p !== page) p.close().catch(() => {}); });
+    page = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(page);
     try {
       await load(page, url, o);
+      await page.route('**/*', (r) => (r.request().isNavigationRequest() && r.request().frame() === page.mainFrame() ? r.abort() : r.continue()));
       const phase = (p) => page.evaluate((x) => window.__ittenMotion?.setPhase(x), p);
+      // Until no animation that ends is still running: 50 ms to 1.2 s.
+      const settleMotion = async () => {
+        await page.waitForTimeout(50);
+        for (let t = 0; t < 23; t++) {
+          const busy = await page.evaluate(() => (document.getAnimations?.() ?? []).some((a) => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)).catch(() => false);
+          if (!busy) return;
+          await page.waitForTimeout(50);
+        }
+      };
       await phase('idle');
       await page.waitForTimeout(mode === 'motion' ? 2000 : 1000);
-      // Hover every visible element that declares a transition.
-      const targets = await page.evaluate(() => {
+
+      // What to interact with, marked once: elements that declare a
+      // transition (hovered), and buttons and toggles that do not navigate
+      // (clicked). Focus is reached with Tab, as a keyboard user does.
+      const counts = await page.evaluate(() => {
         const ms = (v) => Math.max(0, ...v.split(',').map((x) => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000)));
-        const out = [];
+        const shown = (el) => el.getClientRects().length && !el.closest('svg, canvas, [role="img"], [inert], [aria-hidden="true"]');
+        let h = 0, c = 0;
         for (const el of document.body.querySelectorAll('*')) {
-          if (out.length >= 20) break;
-          if (el.closest('svg, canvas, [role="img"]')) continue;
+          if (h >= 20) break;
           const s = getComputedStyle(el);
-          const d = ms(s.transitionDuration) + ms(s.transitionDelay);
-          if (!(d > 0) || !el.getClientRects().length) continue;
-          out.push({ i: out.length, d: Math.min(d, 1000) });
-          el.setAttribute('data-itten-hover', String(out.length - 1));
+          if (ms(s.transitionDuration) + ms(s.transitionDelay) > 0 && shown(el)) el.setAttribute('data-itten-hover', String(h++));
         }
-        return out;
+        for (const el of document.body.querySelectorAll('button, [role="button"], [role="switch"], [role="tab"], [aria-expanded], [aria-pressed], summary, input[type="checkbox"], input[type="radio"]')) {
+          if (c >= 15) break;
+          if (!shown(el) || el.disabled || el.closest('a[href]')) continue;
+          // A button in a form submits it unless it says otherwise.
+          if (el.localName === 'button' && el.form && el.type !== 'button') continue;
+          el.setAttribute('data-itten-click', String(c++));
+        }
+        return { hover: h, click: c };
       });
       const where = async (q) => page.evaluate((qs) => { const el = document.querySelector(qs); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }, q);
-      for (const t of targets) {
-        const at = await where(`[data-itten-hover="${t.i}"]`);
-        if (!at) continue;
-        await page.waitForTimeout(50);
-        await phase('hover:' + t.i);
-        await page.mouse.move(at[0], at[1]);
-        await page.waitForTimeout(t.d + 150);
-        await phase('unhover:' + t.i);
-        await page.mouse.move(1, 1);
-        await page.waitForTimeout(t.d + 100);
-      }
-      // Scroll the page and each scroll container by wheel, as a reader does.
-      if (mode === 'motion') {
+
+      const interact = async (rate) => {
+        const sfx = rate > 1 ? `@${rate}x` : '';
+        for (let i = 0; i < counts.hover; i++) {
+          const at = await where(`[data-itten-hover="${i}"]`);
+          if (!at) continue;
+          await page.waitForTimeout(50);
+          await phase(`hover:${i}${sfx}`);
+          await page.mouse.move(at[0], at[1]);
+          await settleMotion();
+          await phase(`unhover:${i}${sfx}`);
+          await page.mouse.move(1, 1);
+          await settleMotion();
+        }
+        // Tab through the page from the top, up to 40 stops, until focus
+        // comes back round or leaves the page.
+        // Clicks move the point Tab starts from, so start from a temporary
+        // stop at the top of the page.
+        await page.evaluate(() => { const s = document.createElement('span'); s.tabIndex = -1; s.setAttribute('data-itten-start', ''); document.body.prepend(s); s.focus({ preventScroll: true }); scrollTo(0, 0); });
+        let first = null;
+        for (let i = 0; i < 40; i++) {
+          await phase(`focus:${i}${sfx}`);
+          await page.keyboard.press('Tab');
+          const id = await page.evaluate((n) => {
+            const el = document.activeElement;
+            if (!el || el === document.body) return null;
+            if (!el.hasAttribute('data-itten-focus')) el.setAttribute('data-itten-focus', String(n));
+            return el.getAttribute('data-itten-focus');
+          }, i);
+          if (id === null || id === first) break;
+          first ??= id;
+          await settleMotion();
+        }
+        await page.evaluate(() => { document.activeElement?.blur?.(); document.querySelector('[data-itten-start]')?.remove(); });
+        // Click each button or toggle, then again to put it back, then Escape.
+        for (let i = 0; i < counts.click; i++) {
+          const q = `[data-itten-click="${i}"]`;
+          if (!(await where(q))) continue;
+          for (const step of ['click', 'unclick']) {
+            await phase(`${step}:${i}${sfx}`);
+            try { await page.click(q, { timeout: 1500 }); } catch { break; }
+            await settleMotion();
+          }
+          await page.keyboard.press('Escape');
+          await page.mouse.move(1, 1);
+          await settleMotion();
+        }
+        // Scroll the page and each scroll container by wheel, as a reader does.
+        if (mode !== 'motion') return;
         const boxes = await page.evaluate(() => {
           const out = [];
           for (const el of document.body.querySelectorAll('*')) {
             if (out.length >= 5) break;
+            if (el.hasAttribute('data-itten-scroll')) { out.push(el.getAttribute('data-itten-scroll')); continue; }
             const s = getComputedStyle(el);
             if (!/(auto|scroll)/.test(s.overflowY) || el.scrollHeight <= el.clientHeight + 20 || !el.getClientRects().length) continue;
             el.setAttribute('data-itten-scroll', String(out.length));
-            out.push(out.length);
+            out.push(String(out.length));
           }
           return out;
         });
         for (const b of [null, ...boxes]) {
           let at = [w / 2, VIEW_H / 2];
-          if (b !== null) { const c = await where(`[data-itten-scroll="${b}"]`); if (!c) continue; at = c; }
+          if (b !== null) { await page.evaluate((q) => { const el = document.querySelector(q); if (el) el.scrollTop = 0; }, `[data-itten-scroll="${b}"]`); const c = await where(`[data-itten-scroll="${b}"]`); if (!c) continue; at = c; }
           else await page.evaluate(() => scrollTo(0, 0));
           await page.mouse.move(at[0], at[1]);
           await page.waitForTimeout(100);
-          await phase('scroll:' + (b === null ? 'page' : b));
+          await phase(`scroll:${b === null ? 'page' : b}${sfx}`);
           for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 240); await page.waitForTimeout(60); }
           await page.waitForTimeout(300);
           await phase('after-scroll');
         }
         await page.evaluate(() => scrollTo(0, 0));
+      };
+
+      await interact(1);
+      // Again with the CPU slowed four times, as on a mid-range phone, for
+      // frame timing; motion it starts is recorded as well.
+      if (mode === 'motion') {
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+        await interact(4);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
       }
       await phase('done');
       const rep = await page.evaluate(motionReport);
@@ -1003,10 +1072,10 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
           return (p ? sel(p) + ' > ' : '') + el.localName + (same.length > 1 ? `:nth-of-type(${same.indexOf(el) + 1})` : '');
         };
         const out = {};
-        for (const [attr, pre] of [['data-itten-hover', 'hover:'], ['data-itten-scroll', 'scroll:']]) {
+        for (const [attr, pre] of [['data-itten-hover', 'hover:'], ['data-itten-scroll', 'scroll:'], ['data-itten-focus', 'focus:'], ['data-itten-click', 'click:']]) {
           for (const el of document.querySelectorAll(`[${attr}]`)) {
             const r = el.getBoundingClientRect();
-            let t = (el.innerText || '').replace(/\s+/g, ' ').trim(); if (t.length > 40) t = t.slice(0, 39) + '…';
+            let t = (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim(); if (t.length > 40) t = t.slice(0, 39) + '…';
             out[pre + el.getAttribute(attr)] = { sel: sel(el), label: el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (t ? ` "${t}"` : ''), rect: [r.left + scrollX, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 100) / 100) };
             el.removeAttribute(attr);
           }
@@ -1015,6 +1084,7 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
         return out;
       });
       runs[mode] = { rep, names };
+      if (mode === 'motion') out.interactions = { hovered: counts.hover, clicked: counts.click, focused: Object.keys(names).filter((k) => k.startsWith('focus:')).length };
       const issues = judgeMotion(mode, rep, names, system);
       const pass = { w, mode: mode === 'motion' ? 'motion' : 'reduced motion', label: `${w} px, ${mode === 'motion' ? 'motion' : 'reduced motion'}`, dpr: 1 };
       for (const raw of issues) await merge(page, raw, pass);
@@ -1028,12 +1098,17 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
     out.animations = rep.anims.length;
     out.durations = [...new Set(rep.anims.map((a) => a.duration).filter((d) => d > 0))].sort((a, b) => a - b);
     out.easings = [...new Set(rep.anims.filter((a) => a.duration > 0).map((a) => a.easing))].sort();
+    // Frame times by what was happening, at 1x and at 4x: idle, hovering,
+    // focusing by Tab, clicking, and scrolling each scroller by name.
+    const acc = {};
     for (const [ph, ds] of Object.entries(rep.frames)) {
-      if (!/^(idle|hover|scroll)/.test(ph) || !ds.length) continue;
-      const k = /^hover/.test(ph) ? 'hover' : ph === 'idle' ? 'idle' : (runs.motion.names[ph]?.sel ?? ph);
-      (out.frames[k] ??= []).push(...ds);
+      const m = ph.match(/^(idle|hover|unhover|focus|click|unclick|scroll)(?::([^@]+))?(?:@(\d+)x)?$/);
+      if (!m || !ds.length) continue;
+      const kind = { unhover: 'hover', unclick: 'click' }[m[1]] ?? m[1];
+      const k = kind === 'scroll' ? (runs.motion.names['scroll:' + m[2]]?.sel ?? ph) : kind;
+      ((acc[k] ??= {})[`${m[3] || 1}x`] ??= []).push(...ds);
     }
-    for (const [k, ds] of Object.entries(out.frames)) out.frames[k] = frameStats(ds);
+    for (const [k, byRate] of Object.entries(acc)) out.frames[k] = Object.fromEntries(Object.entries(byRate).map(([r, ds]) => [r, frameStats(ds)]));
   }
   return out;
 }
@@ -1112,18 +1187,31 @@ function judgeMotion(mode, rep, names, system) {
     if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
       message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
   }
-  // Dropped frames while hovering or scrolling: frames over 50 ms, three
-  // or more frames of a 60 Hz display, are visible as a stall.
+  // Dropped frames while hovering, focusing, clicking or scrolling, at 1x
+  // and with the CPU slowed 4x: frames over 50 ms, three or more frames of
+  // a 60 Hz display, are visible as a stall. A hover or a click and the
+  // move away from it are counted together.
+  const byTarget = new Map();
   for (const [ph, ds] of Object.entries(rep.frames)) {
-    if (!/^(hover|scroll):/.test(ph)) continue;
-    const who = names[ph];
+    const m = ph.match(/^(hover|unhover|focus|click|unclick|scroll):([^@]+)(?:@(\d+)x)?$/);
+    if (!m) continue;
+    const kind = { unhover: 'hover', unclick: 'click' }[m[1]] ?? m[1];
+    const who = names[`${kind}:${m[2]}`];
     if (!who) continue;
-    const st = frameStats(ds);
+    const rate = Number(m[3] || 1);
+    const k = `${who.sel}|${kind}|${rate}`;
+    let g = byTarget.get(k);
+    if (!g) byTarget.set(k, (g = { who, kind, rate, ds: [] }));
+    g.ds.push(...ds);
+  }
+  for (const [k, g] of byTarget) {
+    const st = frameStats(g.ds);
     const long = st.histogram['>50 ms'];
     if (long < 3) continue;
-    const h = Object.entries(st.histogram).map(([k, v]) => `${k} ${v}`).join(', ');
-    out.push({ check: 'frame-timing', severity: 'warning', key: who.sel + '|' + ph.split(':')[0], count: long, elements: [who], marks: [], crop: 'each',
-      message: `While ${ph.startsWith('scroll') ? `scrolling ${who.sel === 'html' ? 'the page' : 'this container'}` : 'hovering this element'}, ${long} of ${st.frames} frames took over 50 ms (median ${st.p50} ms, 95th percentile ${st.p95} ms, longest ${st.max} ms; frame times ${h}). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.` });
+    const h = Object.entries(st.histogram).map(([x, v]) => `${x} ${v}`).join(', ');
+    const doing = { scroll: `scrolling ${g.who.sel === 'html' ? 'the page' : 'this container'}`, hover: 'hovering this element', focus: 'this element took focus', click: 'clicking this element' }[g.kind];
+    out.push({ check: 'frame-timing', severity: 'warning', key: k, count: long, elements: [g.who], marks: [], crop: 'each',
+      message: `While ${doing}${g.rate > 1 ? `, with the CPU slowed ${g.rate} times as on a mid-range phone` : ''}, ${long} of ${st.frames} frames took over 50 ms (median ${st.p50} ms, 95th percentile ${st.p95} ms, longest ${st.max} ms; frame times ${h}). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.` });
   }
   return out;
 }

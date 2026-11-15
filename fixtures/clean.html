@@ -230,6 +230,24 @@
     <p class="small">The side padding follows the declared range.</p>
     <div class="tint fluid-pad">Fluid side padding</div>
   </section>
+  <section id="d41">
+    <h2>Dropped frames on a slower CPU</h2>
+    <p class="small">The box has no scroll handler.</p>
+    <div class="scroller" tabindex="0" aria-label="A second scrolling box"><div class="scroller-content"></div></div>
+  </section>
+  <section id="d42">
+    <h2>Motion started by focus</h2>
+    <p class="small">The focus ring transition runs 250 ms, from the system.</p>
+    <button type="button" class="ring">Focus ring</button>
+  </section>
+  <section id="d43">
+    <h2>Motion started by a click</h2>
+    <p class="small">The toggle moves with a transform.</p>
+    <button type="button" class="toggle" aria-pressed="false">Toggle</button>
+    <script>
+      { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }
+    </script>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {

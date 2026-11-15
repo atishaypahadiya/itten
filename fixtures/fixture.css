@@ -121,6 +121,12 @@ figure { display: flex; flex-direction: column; gap: 0.5rem; }
 .pull { font-family: "Bodoni Moda", serif; font-size: 1.5rem; line-height: 2rem; font-weight: 400; }
 /* d40: side padding on the system's fluid range, 16 px at 320 px wide to 48 px at 1120 px */
 .fluid-pad { padding-inline: clamp(1rem, 0.2rem + 4vw, 3rem); }
+/* d42 and d43: motion started by focus and by a click */
+.ring, .toggle { min-height: 44px; padding: 0 0.75rem; background: var(--tint); }
+.ring { transition: box-shadow 250ms cubic-bezier(0.2, 0, 0, 1); }
+.ring:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--text); }
+.toggle { transition: transform 250ms cubic-bezier(0.2, 0, 0, 1); }
+.toggle[aria-pressed="true"] { transform: translateX(0.5rem); }
 /* Under Reduce Motion nothing on the page moves (motion.reducedMotion: instant). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

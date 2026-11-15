@@ -34,11 +34,13 @@ function engineSection(r) {
 function motionSection(r) {
   const m = r.motion;
   if (!m) return '';
-  const rows = Object.entries(m.frames).map(([k, f]) => `<tr><td>${esc(k === 'idle' ? 'idle, after load' : k === 'hover' ? 'hovering' : k === 'html' ? 'scrolling the page' : 'scrolling ' + k)}</td><td class="n">${f.frames}</td><td class="n">${f.p50}</td><td class="n">${f.p95}</td><td class="n">${f.max}</td><td class="n">${f.histogram['>50 ms']}</td></tr>`).join('');
+  const what = (k) => ({ idle: 'idle, after load', hover: 'hovering', focus: 'tabbing', click: 'clicking', html: 'scrolling the page' })[k] ?? 'scrolling ' + k;
+  const rows = Object.entries(m.frames).flatMap(([k, byRate]) => Object.entries(byRate).map(([rate, f], i) => `<tr><td>${i ? '' : esc(what(k))}</td><td>${esc(rate === '1x' ? '1×' : rate.replace('x', '× slower'))}</td><td class="n">${f.frames}</td><td class="n">${f.p50}</td><td class="n">${f.p95}</td><td class="n">${f.max}</td><td class="n">${f.histogram['>50 ms']}</td></tr>`)).join('');
+  const ix = m.interactions || {};
   return `<section>
     <h2>Motion</h2>
-    <p>Recorded at ${m.width} px: ${m.animations} animations and transitions. Durations in use: ${m.durations.length ? esc(m.durations.join(', ')) + ' ms' : 'none'}. Easings: ${m.easings.length ? m.easings.map((e) => `<code>${esc(e)}</code>`).join(', ') : 'none'}. Frame times below are in ms; at 60 Hz a frame is 16.7 ms.</p>
-    ${rows ? `<table><thead><tr><th>Frames while</th><th class="n">Frames</th><th class="n">Median</th><th class="n">95th</th><th class="n">Longest</th><th class="n">Over 50</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+    <p>Recorded at ${m.width} px, after hovering ${ix.hovered ?? 0} elements, tabbing to ${ix.focused ?? 0} and clicking ${ix.clicked ?? 0}: ${m.animations} animations and transitions. Durations in use: ${m.durations.length ? esc(m.durations.join(', ')) + ' ms' : 'none'}. Easings: ${m.easings.length ? m.easings.map((e) => `<code>${esc(e)}</code>`).join(', ') : 'none'}. Frame times below are in ms; at 60 Hz a frame is 16.7 ms.</p>
+    ${rows ? `<table><thead><tr><th>Frames while</th><th>CPU</th><th class="n">Frames</th><th class="n">Median</th><th class="n">95th</th><th class="n">Longest</th><th class="n">Over 50</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
   </section>`;
 }
 

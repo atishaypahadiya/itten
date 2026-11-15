@@ -219,9 +219,9 @@ Movement and growth are animated with `transform` (translate, scale, rotate) and
 *Why:* layout on every frame competes with everything else on the main thread and drops frames on slower devices. Cites: MOT-11; web.dev, ["How to create high-performance CSS animations"](https://web.dev/articles/animations-guide) and ["Rendering performance"](https://web.dev/articles/rendering-performance).
 
 ### CRF-28 · Frames hold steady while scrolling and moving
-Strength: SHOULD · Verified by: `frame-timing` (inspector); manual: a performance recording on a slower device
+Strength: SHOULD · Verified by: `frame-timing` (inspector, at full speed and with the CPU slowed 4×); manual: a performance recording on a real mid-range phone
 
-Scrolling, hovering and every transition hold the display's frame rate. No scroll or pointer handler does heavy work on every event; work that must follow the scroll uses `requestAnimationFrame`, a passive listener or an `IntersectionObserver`.
+Scrolling, hovering, focusing, clicking and every transition hold the display's frame rate. No scroll or pointer handler does heavy work on every event; work that must follow the scroll uses `requestAnimationFrame`, a passive listener or an `IntersectionObserver`.
 
 *Why:* a stall of three frames or more reads as jitter, the plainest mark of rushed work. Cites: MOT-11.
 

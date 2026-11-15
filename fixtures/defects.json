@@ -308,6 +308,30 @@
       "planted": "side padding from clamp(1rem, 5vw, 3rem). The system declares a fluid range from 16 px at 320 px wide to 48 px at 1120 px, which is clamp(1rem, 0.2rem + 4vw, 3rem); 5vw runs ahead of it between those widths.",
       "css": "#d40 .fluid-pad { padding-inline: clamp(1rem, 5vw, 3rem); }",
       "fixedInTwin": "The side padding follows the declared range."
+    },
+    {
+      "id": "d41",
+      "check": "frame-timing",
+      "title": "Dropped frames on a slower CPU",
+      "planted": "the box's scroll handler does arithmetic that takes about 18 ms on this machine at full speed. Frames hold at full speed and stall with the CPU slowed four times.",
+      "markup": "<div class=\"scroller\" tabindex=\"0\" aria-label=\"A second scrolling box\"><div class=\"scroller-content\"></div></div>\n    <script>\n      // Iterations of plain arithmetic that take 18 ms here at full speed: the best of three 6 ms samples, times three.\n      let d41n = 0, d41x = 0;\n      for (let k = 0; k < 3; k++) { let n = 0; const t = performance.now(); while (performance.now() - t < 6) { for (let i = 0; i < 1000; i++) d41x += Math.sqrt(i); n += 1000; } d41n = Math.max(d41n, n * 3); }\n      document.querySelector('#d41 .scroller').addEventListener('scroll', () => { for (let i = 0; i < d41n; i++) d41x += Math.sqrt(i % 1000); });\n    </script>",
+      "fixedInTwin": "The box has no scroll handler."
+    },
+    {
+      "id": "d42",
+      "check": "motion-timing",
+      "title": "Motion started by focus",
+      "planted": "the focus ring transition runs 400 ms. Only the keyboard starts it: a mouse click does not match :focus-visible, and hovering does nothing.",
+      "css": "#d42 .ring { transition-duration: 400ms; }",
+      "fixedInTwin": "The focus ring transition runs 250 ms, from the system."
+    },
+    {
+      "id": "d43",
+      "check": "motion-layout",
+      "title": "Motion started by a click",
+      "planted": "pressing the toggle animates margin-left, so the page is laid out again on every frame.",
+      "markup": "<button type=\"button\" class=\"toggle\" aria-pressed=\"false\">Toggle</button>\n    <script>\n      { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }\n    </script>\n    <style>#d43 .toggle { transition-property: margin-left; } #d43 .toggle[aria-pressed=\"true\"] { transform: none; margin-left: 0.5rem; }</style>",
+      "fixedInTwin": "The toggle moves with a transform."
     }
   ],
   "distinct": {
