@@ -108,24 +108,48 @@ runs:
         echo "playwright=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
         echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/itten-ms-playwright" >> "$GITHUB_ENV"
 
-    - name: Cache browsers
+    # Browsers are cached between runs. The cache is restored and saved
+    # explicitly, and saved as soon as they are installed: actions/cache
+    # saves only when the whole job succeeds, so a run that failed (on a
+    # finding, say) left the next one to download them again. A job that
+    # calls this action more than once installs them once: later calls find
+    # the marker in the job's temporary directory and skip all three steps.
+    - name: Check for browsers installed in this job
+      id: present
+      shell: bash
+      env:
+        MARKER: ${{ runner.temp }}/itten-playwright-${{ steps.deps.outputs.playwright }}
+      run: echo "installed=$([ -f "$MARKER" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore browsers
       id: browsers
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.present.outputs.installed != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/itten-ms-playwright
         key: itten-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.playwright }}
 
     - name: Install Chromium and WebKit
+      if: steps.present.outputs.installed != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       env:
         CACHED: ${{ steps.browsers.outputs.cache-hit }}
+        MARKER: ${{ runner.temp }}/itten-playwright-${{ steps.deps.outputs.playwright }}
       run: |
         if [ "$CACHED" = "true" ]; then
           npx playwright install-deps chromium webkit
         else
           npx playwright install --with-deps chromium webkit
         fi
+        touch "$MARKER"
+
+    - name: Save browsers
+      if: steps.present.outputs.installed != 'true' && steps.browsers.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/itten-ms-playwright
+        key: itten-playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.deps.outputs.playwright }}
 
     - name: Inspect
       id: inspect
