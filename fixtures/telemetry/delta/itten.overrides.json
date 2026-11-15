@@ -1,0 +1,17 @@
+{
+  "overrides": [
+    {
+      "rule": "CRF-16",
+      "selector": ".wide",
+      "date": "2026-11-10",
+      "itten": "0.3.0"
+    },
+    {
+      "rule": "crf-16",
+      "scope": "all",
+      "reason": "Lower-case rule ID, not valid.",
+      "date": "2026-13-01",
+      "itten": "0.3.0"
+    }
+  ]
+}

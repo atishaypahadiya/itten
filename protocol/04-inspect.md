@@ -135,7 +135,7 @@ Within a severity, fix the findings seen at the most widths first: they are stru
 
 Some findings are deliberate: an optical offset (LAY-10), a display headline that breaks the type scale on purpose, a carousel that clips its next slide as a hint (LAY-08). For each one:
 
-1. Add a row to `docs/itten-overrides.md` with the rule or check, the value, and the reason.
+1. Add an entry to `itten.overrides.json` with the rule ID, the check, the selector or scope, the value, what is used instead, the reason, whether the floors still hold, the date and the ITTEN version (`schema/overrides.schema.json`). Then run `node itten/scripts/overrides.js render` to rewrite `docs/itten-overrides.md`, the page people read. The ITTEN action fails a run whose overrides file does not validate or whose page is out of date.
 2. Mark the element with `data-itten-ignore="<check>"` (several checks separated by spaces, or `all`). The attribute also applies to the element's descendants.
 
 The report counts ignored element and check pairs, so an ignore without an override entry shows up in review. Never ignore an error that breaks an accessibility floor for text people need to read or targets people need to use.

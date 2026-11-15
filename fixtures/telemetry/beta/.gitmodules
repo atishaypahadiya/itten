@@ -1,0 +1,6 @@
+[submodule "design/itten"]
+	path = design/itten
+	url = git@github.com:atishaypahadiya/itten.git
+[submodule "vendor/lib"]
+	path = vendor/lib
+	url = https://github.com/example/lib

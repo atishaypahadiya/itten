@@ -25,7 +25,7 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
   if (forComment) out.push(marker(s.name));
   out.push('### ITTEN inspection', '');
   if (s.problems?.length) {
-    out.push('The run could not finish:', '', ...s.problems.map((p) => `- ${clean(p)}`), '');
+    out.push('To fix before this check can pass:', '', ...s.problems.map((p) => `- ${clean(p)}`), '');
   }
   const pages = s.pages ?? [];
   const many = pages.length > 1;
@@ -64,6 +64,7 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
 
     const top = pages.flatMap((p) => p.top.map((f) => ({ f, p }))).sort((a, b) => ['error', 'warning'].indexOf(a.f.severity) - ['error', 'warning'].indexOf(b.f.severity)).slice(0, 10);
     if (top.length) out.push('#### Top findings', '', ...top.map(({ f, p }, i) => `${i + 1}. ${line(f, p.page, many)}`), '');
+    if (s.overrides?.ok) out.push(`${plural(s.overrides.count, 'override')} logged in ${code(s.overrides.file)}, valid.`, '');
     const notRun = Object.entries(Object.assign({}, ...pages.map((p) => p.engines?.notRun ?? {})));
     if (notRun.length) out.push(...notRun.map(([e, why]) => `${ENGINE[e] ?? e} was not run: ${clean(why)}.`), '');
   }

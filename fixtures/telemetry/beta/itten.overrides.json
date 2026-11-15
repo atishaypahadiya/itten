@@ -1,0 +1,21 @@
+{
+  "overrides": [
+    {
+      "rule": "CRF-16",
+      "check": "overflow",
+      "scope": "Code blocks",
+      "reason": "Long lines in code samples scroll inside their block rather than wrap.",
+      "date": "2026-11-05",
+      "itten": "0.3.0",
+      "floors": true
+    },
+    {
+      "rule": "TYP-05",
+      "selector": ".poster h1",
+      "reason": "A poster headline set solid, at line height 1.0, for its block shape.",
+      "date": "2026-11-06",
+      "itten": "0.3.0",
+      "floors": true
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "overrides": [
+    {
+      "rule": "CRF-16",
+      "check": "overflow",
+      "selector": "table.results",
+      "reason": "The results table is wider than a phone; it scrolls inside its own container.",
+      "date": "2026-11-08",
+      "itten": "0.3.0",
+      "floors": true
+    },
+    {
+      "rule": "LAY-10",
+      "check": "near-miss-edge",
+      "selector": ".logo",
+      "reason": "The wordmark is drawn with optical overshoot on the left.",
+      "date": "2026-11-09",
+      "itten": "0.3.0",
+      "floors": true
+    }
+  ]
+}
