@@ -312,9 +312,9 @@
     {
       "id": "d41",
       "check": "frame-timing",
-      "title": "Dropped frames on a slower CPU",
-      "planted": "the box's scroll handler does arithmetic that takes about 18 ms on this machine at full speed. Frames hold at full speed and stall with the CPU slowed four times.",
-      "markup": "<div class=\"scroller\" tabindex=\"0\" aria-label=\"A second scrolling box\"><div class=\"scroller-content\"></div></div>\n    <script>\n      // Iterations of plain arithmetic that take 18 ms here at full speed: the best of three 6 ms samples, times three.\n      let d41n = 0, d41x = 0;\n      for (let k = 0; k < 3; k++) { let n = 0; const t = performance.now(); while (performance.now() - t < 6) { for (let i = 0; i < 1000; i++) d41x += Math.sqrt(i); n += 1000; } d41n = Math.max(d41n, n * 3); }\n      document.querySelector('#d41 .scroller').addEventListener('scroll', () => { for (let i = 0; i < d41n; i++) d41x += Math.sqrt(i % 1000); });\n    </script>",
+      "title": "Long frames on the reference device",
+      "planted": "the box's scroll handler does a fixed amount of work, 200 rounds of the two loops the benchmark index times, about 140 ms on the reference device (benchmark index 400) and a fraction of that on a fast machine at full speed. The inspector slows the CPU to the reference device, so the frames run long there on any machine.",
+      "markup": "<div class=\"scroller\" tabindex=\"0\" aria-label=\"A second scrolling box\"><div class=\"scroller-content\"></div></div>\n    <script>\n      // Each round builds a 10,000-character string and copies a 100,000-item array, as the benchmark index does.\n      { const a = Array.from({ length: 100000 }, (_, i) => i), b = new Array(100000).fill(0); let d41 = 0;\n        document.querySelector('#d41 .scroller').addEventListener('scroll', () => {\n          for (let k = 0; k < 200; k++) { let s = ''; for (let j = 0; j < 10000; j++) s += 'a'; d41 += s.length; for (let j = 0; j < 100000; j++) b[j] = a[j]; }\n        }); }\n    </script>",
       "fixedInTwin": "The box has no scroll handler."
     },
     {

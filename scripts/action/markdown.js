@@ -67,6 +67,8 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
     if (s.overrides?.ok) out.push(`${plural(s.overrides.count, 'override')} logged in ${code(s.overrides.file)}, valid.`, '');
     const notRun = Object.entries(Object.assign({}, ...pages.map((p) => p.engines?.notRun ?? {})));
     if (notRun.length) out.push(...notRun.map(([e, why]) => `${ENGINE[e] ?? e} was not run: ${clean(why)}.`), '');
+    const cpus = pages.filter((p) => p.cpu);
+    if (cpus.length) out.push(`Frame timing on a reference device of benchmark index ${cpus[0].cpu.reference}: ${cpus.map((p) => `${many ? `${code(p.page)} ` : ''}measured ${p.cpu.index}, ${p.cpu.rate > 1 ? `slowed ${p.cpu.rate}× to ${p.cpu.slowedIndex}` : 'not slowed'}`).join('; ')}.`, '');
   }
   const links = [artifactUrl && `[Full report and crops](${artifactUrl})`, runUrl && `[workflow run](${runUrl})`].filter(Boolean);
   if (links.length) out.push(links.join(' · ') + (s.wroteBaseline ? `. The artifact holds a new ${code('itten-baseline.json')}.` : '.'), '');

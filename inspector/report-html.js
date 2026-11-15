@@ -55,12 +55,17 @@ function motionSection(r) {
   const m = r.motion;
   if (!m) return '';
   const what = (k) => ({ idle: 'idle, after load', hover: 'hovering', focus: 'tabbing', click: 'clicking', html: 'scrolling the page' })[k] ?? 'scrolling ' + k;
-  const rows = Object.entries(m.frames).flatMap(([k, byRate]) => Object.entries(byRate).map(([rate, f], i) => `<tr><td>${i ? '' : esc(what(k))}</td><td>${esc(rate === '1x' ? '1×' : rate.replace('x', '× slower'))}</td><td class="n">${f.frames}</td><td class="n">${f.p50}</td><td class="n">${f.p95}</td><td class="n">${f.max}</td><td class="n">${f.histogram['>50 ms']}</td></tr>`)).join('');
+  const cpu = m.cpu;
+  const speed = (rate) => rate === 'reference' ? `${cpu?.rate ?? ''}× slower` : 'Full';
+  const rows = Object.entries(m.frames).flatMap(([k, byRate]) => Object.entries(byRate).map(([rate, f], i) => `<tr><td>${i ? '' : esc(what(k))}</td><td>${esc(speed(rate))}</td><td class="n">${f.frames}</td><td class="n">${f.p50}</td><td class="n">${f.p95}</td><td class="n">${f.long ?? ''}</td><td class="n">${f.long ? f.longest : ''}</td></tr>`)).join('');
   const ix = m.interactions || {};
+  const cpuLine = !cpu ? '' : cpu.rate > 1
+    ? ` This machine's benchmark index is ${cpu.index}; for the second pass the CPU was slowed ${cpu.rate}× to ${cpu.slowedIndex}, against a reference device of ${cpu.reference}${cpu.corrected ? ' (the rate was corrected once after measuring)' : ''}.`
+    : ` This machine's benchmark index is ${cpu.index}, at or below the reference device's ${cpu.reference}, so the CPU was not slowed and one pass stands for both.`;
   return `<section>
     <h2>Motion</h2>
-    <p>Recorded at ${m.width} px, after hovering ${ix.hovered ?? 0} elements, tabbing to ${ix.focused ?? 0} and clicking ${ix.clicked ?? 0}: ${m.animations} animations and transitions. Durations in use: ${m.durations.length ? esc(m.durations.join(', ')) + ' ms' : 'none'}. Easings: ${m.easings.length ? m.easings.map((e) => `<code>${esc(e)}</code>`).join(', ') : 'none'}. Frame times below are in ms; at 60 Hz a frame is 16.7 ms.</p>
-    ${rows ? `<table><thead><tr><th>Frames while</th><th>CPU</th><th class="n">Frames</th><th class="n">Median</th><th class="n">95th</th><th class="n">Longest</th><th class="n">Over 50</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+    <p>Recorded at ${m.width} px, after hovering ${ix.hovered ?? 0} elements, tabbing to ${ix.focused ?? 0} and clicking ${ix.clicked ?? 0}: ${m.animations} animations and transitions. Durations in use: ${m.durations.length ? esc(m.durations.join(', ')) + ' ms' : 'none'}. Easings: ${m.easings.length ? m.easings.map((e) => `<code>${esc(e)}</code>`).join(', ') : 'none'}. ${cpuLine} Frame times below are in ms; at 60 Hz a frame has 16.7 ms. Long frames are the long animation frames Chromium reports, those over 50 ms${m.longAnimationFrames === false ? '; this browser does not report them, so none were judged' : ''}.</p>
+    ${rows ? `<table><thead><tr><th>Frames while</th><th>CPU</th><th class="n">Frames</th><th class="n">Median</th><th class="n">95th</th><th class="n">Long frames</th><th class="n">Longest</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
   </section>`;
 }
 
