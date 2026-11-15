@@ -3,21 +3,21 @@
   "note": "Known findings per page. Written by inspect.js --write-baseline; compared by --baseline and the ITTEN action.",
   "pages": {
     "/fixtures/clean.html": {
-      "date": "2026-11-15T22:45:47.519Z",
+      "date": "2026-11-15T23:43:51.379Z",
       "version": "0.3.2",
       "system": "fixtures/itten.system.json",
       "widths": "320, 768, 1440, 1920",
       "findings": []
     },
     "/fixtures/distinct-clean.html": {
-      "date": "2026-11-15T22:46:38.986Z",
+      "date": "2026-11-15T23:45:31.549Z",
       "version": "0.3.2",
       "system": null,
       "widths": "320, 768, 1440, 1920",
       "findings": []
     },
     "/fixtures/distinct.html": {
-      "date": "2026-11-15T22:46:12.833Z",
+      "date": "2026-11-15T23:44:41.634Z",
       "version": "0.3.2",
       "system": null,
       "widths": "320, 768, 1440, 1920",
@@ -43,7 +43,7 @@
       ]
     },
     "/fixtures/index.html": {
-      "date": "2026-11-15T22:44:51.128Z",
+      "date": "2026-11-15T23:41:42.648Z",
       "version": "0.3.2",
       "system": "fixtures/itten.system.json",
       "widths": "320, 768, 1440, 1920",
@@ -52,7 +52,7 @@
           "fingerprint": "page-load|requests",
           "check": "page-load",
           "severity": "error",
-          "message": "2 requests failed while the page was measured: GET http://127.0.0.1:4427/fixtures/d19-missing.json (fetch, HTTP 404); GET http://127.0.0.1:4427/fixtures/missing-font.woff2 (font, HTTP 404). What was measured may be the page's error state. Fix the requests, then inspect again.",
+          "message": "2 requests failed while the page was measured: GET http://127.0.0.1:4565/fixtures/d19-missing.json (fetch, HTTP 404); GET http://127.0.0.1:4565/fixtures/missing-font.woff2 (font, HTTP 404). What was measured may be the page's error state. Fix the requests, then inspect again.",
           "elements": []
         },
         {
@@ -89,6 +89,24 @@
           "message": "Text spills 26.64 px out of its own box.",
           "elements": [
             "#d11 > div"
+          ]
+        },
+        {
+          "fingerprint": "overflow|page|#d47 > div",
+          "check": "overflow",
+          "severity": "error",
+          "message": "After resize from 1440 to 320 px: Sticks out 384 px past the right edge; the page scrolls sideways (WCAG 1.4.10, LAY-03).",
+          "elements": [
+            "#d47 > div"
+          ]
+        },
+        {
+          "fingerprint": "overflow|page-text|#d47 > div > p",
+          "check": "overflow",
+          "severity": "error",
+          "message": "After resize from 1440 to 320 px: Text runs 93.25 px past the right edge, usually a word too long for the line; the page scrolls sideways (WCAG 1.4.10, LAY-03).",
+          "elements": [
+            "#d47 > div > p"
           ]
         },
         {
@@ -143,7 +161,7 @@
           "fingerprint": "page-load|late",
           "check": "page-load",
           "severity": "warning",
-          "message": "1 element appeared 0.3 s after measuring began, so 1 pass measured the page without it (320 px, light). The page was still drawing: a timer, an animation-frame chain or a slow request. Pass --wait-for with a selector for what appears last, or --settle with a wait in ms. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore=\"page-load\".",
+          "message": "1 element appeared 2.5 s after the load event, after the page had gone still at 0.5 s (nothing added for 500 ms). A screenshot, a test or a reader that takes the page as finished once it goes still sees the page without it; the inspector waited for it before measuring. The page was still drawing: a timer, an animation-frame chain or a slow request. If it is meant to, pass --wait-for with a selector for what appears last. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore=\"page-load\".",
           "elements": [
             "#d20 > div > p"
           ]
@@ -264,7 +282,7 @@
           "fingerprint": "text-resize|all",
           "check": "text-resize",
           "severity": "warning",
-          "message": "1 of 153 text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: 14 px (1). Set font sizes in rem, or give clamp() rem limits.",
+          "message": "1 of 156 text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: 14 px (1). Set font sizes in rem, or give clamp() rem limits.",
           "elements": [
             "#d17 > p:nth-of-type(2)"
           ]
@@ -461,7 +479,7 @@
           "fingerprint": "frame-timing|#d34 > div|scroll|full",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, at full speed, 10 of 45 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 81 to 97 ms: about 47 frames missed. Most of that time, 800 of 924 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, at full speed, 10 of 46 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 84 to 99 ms: about 50 frames missed. Most of that time, 800 of 955 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d34 > div"
           ]
@@ -470,7 +488,7 @@
           "fingerprint": "frame-timing|#d34 > div|scroll|reference",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, with the CPU slowed 10.25 times to the reference device (benchmark index 375, reference 400; this machine 4098), 11 of 38 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 83 to 130 ms: about 56 frames missed. Most of that time, 919 of 1099 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, with the CPU slowed 9.34 times to the reference device (benchmark index 385, reference 400; this machine 3737), 11 of 39 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 82 to 137 ms: about 59 frames missed. Most of that time, 931 of 1096 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d34 > div"
           ]
@@ -479,7 +497,7 @@
           "fingerprint": "frame-timing|#d41 > div|scroll|reference",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, with the CPU slowed 10.25 times to the reference device (benchmark index 375, reference 400; this machine 4098), 10 of 35 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 93 to 141 ms: about 71 frames missed. Most of that time, 1119 of 1271 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, with the CPU slowed 9.34 times to the reference device (benchmark index 385, reference 400; this machine 3737), 10 of 35 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 110 to 134 ms: about 71 frames missed. Most of that time, 1134 of 1275 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d41 > div"
           ]

@@ -59,7 +59,8 @@ export function fromAction(dirs) {
 }
 
 export function score(spec, { page, twin, dPage, dTwin }) {
-  const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity);
+  const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity)
+    && (!d.resizeOnly || Object.keys(i.seen).every((m) => /resize/.test(m)));
   const rows = [
     ...spec.defects.map((d) => ({ d, on: page })),
     ...spec.distinct.defects.map((d) => ({ d, on: dPage, mode: 'distinct' })),
@@ -82,6 +83,9 @@ export function score(spec, { page, twin, dPage, dTwin }) {
     findingsOnTestPrint: page.issues.length + dPage.issues.length, truePositives: truePos.length,
     falsePositivesOnTestPrint: page.issues.length + dPage.issues.length - truePos.length, findingsOnTwin: twin.issues.length + dTwin.issues.length,
     distinctSweep: { testPrint: totals(dPage), twin: totals(dTwin), equal: sweepEqual },
+    // The resize pass must find the fixtures' breakpoints on both pages.
+    breakpoints: { expected: spec.breakpoints, testPrint: page.sweep.resize?.breakpoints, twin: twin.sweep.resize?.breakpoints,
+      equal: spec.breakpoints === undefined || (page.sweep.resize?.breakpoints === spec.breakpoints && twin.sweep.resize?.breakpoints === spec.breakpoints) },
     precision: truePos.length / (truePos.length + falsePos.length || 1),
     recall: caught / rows.length,
     rows,
@@ -99,6 +103,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const f of r.falsePositives) console.log(`false positive  ${f.check}  ${f.message}  [${f.elements.join(', ')}]`);
   const ds = r.distinctSweep;
   if (!ds.equal) console.log(`sweep totals differ without a system: test print ${JSON.stringify(ds.testPrint)}, twin ${JSON.stringify(ds.twin)}`);
+  const bp = r.breakpoints;
+  if (!bp.equal) console.log(`breakpoints found by the resize pass: test print ${bp.testPrint}, twin ${bp.twin}; the fixtures have ${bp.expected}`);
   console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twins: ${r.findingsOnTwin} findings.`);
-  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal ? 0 : 1);
+  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal ? 0 : 1);
 }

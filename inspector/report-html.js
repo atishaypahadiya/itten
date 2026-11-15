@@ -79,7 +79,7 @@ export function renderHtml(r) {
       <tbody>${checks.map(([id, c]) => `<tr><td><code>${id}</code></td><td class="n">${c.error || ''}</td><td class="n">${c.warning || ''}</td><td class="n">${c.info || ''}</td></tr>`).join('')}</tbody>
     </table>` : '<p>No findings.</p>';
 
-  const seenText = (it) => Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)}${/→/.test(w) ? '' : ' px'}`).join('; ');
+  const seenText = (it) => Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ');
   // Repeated info findings of one check in one table or list: one note.
   const group = (g) => {
     const noun = /(^| > )table(:nth-of-type\(\d+\))?$/.test(g.container) ? 'cells' : 'items';
@@ -153,7 +153,7 @@ export function renderHtml(r) {
   <h1>Inspection report</h1>
   <p><a href="${esc(r.url)}">${esc(r.url)}</a></p>
   <p class="meta">${esc(r.date)} · ${esc(r.environment.browser)} on ${esc(r.environment.platform)} · ${r.mode === 'system' ? `checked against <code>${esc(r.system)}</code>` : 'no system file: distinct-value mode'}</p>
-  <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×; motion at the last key width, with and without reduced motion.</p>
+  <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×; motion at the last key width, with and without reduced motion. Every width is a fresh load; the layout is checked again after resizing the window ${r.sweep.resize?.pairs?.length ? `${r.sweep.resize.pairs.length} times (${esc(r.sweep.resize.pairs.join(', '))} px)` : 'across each breakpoint'}.</p>
   ${table}
   ${baselineSection(r)}
   ${sections}

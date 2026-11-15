@@ -44,7 +44,7 @@ npm install --save-dev playwright
 npx playwright install chromium webkit firefox
 ```
 
-WebKit and Firefox are used for a short second opinion on layout. If either is missing, the report says so and the run continues.
+WebKit and Firefox give a second opinion on layout. If either is missing, the report says so and the run continues.
 
 ## Run the inspector
 
@@ -56,7 +56,7 @@ node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.jso
 - `--system`: the project's system file. Without it, the inspector reports how many distinct font sizes, spacing values and radii the page uses, instead of checking them against a scale.
 - `--out`: where to write `report.json`, `report.html` and the crops. Add it to `.gitignore`.
 
-By default the inspector measures the page at 320, 768, 1440 and 1920 px wide, at 200% text, in light and dark, and in WebKit and Firefox as well as Chromium. Add `--full` to sweep every 40 px from 320 to 1920 px before a release or when a finding depends on the width. The report lists each issue by severity with a zoomed crop. `protocol/04-inspect.md` explains every check, what it does not judge, and the order to fix things in.
+By default the inspector measures the page at 320, 768, 1440 and 1920 px wide, each a fresh load, at 200% text, in light and dark, and in WebKit and Firefox as well as Chromium; then it resizes the window across each breakpoint and measures again, since some pages break only after a resize. Add `--full` to sweep every 40 px from 320 to 1920 px, in every engine, before a release or when a finding depends on the width. The report lists each issue by severity with a zoomed crop. `protocol/04-inspect.md` explains every check, what it does not judge, and the order to fix things in.
 
 ## On every pull request
 

@@ -363,6 +363,14 @@
     <p class="small">Planted: hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.</p>
     <figure><table class="data notes"><tbody><tr><td>1846</td></tr><tr><td>Our correspondents were uncompromisingly incomprehensible about the communications infrastructure and its notoriously unpredictable upkeep and maintenance.</td></tr></tbody></table><figcaption class="small">Table 2. A dated note.</figcaption></figure>
   </section>
+  <section id="d47">
+    <h2>Sized once, at load</h2>
+    <p class="small">Planted: a script sets the box's width in px from its column when the page loads, and never again. Opened at any width the box fits; made narrower after loading, it runs off the page. Only the resize pass sees it.</p>
+    <div class="d47-box"><p>A box as wide as its column was when the page loaded.</p></div>
+    <script>
+      addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });
+    </script>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {
