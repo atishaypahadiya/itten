@@ -2,7 +2,7 @@
 
 The order in which ITTEN grows after 0.1, what each version covers, and the test it has to pass before it ships. A version ships when its acceptance test passes and the fixture test still reports full recall, full precision and no findings on the clean twins. Scope can move between versions; the order of the first three is fixed, because each one feeds the next.
 
-Status, 15 November 2026: 0.2 has shipped as 0.2.0 (see `CHANGELOG.md`). 0.3 is next.
+Status, 15 November 2026: 0.2 has shipped as 0.2.0. 0.3 is built as 0.3.0 and waits on the part of its acceptance test that needs a real pull request (see `CHANGELOG.md`). 0.4 is next.
 
 ## 0.2 · Typographic finish and motion
 
@@ -34,6 +34,8 @@ Motion, read through the Web Animations API, CSS transition events and `requestA
 **Prior art.** Seenomaly lints GUI animations against design guidelines from screencasts, with a learned model ([Zhao et al., ICSE 2020](https://2020.icse-conferences.org/details/icse-2020-papers/32/Seenomaly-Vision-Based-Linting-of-GUI-Animation-Effects-Against-Design-Don-t-Guideli)); ITTEN reads the animations the browser exposes and measures them against the project's own system instead. Line-breaking quality follows the measures behind TeX ([Knuth and Plass, "Breaking Paragraphs into Lines", Software: Practice and Experience 11(11), 1981](https://doi.org/10.1002/spe.4380111102)), and `balance` and `pretty` are defined in [CSS Text Module Level 4](https://www.w3.org/TR/css-text-4/). The flash threshold is [WCAG 2.2 SC 2.3.1](https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html).
 
 ## 0.3 · On every pull request, and what overrides say
+
+**Status.** Built in 0.3.0, not yet released. The action, the baseline and the comment logic pass their tests locally, including the comment against a stand-in for the GitHub API: one comment, edited on later runs, and none for forks or read-only tokens. Run on the fixtures, the action reproduces the fixture test (recall 43/43, precision 49/49, nothing on the clean twins). The aggregation script flags CRF-16 and nothing else on seven test repositories kept as folders in `fixtures/telemetry/`, and rejects the one whose file does not validate. Still to do after release, on GitHub: the pull request half of the acceptance test below (a planted defect named in the comment, a clean comment once it is removed, artifacts that open with matching crops), a pull request from a fork, the first scheduled telemetry run, and the self-test on Linux. One change from the plan: the overrides record lives at the project's root as `itten.overrides.json`, with `docs/itten-overrides.md` rendered from it.
 
 **Scope.**
 
