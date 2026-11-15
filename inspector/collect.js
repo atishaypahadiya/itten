@@ -647,5 +647,107 @@ export function collect(opts) {
   }
 
   data.graphicFontSizes = graphicFontSizes;
+  // ----------------------------------------------------------- broken word
+  // A word broken at a line end without a hyphen: the emergency break that
+  // overflow-wrap (break-word, anywhere), word-break (break-all,
+  // break-word) or line-break: anywhere makes when a word does not fit its
+  // line (CSS Text 3, overflow-wrap). Words are read across inline
+  // children, since a site may set part of a word in a span. A break
+  // between two letters or digits, or on either side of an apostrophe, is
+  // an emergency break unless hyphenation made it: where hyphens: auto is set,
+  // the wrapping properties are turned off for a moment and the word read
+  // again; a hyphenated word still breaks, an emergency break does not.
+  // Identifiers (URLs, DOIs, ids, paths) are left out: they cannot be
+  // hyphenated, and breaking them is what overflow-wrap is for. Run last,
+  // since it changes styles for a moment.
+  if (want.has('broken-word')) {
+    const identifier = new RegExp(opts.identifier || '^$', 'i');
+    const canBreak = (st) => /break-word|anywhere/.test(st.overflowWrap || st.wordWrap || '') || /break-all|break-word/.test(st.wordBreak || '') || st.lineBreak === 'anywhere';
+    const blocks = new Map();
+    const add = (b, nodes) => { if (!blocks.has(b)) blocks.set(b, []); blocks.get(b).push(...nodes); };
+    for (const e of textEntries) {
+      let b = e;
+      while (b && isInline(b)) b = b.parent;
+      if (b && canBreak(b.s)) add(b, e.textNodes);
+    }
+    // Tables set in a figure. The walk treats a figure's insides as a
+    // graphic, but a table's text is text, and table cells are where words
+    // break most; for this check only, they are read.
+    for (const t of document.querySelectorAll('figure table')) {
+      if (t.closest('svg, [role="img"], [inert], [aria-hidden="true"]') || !t.getClientRects().length) continue;
+      const w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (!n.data.trim()) continue;
+        let el = n.parentElement;
+        while (el !== t && /^(inline|contents)/.test(getComputedStyle(el).display)) el = el.parentElement;
+        let b = byEl.get(el);
+        if (!b) byEl.set(el, (b = { el, s: getComputedStyle(el), r: el.getBoundingClientRect(), tag: el.localName }));
+        if (canBreak(b.s)) add(b, [n]);
+      }
+    }
+    const charTop = (n, i) => { range.setStart(n, i); range.setEnd(n, i + 1); const q = range.getClientRects()[0]; return q ? q.top : null; };
+    const WORDCHAR = /[\p{L}\p{M}\p{N}'’]/u;
+    // The emergency breaks in a block: [word with | at each break, token index].
+    const breaks = (nodes) => {
+      const map = [];
+      let text = '';
+      for (const n of nodes) { for (let i = 0; i < n.data.length; i++) map.push([n, i]); text += n.data; }
+      const out = [];
+      for (const m of text.matchAll(/\S+/g)) {
+        const tok = m[0];
+        if (tok.length < 2 || identifier.test(tok)) continue;
+        const at = (k) => charTop(...map[m.index + k]);
+        const first = at(0), last = at(tok.length - 1);
+        if (first === null || last === null || Math.abs(first - last) < 2) continue;
+        const cuts = [];
+        let prev = first;
+        for (let k = 1; k < tok.length; k++) {
+          const t = at(k);
+          if (t === null) continue;
+          if (Math.abs(t - prev) >= 2 && WORDCHAR.test(tok[k - 1]) && WORDCHAR.test(tok[k])) cuts.push(k);
+          prev = t;
+        }
+        if (cuts.length) out.push({ index: m.index, word: cuts.reduceRight((w, k) => w.slice(0, k) + '|' + w.slice(k), tok.replace(/[.,;:!?)\]]+$/, '')) });
+      }
+      return out;
+    };
+    const groups = new Map();
+    let tested = 0;
+    for (const [b, nodes] of blocks) {
+      if (tested >= 2000 || !live(b, 'broken-word')) continue;
+      tested++;
+      nodes.sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      let found = breaks(nodes);
+      if (!found.length) continue;
+      // Under hyphens: auto, keep only the breaks that go away when the
+      // wrapping properties are off.
+      if ((b.s.hyphens || b.s.webkitHyphens) === 'auto') {
+        const st = b.el.style, keep = ['overflow-wrap', 'word-break', 'line-break'].map((p) => [p, st.getPropertyValue(p), st.getPropertyPriority(p)]);
+        st.setProperty('overflow-wrap', 'normal', 'important'); st.setProperty('word-break', 'normal', 'important'); st.setProperty('line-break', 'auto', 'important');
+        const still = new Set(breaks(nodes).map((x) => x.index));
+        for (const [p, v, pr] of keep) { if (v) st.setProperty(p, v, pr); else st.removeProperty(p); }
+        found = found.filter((x) => !still.has(x.index));
+        if (!found.length) continue;
+      }
+      const cell = b.el.closest('td, th');
+      const table = cell?.closest('table');
+      const k = table ? 'table|' + sel(table) : sel(b.el);
+      let g = groups.get(k);
+      if (!g) groups.set(k, (g = { ents: [], words: [], cell: !!cell, widths: [], why: new Set() }));
+      g.ents.push(b);
+      g.words.push(...found.map((x) => x.word));
+      if (cell) { const cs = getComputedStyle(cell); g.widths.push(cell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)); }
+      for (const [p, v] of [['overflow-wrap', b.s.overflowWrap || b.s.wordWrap], ['word-break', b.s.wordBreak], ['line-break', b.s.lineBreak]]) if (/break-word|anywhere|break-all/.test(v || '')) g.why.add(`${p}: ${v}`);
+    }
+    for (const [k, g] of groups) {
+      const words = [...new Set(g.words)];
+      const shown = words.slice(0, 3).map((w) => `"${w}"`).join(', ') + (words.length > 3 ? `, and ${words.length - 3} more` : '');
+      const where = g.cell ? `in ${g.ents.length === 1 ? 'a table cell' : `${g.ents.length} table cells`} ${fmt(Math.min(...g.widths))}${g.widths.length > 1 && Math.max(...g.widths) - Math.min(...g.widths) > 0.5 ? ` to ${fmt(Math.max(...g.widths))}` : ''} px wide` : `in ${label(g.ents[0].el)}`;
+      report('broken-word', 'warning', k,
+        `${words.length === 1 ? 'A word is' : `${words.length} words are`} broken without a hyphen ${where}: ${shown}. The column is narrower than ${words.length === 1 ? 'the word' : 'its longest words'}, and ${[...g.why].join(', ') || 'the wrapping rules'} breaks ${words.length === 1 ? 'it' : 'them'} wherever the line runs out. ${g.cell ? 'Give the column room for its longest word (a minimum width, or let the table scroll in its own box), set the table\'s text smaller, or' : 'Widen the measure, or'} allow hyphens: auto with a lang, so a word breaks between syllables, with a hyphen.`,
+        g.ents, { count: words.length, crop: 'each' });
+    }
+  }
+
   return { vw, scrollWidth: doc.scrollWidth, docHeight: doc.scrollHeight, issues, counts, data };
 }

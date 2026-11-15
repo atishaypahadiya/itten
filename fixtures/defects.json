@@ -89,8 +89,8 @@
       "check": "overflow",
       "title": "Text spilling out of its box",
       "planted": "a long word that cannot break, in a 96 px box.",
-      "css": ".tag { overflow-wrap: normal; }",
-      "fixedInTwin": "The long word is allowed to break."
+      "css": ".tag { width: 96px; overflow-wrap: normal; }",
+      "fixedInTwin": "The box is as wide as the word, and never wider than its column; overflow-wrap: anywhere stays as the last resort, and is not needed."
     },
     {
       "id": "d12",
@@ -332,6 +332,14 @@
       "planted": "pressing the toggle animates margin-left, so the page is laid out again on every frame.",
       "markup": "<button type=\"button\" class=\"toggle\" aria-pressed=\"false\">Toggle</button>\n    <script>\n      { const b = document.querySelector('#d43 .toggle'); b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))); }\n    </script>\n    <style>#d43 .toggle { transition-property: margin-left; } #d43 .toggle[aria-pressed=\"true\"] { transform: none; margin-left: 0.5rem; }</style>",
       "fixedInTwin": "The toggle moves with a transform."
+    },
+    {
+      "id": "d44",
+      "check": "broken-word",
+      "title": "Words broken without a hyphen",
+      "planted": "the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen (\"Bouvar|d's\", \"Verrier'|s\"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.",
+      "css": "#d44 .data { table-layout: fixed; width: 160px; }\n#d44 .data .name { width: 72px; overflow-wrap: break-word; }",
+      "fixedInTwin": "The table is laid out automatically without break-word, so the first column is as wide as its longest word."
     }
   ],
   "distinct": {

@@ -259,12 +259,12 @@ A paragraph does not end on a line holding a single word. Set paragraphs with `t
 
 *Why:* a stranded word or line reads as a gap in the text block and pulls the eye. Cites: TYP-04; Bringhurst, *The Elements of Typographic Style*; [Butterick, "Widow and orphan control"](https://practicaltypography.com/widow-and-orphan-control.html); [CSS Fragmentation Level 3](https://www.w3.org/TR/css-break-3/) (`orphans`, `widows`).
 
-### CRF-22 · An even rag; justified text is hyphenated
-Strength: SHOULD · Verified by: `rag`, `hyphenation` (inspector)
+### CRF-22 · An even rag; justified text is hyphenated; words break only with a hyphen
+Strength: SHOULD · Verified by: `rag`, `hyphenation`, `broken-word` (inspector)
 
-In ragged text no line other than the last, or one ended by a forced break, stops more than a quarter of the measure short, where hyphenation would fill it: set `hyphens: auto` with a `lang` on the page. Justified text is hyphenated; in a measure too narrow for that to keep word spaces under about one and a half times their natural width, set it ragged.
+In ragged text no line other than the last, or one ended by a forced break, stops more than a quarter of the measure short, where hyphenation would fill it: set `hyphens: auto` with a `lang` on the page. Justified text is hyphenated; in a measure too narrow for that to keep word spaces under about one and a half times their natural width, set it ragged. No word is broken without a hyphen. `overflow-wrap: break-word` or `anywhere` and `word-break: break-all` are a last resort against overflow: where they break words of running text, most often in the narrow column of a table, give the column room for its longest word, let the table scroll in its own box, or hyphenate. An identifier (a URL, a DOI, an id, a path) may break where it must, since it cannot be hyphenated.
 
-*Why:* deep holes in the rag break the shape of the paragraph, and stretched word spaces open rivers down justified text. Cites: TYP-04; [Knuth and Plass, "Breaking Paragraphs into Lines", 1981](https://doi.org/10.1002/spe.4380111102); [Butterick, "Hyphenation"](https://practicaltypography.com/hyphenation.html) and ["Justified text"](https://practicaltypography.com/justified-text.html).
+*Why:* deep holes in the rag break the shape of the paragraph, and stretched word spaces open rivers down justified text. A word broken without a hyphen reads as two words, or as a typo. The emergency break is defined in [CSS Text Module Level 3, `overflow-wrap`](https://www.w3.org/TR/css-text-3/#overflow-wrap-property). Cites: TYP-04; [Knuth and Plass, "Breaking Paragraphs into Lines", 1981](https://doi.org/10.1002/spe.4380111102); [Butterick, "Hyphenation"](https://practicaltypography.com/hyphenation.html) and ["Justified text"](https://practicaltypography.com/justified-text.html).
 
 ### CRF-23 · Headings balance; paragraphs close well
 Strength: SHOULD · Verified by: `text-wrap-balance`, `text-wrap-pretty` (inspector)
@@ -312,7 +312,7 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 | CRF-19 | Tabular figures where numbers align or change | manual: 1111 / 0000 test, `tnum` present | |
 | CRF-20 | Correct typographic characters | manual: text search | |
 | CRF-21 | No widows or orphans | `widow`, `orphan`; manual: printed pages | |
-| CRF-22 | Even rag; justified text hyphenated | `rag`, `hyphenation` | |
+| CRF-22 | Even rag; justified text hyphenated; no word broken without a hyphen | `rag`, `hyphenation`, `broken-word` | |
 | CRF-23 | Headings balanced, paragraphs pretty | `text-wrap-balance`, `text-wrap-pretty` | |
 | CRF-24 | Hanging punctuation where declared | `hanging-punctuation` | |
 | CRF-25 | Display type aligned by its ink | `optical-margin`; manual: 400% crop | |
