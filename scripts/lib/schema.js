@@ -1,8 +1,8 @@
 // A small JSON Schema validator covering the keywords used by
-// schema/system.schema.json. No dependencies.
+// schema/system.schema.json and schema/overrides.schema.json. No dependencies.
 // Supported: type, required, properties, additionalProperties, items,
 // minItems, maxItems, enum, minimum, maximum, exclusiveMinimum, minLength,
-// minProperties, oneOf, anyOf, $ref (local #/...), and one ITTEN keyword:
+// minProperties, pattern, oneOf, anyOf, $ref (local #/...), and one ITTEN keyword:
 // "ascending": true, which requires a number array in ascending order with
 // no repeats.
 
@@ -34,6 +34,7 @@ export function validate(schema, value, root = schema, path = '') {
     if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) errors.push(`${at}: ${value} must be above ${schema.exclusiveMinimum}`);
   }
   if (typeof value === 'string' && schema.minLength !== undefined && value.length < schema.minLength) errors.push(`${at}: shorter than ${schema.minLength}`);
+  if (typeof value === 'string' && schema.pattern && !new RegExp(schema.pattern, 'u').test(value)) errors.push(`${at}: "${value}" does not match ${schema.pattern}`);
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) errors.push(`${at}: needs at least ${schema.minItems} items`);
     if (schema.maxItems !== undefined && value.length > schema.maxItems) errors.push(`${at}: allows at most ${schema.maxItems} items`);

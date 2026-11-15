@@ -1,0 +1,12 @@
+{
+  "overrides": [
+    {
+      "rule": "LAY-10",
+      "check": "near-miss-edge",
+      "selector": "h1",
+      "reason": "Read only if the script ignores which submodule this is.",
+      "date": "2026-11-11",
+      "itten": "0.3.0"
+    }
+  ]
+}

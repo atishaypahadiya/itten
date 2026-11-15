@@ -1,0 +1,63 @@
+# Once a month, reads the overrides of every public repository of this
+# repository's owner that includes ITTEN as a submodule, and opens or updates
+# one issue when a rule is overridden in three or more projects.
+name: Override telemetry
+
+on:
+  schedule:
+    - cron: '17 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Count overrides by rule
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: node scripts/telemetry.js --owner "$OWNER" --threshold 3 --out "$RUNNER_TEMP/telemetry.md" --json "$RUNNER_TEMP/telemetry.json"
+
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TITLE: 'Override telemetry: rules set aside in three or more projects'
+        run: |
+          flagged=$(jq '.flagged | length' "$RUNNER_TEMP/telemetry.json")
+          number=$(gh issue list --repo "$REPO" --state open --limit 200 --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          cp "$RUNNER_TEMP/telemetry.md" "$RUNNER_TEMP/body.md"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$REPO" --body-file "$RUNNER_TEMP/body.md"
+            echo "Updated issue #$number ($flagged rule(s) flagged)." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$flagged" -gt 0 ]; then
+            gh issue create --repo "$REPO" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+            echo "Opened an issue: $flagged rule(s) flagged." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No rule is overridden in three or more projects; no issue opened." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat "$RUNNER_TEMP/telemetry.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: override-telemetry
+          path: |
+            ${{ runner.temp }}/telemetry.md
+            ${{ runner.temp }}/telemetry.json

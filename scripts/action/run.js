@@ -15,6 +15,8 @@
 // ITTEN_WRITE_BASELINE  "true": write a fresh baseline into the report directory
 // ITTEN_ENGINES         second-opinion engines, comma-separated (default webkit)
 // ITTEN_SERVE_TIMEOUT   seconds to wait for the serve command's URL (default 120)
+// ITTEN_OVERRIDES       overrides file (default itten.overrides.json); when it exists it must
+//                       validate, and docs/itten-overrides.md must match it
 // ITTEN_OUT             report directory
 
 import { existsSync, mkdirSync, writeFileSync, copyFileSync, appendFileSync, openSync } from 'node:fs';
@@ -23,6 +25,7 @@ import { spawn } from 'node:child_process';
 import { start } from '../serve.js';
 import { inspect, loadSystem, VERSION, CHECKS } from '../../inspector/inspect.js';
 import { failing } from '../../inspector/baseline.js';
+import { checkFiles } from '../overrides.js';
 
 const env = (k, d = '') => (process.env[k] ?? '').trim() || d;
 const problems = [];
@@ -68,6 +71,13 @@ async function main(out) {
       system = r.system;
     }
   }
+  const overridesFile = env('ITTEN_OVERRIDES', 'itten.overrides.json');
+  let overrides = null, overrideErrors = [];
+  if (existsSync(overridesFile)) {
+    const r = checkFiles(overridesFile, 'docs/itten-overrides.md');
+    overrides = { file: overridesFile, count: r.count, ok: r.ok };
+    overrideErrors = r.errors.map((e) => `overrides: ${e}`);
+  }
   const baselineFile = env('ITTEN_BASELINE', 'itten-baseline.json');
   const hasBaseline = existsSync(baselineFile);
   const writeBaseline = env('ITTEN_WRITE_BASELINE', 'false') === 'true';
@@ -77,9 +87,11 @@ async function main(out) {
   const summary = {
     tool: 'itten-action', version: VERSION, name: env('ITTEN_NAME', 'itten-report'), mode, failOn,
     system: systemPath === 'none' ? null : systemPath, baseline: hasBaseline ? baselineFile : null, wroteBaseline: writeBaseline ? 'itten-baseline.json' : null,
-    engines, pages: [], problems,
+    engines, overrides, pages: [], problems,
   };
   if (problems.length) return summary;
+  // A bad overrides file fails the run, but the pages are still inspected.
+  problems.push(...overrideErrors);
 
   let server = null, child = null, base = given;
   try {

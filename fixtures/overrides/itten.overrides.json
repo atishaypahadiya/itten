@@ -1,0 +1,27 @@
+{
+  "$schema": "../../schema/overrides.schema.json",
+  "overrides": [
+    {
+      "rule": "LAY-10",
+      "check": "near-miss-edge",
+      "selector": ".hero h1",
+      "value": "left edge at 24 px",
+      "instead": "22 px",
+      "reason": "Optical alignment of the open \"T\", which looks indented at 24 px.",
+      "floors": true,
+      "date": "2026-11-14",
+      "itten": "0.2.0"
+    },
+    {
+      "rule": "CRF-01",
+      "check": "spacing-scale",
+      "scope": "Chart labels drawn by the charting library",
+      "value": "spacing from the 4 px scale",
+      "instead": "3 px label offsets set by the library",
+      "reason": "The library places its labels itself; overriding them breaks its collision avoidance.",
+      "floors": true,
+      "date": "2026-11-15",
+      "itten": "0.3.0"
+    }
+  ]
+}

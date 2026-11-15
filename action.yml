@@ -39,6 +39,10 @@ inputs:
     description: '"true" writes a fresh itten-baseline.json for these pages into the artifact, to download and commit.'
     required: false
     default: 'false'
+  overrides:
+    description: The project's overrides file. When it exists it must validate against ITTEN's schema, and docs/itten-overrides.md must be rendered from it.
+    required: false
+    default: itten.overrides.json
   comment:
     description: '"false" skips the pull request comment; the job summary is always written.'
     required: false
@@ -137,6 +141,7 @@ runs:
         ITTEN_FAIL_ON: ${{ inputs.fail-on }}
         ITTEN_BASELINE: ${{ inputs.baseline }}
         ITTEN_WRITE_BASELINE: ${{ inputs.write-baseline }}
+        ITTEN_OVERRIDES: ${{ inputs.overrides }}
         ITTEN_NAME: ${{ inputs.name }}
         ITTEN_SERVE_TIMEOUT: ${{ inputs.serve-timeout }}
         ITTEN_ENGINES: webkit
