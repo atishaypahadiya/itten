@@ -1,10 +1,12 @@
 // Runs inside the page through page.evaluate. It must stay self-contained:
 // no imports and no references to anything outside this function.
 //
-// It measures layout boxes only. The insides of svg, canvas, img, video,
-// iframe, object, embed and math elements, elements with role="img", and
-// everything in a <figure> except its <figcaption> are treated as opaque
-// graphics: their outer box is measured, their contents are not.
+// It measures layout boxes only. The insides of drawn content (svg,
+// canvas, img, video, picture, iframe, object, embed, math and audio
+// elements, and elements with role="img", such as a diagram drawn with
+// divs) are treated as opaque graphics: their outer box is measured, their
+// contents are not. A <figure> is not a graphic: its table, its text and
+// its caption are measured like the rest of the page.
 
 export function collect(opts) {
   const want = new Set(opts.checks || []);
@@ -15,7 +17,7 @@ export function collect(opts) {
   const vw = doc.clientWidth;
   const sx = window.scrollX, sy = window.scrollY;
   const issues = [];
-  const counts = { graphics: 0, figureParts: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0 };
+  const counts = { graphics: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0 };
   const data = { spacing: {}, fontSizes: {}, radii: {}, capsules: 0, text: [], fontReps: [], fontFaces: [], textSizes: {}, spacingObs: [], typeObs: [], labels: {} };
   const r2 = (v) => Math.round(v * 100) / 100;
   const r1 = (v) => Math.round(v * 10) / 10;
@@ -93,11 +95,11 @@ export function collect(opts) {
   const entries = [];
   const byEl = new Map();
   const graphicFontSizes = {};
-  const visit = (el, inFigure, parent) => {
+  const visit = (el, parent) => {
     const s = getComputedStyle(el);
     if (s.display === 'none') return;
     const tag = el.localName;
-    const graphic = inFigure || GRAPHIC.has(tag) || el.getAttribute('role') === 'img';
+    const graphic = GRAPHIC.has(tag) || el.getAttribute('role') === 'img';
     const r = el.getBoundingClientRect();
     // Opacity and visibility are tested directly as well: not every engine
     // honours checkVisibility's options (WebKit counts opacity: 0 as visible).
@@ -106,15 +108,15 @@ export function collect(opts) {
     const e = { el, s, r, tag, graphic, vis, parent, op };
     entries.push(e); byEl.set(el, e);
     if (graphic) {
-      if (inFigure) counts.figureParts++; else counts.graphics++;
+      counts.graphics++;
       for (const t of el.querySelectorAll ? el.querySelectorAll('text, tspan') : []) {
         if ([...t.childNodes].some((n) => n.nodeType === 3 && n.data.trim())) { const fs = Math.round(parseFloat(getComputedStyle(t).fontSize) * 100) / 100; graphicFontSizes[fs] = (graphicFontSizes[fs] || 0) + 1; }
       }
       return;
     }
-    for (const c of el.children) visit(c, tag === 'figure' && c.localName !== 'figcaption', e);
+    for (const c of el.children) visit(c, e);
   };
-  visit(document.body, false, null);
+  visit(document.body, null);
   const visEntries = entries.filter((e) => e.vis);
   counts.elements = visEntries.length;
 
@@ -669,21 +671,6 @@ export function collect(opts) {
       let b = e;
       while (b && isInline(b)) b = b.parent;
       if (b && canBreak(b.s)) add(b, e.textNodes);
-    }
-    // Tables set in a figure. The walk treats a figure's insides as a
-    // graphic, but a table's text is text, and table cells are where words
-    // break most; for this check only, they are read.
-    for (const t of document.querySelectorAll('figure table')) {
-      if (t.closest('svg, [role="img"], [inert], [aria-hidden="true"]') || !t.getClientRects().length) continue;
-      const w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
-      for (let n = w.nextNode(); n; n = w.nextNode()) {
-        if (!n.data.trim()) continue;
-        let el = n.parentElement;
-        while (el !== t && /^(inline|contents)/.test(getComputedStyle(el).display)) el = el.parentElement;
-        let b = byEl.get(el);
-        if (!b) byEl.set(el, (b = { el, s: getComputedStyle(el), r: el.getBoundingClientRect(), tag: el.localName }));
-        if (canBreak(b.s)) add(b, [n]);
-      }
     }
     const charTop = (n, i) => { range.setStart(n, i); range.setEnd(n, i + 1); const q = range.getClientRects()[0]; return q ? q.top : null; };
     const WORDCHAR = /[\p{L}\p{M}\p{N}'’]/u;

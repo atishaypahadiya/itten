@@ -48,7 +48,7 @@ p, li, figcaption { text-wrap: pretty; hyphens: auto; }
 
 .tint { background: var(--tint); padding: 0.75rem 1rem; }
 
-/* Graphics the inspector must skip: an svg and a div-drawn diagram in a figure. */
+/* Graphics the inspector must skip: an svg and a diagram drawn with divs (role="img"), in a figure. */
 figure { display: flex; flex-direction: column; gap: 0.5rem; }
 .diagram { display: flex; align-items: start; gap: 3px; height: 32px; padding: 3.5px; background: var(--tint); }
 .diagram span { flex: 1; height: 21.3px; background: var(--edge); border-radius: 3px; }
@@ -131,6 +131,9 @@ figure { display: flex; flex-direction: column; gap: 0.5rem; }
 .data { border-collapse: collapse; }
 .data td { padding: 0.25rem 0.5rem; vertical-align: top; }
 .data .name { width: 64px; }
+/* d46 a table of dated notes in a figure: the date above each note, the note at a 240 px measure, hyphenated as running text is */
+.notes { width: 256px; max-width: 100%; table-layout: fixed; }
+.notes td { hyphens: auto; }
 /* Under Reduce Motion nothing on the page moves (motion.reducedMotion: instant). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

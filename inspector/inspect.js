@@ -257,7 +257,7 @@ export async function inspect(url, o = {}) {
   const browser = await chromium.launch({ channel: 'chromium' }).catch(() => chromium.launch());
   const issues = new Map();
   const distinct = { fontSizes: {}, spacing: {}, radii: {}, insideGraphics: {}, perWidth: [] };
-  const coverage = { graphics: 0, figureParts: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0, contrastSamples: 0, contrastSkipped: 0, fontGroups: 0 };
+  const coverage = { graphics: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0, contrastSamples: 0, contrastSkipped: 0, fontGroups: 0 };
   const renderedFonts = new Map();
   const sizes = {};
   const obs = { spacing: new Map(), spacing2: new Map(), type: new Map(), labels: new Map() };
@@ -434,7 +434,7 @@ export async function inspect(url, o = {}) {
       const t0 = Date.now();
       const res = await runPass(page, pass, { recordSizes: w === keyWidths.at(-1) });
       if (w === keyWidths.at(-1)) sizes.base = res.data.textSizes;
-      for (const k of ['graphics', 'figureParts', 'elements', 'text', 'relativeSpacing']) coverage[k] = Math.max(coverage[k], res.counts[k]);
+      for (const k of ['graphics', 'elements', 'text', 'relativeSpacing']) coverage[k] = Math.max(coverage[k], res.counts[k]);
       coverage.ignored = Math.max(coverage.ignored, res.counts.ignored);
       for (const [k, v] of Object.entries(res.data.fontSizes)) distinct.fontSizes[k] = Math.max(distinct.fontSizes[k] ?? 0, v);
       for (const [k, v] of Object.entries(res.data.spacing)) distinct.spacing[k] = Math.max(distinct.spacing[k] ?? 0, v);
@@ -594,7 +594,7 @@ export async function inspect(url, o = {}) {
       sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths },
       coverage,
       notJudged: [
-        `Insides of graphics: svg, canvas, img, video, iframe, object, embed, math, role="img", and everything in a figure except its figcaption. Their outer boxes are measured. Skipped on this page: ${coverage.graphics} graphics and ${coverage.figureParts} figure parts.`,
+        `Insides of drawn content: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and role="img" (mark a diagram drawn with HTML elements role="img"). Their outer boxes are measured. A figure's tables, text and caption are measured like the rest of the page. Skipped on this page: ${coverage.graphics} graphics.`,
         'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not measured (CRF-15). Hover, focus and clicks are used only to start motion for the motion checks.',
         'Text drawn by ::before, ::after or ::marker, inside shadow DOM, or inside canvas and WebGL.',
         'Icon optical centring and stroke weight (CRF-09, CRF-10) and text-box trim (CRF-05).',

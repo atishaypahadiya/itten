@@ -340,6 +340,22 @@
       "planted": "the table is laid out fixed, its first column 72 px wide, with overflow-wrap: break-word, so names longer than the column break mid-word without a hyphen (\"Bouvar|d's\", \"Verrier'|s\"). Seen on a real site in WebKit, where an automatic table layout let break-word narrow the column the same way.",
       "css": "#d44 .data { table-layout: fixed; width: 160px; }\n#d44 .data .name { width: 72px; overflow-wrap: break-word; }",
       "fixedInTwin": "The table is laid out automatically without break-word, so the first column is as wide as its longest word."
+    },
+    {
+      "id": "d45",
+      "check": "spacing-scale",
+      "title": "Spacing in a table in a figure",
+      "planted": "the table's cells are padded 5 px above and below. The scale has 4 and 8. A figure's table is text, measured like the rest of the page.",
+      "css": "#d45 .data td { padding: 0.3125rem 0.5rem; }",
+      "fixedInTwin": "The cells are padded 4 px above and below, from the scale."
+    },
+    {
+      "id": "d46",
+      "check": "rag",
+      "title": "Hole in the rag in a table cell",
+      "planted": "hyphenation is off in the note column of a table in a figure, so a long word leaves a line far short of the column. The column gives the note the same 240 px measure as d25.",
+      "css": "#d46 .notes td { hyphens: manual; }",
+      "fixedInTwin": "hyphens: auto, as on the table's cells, fills the line."
     }
   ],
   "distinct": {
