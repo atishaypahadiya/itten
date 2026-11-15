@@ -1,6 +1,8 @@
 // Runs the inspector on the fixtures: the test print with planted defects
 // (fixtures/index.html) and its clean twin (fixtures/clean.html).
 // Passes when every planted defect is caught and the twin reports nothing.
+// The pair fixtures/distinct.html and distinct-clean.html is inspected the
+// same way without a system file (distinct-value mode).
 // Usage: node scripts/fixture-test.js [--full]   (--full: the 41-width sweep instead of four widths)
 // Exports run() for scripts/check.js.
 
@@ -26,21 +28,37 @@ export async function run({ full = false, quiet = true } = {}) {
   const server = await start(port);
   const opts = { system, systemPath: spec.system, quiet, full };
   try {
-    const page = await inspect(`http://127.0.0.1:${port}/fixtures/index.html`, { ...opts, out: join(OUT, 'test-print') });
-    const twin = await inspect(`http://127.0.0.1:${port}/fixtures/clean.html`, { ...opts, out: join(OUT, 'clean-twin') });
+    const url = (p) => `http://127.0.0.1:${port}/${p}`;
+    const page = await inspect(url(spec.page), { ...opts, out: join(OUT, 'test-print') });
+    const twin = await inspect(url(spec.twin), { ...opts, out: join(OUT, 'clean-twin') });
+    // Type and spacing are measured in Chromium only, so the other engines are skipped here.
+    const dOpts = { ...opts, system: null, systemPath: null, engines: [] };
+    const dPage = await inspect(url(spec.distinct.page), { ...dOpts, out: join(OUT, 'distinct-test-print') });
+    const dTwin = await inspect(url(spec.distinct.twin), { ...dOpts, out: join(OUT, 'distinct-clean-twin') });
 
-    const rows = spec.defects.map((d) => {
-      const hits = page.issues.filter((i) => i.check === d.check && names(i, d));
-      return { ...d, caught: hits.length > 0, issues: hits.map((i) => i.id) };
+    const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity);
+    const rows = [
+      ...spec.defects.map((d) => ({ d, on: page })),
+      ...spec.distinct.defects.map((d) => ({ d, on: dPage, mode: 'distinct' })),
+    ].map(({ d, on, mode }) => {
+      const hits = on.issues.filter((i) => hit(i, d));
+      return { ...d, ...(mode ? { mode } : {}), caught: hits.length > 0, issues: hits.map((i) => i.id) };
     });
-    const matched = (i) => spec.defects.some((d) => d.check === i.check && names(i, d));
-    const truePos = page.issues.filter(matched);
-    const falsePos = [...page.issues.filter((i) => !matched(i)), ...twin.issues];
+    const tp = (issues, defects) => issues.filter((i) => defects.some((d) => hit(i, d)));
+    const truePos = [...tp(page.issues, spec.defects), ...tp(dPage.issues, spec.distinct.defects)];
+    const falsePos = [
+      ...page.issues.filter((i) => !spec.defects.some((d) => hit(i, d))), ...twin.issues,
+      ...dPage.issues.filter((i) => !spec.distinct.defects.some((d) => hit(i, d))), ...dTwin.issues,
+    ];
+    // A fluid range counts as one value, as the fixed size that replaces it does.
+    const totals = (r) => r.distinct.sweep;
+    const sweepEqual = JSON.stringify(totals(dPage)) === JSON.stringify(totals(dTwin));
     const caught = rows.filter((r) => r.caught).length;
     const result = {
       defects: rows.length, caught, missed: rows.filter((r) => !r.caught).map((r) => r.id),
-      findingsOnTestPrint: page.issues.length, truePositives: truePos.length,
-      falsePositivesOnTestPrint: page.issues.length - truePos.length, findingsOnTwin: twin.issues.length,
+      findingsOnTestPrint: page.issues.length + dPage.issues.length, truePositives: truePos.length,
+      falsePositivesOnTestPrint: page.issues.length + dPage.issues.length - truePos.length, findingsOnTwin: twin.issues.length + dTwin.issues.length,
+      distinctSweep: { testPrint: totals(dPage), twin: totals(dTwin), equal: sweepEqual },
       precision: truePos.length / (truePos.length + falsePos.length || 1),
       recall: caught / rows.length,
       rows,
@@ -58,6 +76,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const r = await run({ full: process.argv.includes('--full'), quiet: false });
   for (const row of r.rows) console.log(`${row.caught ? 'caught' : 'MISSED'}  ${row.id}  ${row.check.padEnd(18)} ${row.title}  ${row.issues.join(' ')}`);
   for (const f of r.falsePositives) console.log(`false positive  ${f.check}  ${f.message}  [${f.elements.join(', ')}]`);
-  console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twin: ${r.findingsOnTwin} findings.`);
-  process.exit(r.recall === 1 && r.falsePositives.length === 0 ? 0 : 1);
+  const ds = r.distinctSweep;
+  if (!ds.equal) console.log(`sweep totals differ without a system: test print ${JSON.stringify(ds.testPrint)}, twin ${JSON.stringify(ds.twin)}`);
+  console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twins: ${r.findingsOnTwin} findings.`);
+  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal ? 0 : 1);
 }

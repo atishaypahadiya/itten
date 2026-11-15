@@ -325,15 +325,15 @@ export async function inspect(url, o = {}) {
     const req = [...failed.values()];
     if (req.length) {
       const list = req.slice(0, 8).map((r) => `${r.method} ${r.url} (${r.type}, ${r.why})`).join('; ');
-      await addFinding(page, { check: 'page-load', severity: 'error', key: 'requests', widths: at, count: req.length, elements: [], resources: req.map((r) => r.url),
+      await addFinding(page, { check: 'page-load', severity: 'error', key: 'requests', mode: 'load', widths: at, count: req.length, elements: [], resources: req.map((r) => r.url),
         message: `${plural(req.length, 'request')} failed while the page was measured: ${list}${req.length > 8 ? `; and ${req.length - 8} more` : ''}. What was measured may be the page's error state. Fix the requests, then inspect again.` });
     }
     if (!loaded.networkIdle) {
-      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'busy', widths: at, count: 1, elements: [],
+      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'busy', mode: 'load', widths: at, count: 1, elements: [],
         message: 'The network did not go quiet within 10 s of the load event, so the page was measured while requests were still running. If it draws from them, pass --wait-for with a selector for what appears last, or --settle with a wait in ms.' });
     }
     if (loaded.waited === false) {
-      await addFinding(page, { check: 'page-load', severity: 'error', key: 'wait-for', widths: at, count: 1, elements: [],
+      await addFinding(page, { check: 'page-load', severity: 'error', key: 'wait-for', mode: 'load', widths: at, count: 1, elements: [],
         message: `--wait-for ${o.waitFor}: no element matched within 30 s of the load event, so the page was measured without it.` });
     }
     // Back at the first width and in light, where measuring began.
@@ -559,7 +559,7 @@ export async function inspect(url, o = {}) {
         info: list.filter((i) => i.severity === 'info').length,
         byCheck,
       },
-      distinct: { fontSizes: sortNum(distinct.fontSizes), spacing: sortNum(distinct.spacing), radii: sortNum(distinct.radii), fixed: distinct.fixed, fluid: distinct.fluid, svgTextSizes: sortNum(distinct.insideGraphics), perWidth: distinct.perWidth },
+      distinct: { fontSizes: sortNum(distinct.fontSizes), spacing: sortNum(distinct.spacing), radii: sortNum(distinct.radii), fixed: distinct.fixed, fluid: distinct.fluid, sweep: distinct.sweep, svgTextSizes: sortNum(distinct.insideGraphics), perWidth: distinct.perWidth },
       renderedFonts: [...renderedFonts.values()],
       textScaling,
       engines,
@@ -605,8 +605,11 @@ function scaleFindings(obs, system, widths, distinct) {
     for (const e of entries) {
       const vals = [...new Set(e.byW.values())];
       if (vals.length >= 3) {
+        // Against a system, a fluid value is reported where it leaves the
+        // scale. Without one, nothing says which ranges are deliberate, so
+        // every range is listed once, as info, type and spacing alike.
         const bad = [...e.byW].filter(([w, v]) => !ok(v, w));
-        if (!bad.length) continue;
+        if (system && !bad.length) continue;
         const sig = curve(e.byW);
         let g = fluid.get(sig);
         if (!g) fluid.set(sig, (g = { sels: [], props: new Set(), byW: e.byW, bad: bad.map(([w]) => w) }));
@@ -643,6 +646,17 @@ function scaleFindings(obs, system, widths, distinct) {
       const what = noun === 'spacing'
         ? `${[...g.props].join(', ')} on ${plural(g.sels.length, 'element')} ${g.props.size === 1 ? 'scales' : 'scale'}`
         : `The font size of ${plural(g.sels.length, 'text element')} scales`;
+      if (!system) {
+        // The widths the range spans: the widest one still at its first
+        // value, and the narrowest one already at its last.
+        const pts = [...g.byW].sort((a, b) => a[0] - b[0]);
+        const v0 = pts[0][1], v1 = pts.at(-1)[1];
+        const from = pts.filter(([, v]) => v === v0).at(-1)[0], to = pts.find(([, v]) => v === v1)[0];
+        out.push({ check, severity: 'info', key: 'fluid|' + sig, count: g.sels.length, widths: sortW(pts.map(([w]) => w)),
+          message: `${what} with the viewport, from ${v0} px at ${from} px wide to ${v1} px at ${to} px wide (${vals.length} values across the sweep, counted as one range in the totals). A fluid range, listed for the record. ${noun === 'type' ? 'A system file can declare it as a fluid step.' : 'With a system file it is checked against the spacing scale; a deliberate range is logged as an override.'}`,
+          elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
+        continue;
+      }
       out.push({ check, severity: 'warning', key: 'fluid|' + sig, count: g.sels.length, widths: sortW(g.bad),
         message: `${what} with the viewport, from ${lo} to ${hi} px across the sweep: ${vals.length} distinct values, ${nf} fractional${system ? `, ${noff} off the ${noun} scale` : ''}. ${noun === 'type' ? 'Declare the range as a fluid step in the system (min, max and the widths between which it scales), or snap it to fixed steps at breakpoints.' : 'Fluid values land between steps at most widths; snap them to the scale at breakpoints, or log the fluid range as an override.'}`,
         elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
@@ -704,13 +718,18 @@ function scaleFindings(obs, system, widths, distinct) {
       const vals = [...e.byW.values()];
       if (new Set(vals).size < 3) continue;
       const k = curve(e.byW);
-      const g = groups.get(k) || { lo: Math.min(...vals), hi: Math.max(...vals), elements: 0 };
-      g.elements++; groups.set(k, g);
+      const g = groups.get(k) || { lo: Math.min(...vals), hi: Math.max(...vals), sels: new Set() };
+      g.sels.add(e.sel); groups.set(k, g);
     }
-    return [...groups.values()].sort((a, b) => a.lo - b.lo);
+    return [...groups.values()].map(({ lo, hi, sels }) => ({ lo, hi, elements: sels.size })).sort((a, b) => a.lo - b.lo);
   };
   distinct.fixed = { fontSizes: fixedVals(tyEntries), spacing: fixedVals(spEntries) };
   distinct.fluid = { fontSizes: ranges(tyEntries), spacing: ranges(spEntries) };
+  // Totals across the sweep, each fluid range counted as one value.
+  distinct.sweep = {
+    fontSizes: distinct.fixed.fontSizes.length + distinct.fluid.fontSizes.length,
+    spacing: distinct.fixed.spacing.length + distinct.fluid.spacing.length,
+  };
   return out;
 }
 

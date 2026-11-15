@@ -43,8 +43,8 @@ export function renderHtml(r) {
     <article id="${it.id}">
       <h3>${esc(it.title)}</h3>
       <p>${esc(it.message)}</p>
-      <p class="meta">${esc(it.rule)} · ${it.id} · seen at ${Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ')}${it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
-      <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}</span></li>`).join('')}</ul>
+      <p class="meta">${esc(it.rule)} · ${it.id} · seen at ${Object.entries(it.seen).map(([m, w]) => `${esc(m)}: ${esc(w)} px`).join('; ')}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
+      <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}</span></li>`).join('')}${(it.resources || []).map((u) => `<li><code>${esc(u)}</code></li>`).join('')}</ul>
       ${it.crops.map((c) => `<figure><img src="${esc(c.path)}" alt="Crop of ${esc(it.title.toLowerCase())} at ${esc(c.at)}, zoomed ${c.zoom} times" loading="lazy"><figcaption>${esc(c.at)}, ${c.zoom}×. Magenta: the elements involved. Blue: the edges compared.</figcaption></figure>`).join('')}
     </article>`;
 
@@ -101,12 +101,12 @@ export function renderHtml(r) {
   ${sections}
   <section>
     <h2>Values in use</h2>
-    <p class="note">Fixed values keep their size as the viewport changes; the number in brackets is how many elements use each. Fluid values follow the viewport width (clamp, vw, percentages) and are listed as ranges.</p>
+    <p class="note">Fixed values keep their size as the viewport changes; the number in brackets is how many elements use each. Fluid values follow the viewport width (clamp, vw, percentages) and are listed as ranges. The first figure, at any one width, is what a reader meets on one screen.</p>
     <dl>
-      <dt>Font sizes</dt><dd>${most('fontSizes')} at most at any one width, ${r.distinct.fontSizes.length} across the sweep</dd>
+      <dt>Font sizes</dt><dd>${most('fontSizes')} at most at any one width; ${r.distinct.sweep.fontSizes} across the sweep, each fluid range counted once</dd>
       <dt>Fixed</dt><dd>${esc(dist(r.distinct.fixed.fontSizes))}</dd>
       <dt>Fluid</dt><dd>${esc(fluid(r.distinct.fluid.fontSizes))}</dd>
-      <dt>Spacing</dt><dd>${most('spacing')} at most at any one width, ${r.distinct.spacing.length} across the sweep</dd>
+      <dt>Spacing</dt><dd>${most('spacing')} at most at any one width; ${r.distinct.sweep.spacing} across the sweep, each fluid range counted once</dd>
       <dt>Fixed</dt><dd>${esc(dist(r.distinct.fixed.spacing))}</dd>
       <dt>Fluid</dt><dd>${esc(fluid(r.distinct.fluid.spacing))}</dd>
       ${r.mode === 'distinct' ? `<dt>Radii</dt><dd>${esc(dist(r.distinct.radii))}</dd>` : ''}

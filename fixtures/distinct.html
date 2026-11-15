@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector test print without a system</title>
+<link rel="stylesheet" href="fixture.css">
+<style>
+/* Shared by both pages. */
+.display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
+.gutter { padding: 12px 24px; }
+</style>
+<style id="planted">
+/* d21 type-scale */
+#d21 .display { font-size: clamp(1.875rem, 0.75rem + 2.4vw, 2.625rem); }
+/* d22 spacing-scale */
+#d22 .gutter { padding: 12px round(clamp(16px, 4vw, 56px), 1px); }
+</style>
+</head>
+<body>
+<main>
+  <section id="d21">
+    <h2>Fluid type without a system</h2>
+    <p class="small">Planted: a heading set with clamp() from 30 to 42 px between 750 and 1250 px wide. Without a system it must be listed once, as info.</p>
+    <p class="display">A heading that grows with the window</p>
+  </section>
+  <section id="d22">
+    <h2>Fluid spacing without a system</h2>
+    <p class="small">Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.</p>
+    <div class="tint gutter"><p>Side padding that grows with the window</p></div>
+  </section>
+</main>
+</body>
+</html>

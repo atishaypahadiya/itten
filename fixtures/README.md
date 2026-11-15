@@ -34,15 +34,24 @@ Both pages also contain a figure with an svg and a div-drawn diagram that break 
 | d19 | `page-load` | the figure draws from d19-missing.json, which does not exist. The page catches the 404 and shows a message in its place, so no script error is raised. | The figure draws from d19-data.json, which exists. |
 | d20 | `page-load` | the figure draws 2.5 s after the load event, by which time the inspector has begun measuring. | The figure draws as the page is read, before the load event. |
 
+## Without a system
+
+`distinct.html` and `distinct-clean.html` are inspected the same way but with no system file, in distinct-value mode. Nothing then says which fluid values are deliberate, so each fluid range must be listed once, as info, for type and spacing alike. The twin sets each at one fixed size instead, so the two pages must also give the same totals across the sweep: a fluid range counts as one value, as the fixed size that replaces it does.
+
+| ID | Check | Planted | In the clean twin |
+|---|---|---|---|
+| d21 | `type-scale` (info) | a heading set with clamp() from 30 to 42 px between 750 and 1250 px wide. | The heading is set at 32 px. |
+| d22 | `spacing-scale` (info) | side padding from 16 to 56 px, 4vw rounded to whole pixels. | The side padding is 24 px. |
+
 d10 only shows at 320 px wide, d12 and d17 only when the browser text size is doubled, and d14 only at a device pixel ratio of 1. They test that the sweep, the 200% text pass and the pixel-ratio pass each run.
 
 ## Run the test
 
 ```sh
-node scripts/fixture-test.js          # four widths, about 40 seconds
-node scripts/fixture-test.js --full   # 41 widths, about a minute
+node scripts/fixture-test.js          # four widths, about a minute
+node scripts/fixture-test.js --full   # 41 widths, a minute or two
 ```
 
-A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the two reports under `dist/fixtures/`.
+A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
-Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 17 of 17 and precision 21 of 21, with WebKit included. The 21 findings for 17 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system.
+Precision is true positives over all findings. Recall is defects caught over defects planted. On 15 November 2026, both the default four widths and the full sweep gave recall 22 of 22 and precision 26 of 26, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 26 findings for 22 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, and d07 both fails to load and names a family outside the system. d07's missing font file is also listed in d19's failed-request finding, which is one finding.

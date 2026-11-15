@@ -41,6 +41,41 @@ const S = [
       ${clean ? "document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';" : "addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));"}
     </script>`, ''],
 ];
+// Distinct-value mode: the same idea, inspected without a system file.
+// Nothing says which fluid values are deliberate, so each fluid range must
+// be listed once, as info, for type and spacing alike, and counted as one
+// value in the sweep totals. The twin sets each at one fixed size instead.
+const D = [
+  ['d21', 'type-scale', 'Fluid type without a system', 'Planted: a heading set with clamp() from 30 to 42 px between 750 and 1250 px wide. Without a system it must be listed once, as info.', 'The heading is set at 32 px.', `<p class="display">A heading that grows with the window</p>`, `#d21 .display { font-size: clamp(1.875rem, 0.75rem + 2.4vw, 2.625rem); }`],
+  ['d22', 'spacing-scale', 'Fluid spacing without a system', 'Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.', 'The side padding is 24 px.', `<div class="tint gutter"><p>Side padding that grows with the window</p></div>`, `#d22 .gutter { padding: 12px round(clamp(16px, 4vw, 56px), 1px); }`],
+];
+const distinctPage = (clean) => `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${clean ? 'Inspector test print without a system, clean twin' : 'Inspector test print without a system'}</title>
+<link rel="stylesheet" href="fixture.css">
+<style>
+/* Shared by both pages. */
+.display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
+.gutter { padding: 12px 24px; }
+</style>${clean ? '' : `
+<style id="planted">
+${D.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
+</style>`}
+</head>
+<body>
+<main>
+${D.map((s) => `  <section id="${s[0]}">
+    <h2>${s[2]}</h2>
+    <p class="small">${clean ? s[4] : s[3]}</p>
+    ${s[5]}
+  </section>`).join('\n')}
+</main>
+</body>
+</html>
+`;
 const canvasScript = `<script>
   for (const c of document.querySelectorAll('.photo canvas')) {
     const g = c.getContext('2d'), img = g.createImageData(c.width, c.height);
@@ -90,10 +125,17 @@ ${canvasScript}
 `;
 const dir = dirname(fileURLToPath(import.meta.url)) + '/';
 writeFileSync(dir + 'index.html', page(false));
+writeFileSync(dir + 'distinct.html', distinctPage(false));
+writeFileSync(dir + 'distinct-clean.html', distinctPage(true));
 writeFileSync(dir + 'clean.html', page(true));
 writeFileSync(dir + 'defects.json', JSON.stringify({
   page: 'fixtures/index.html', twin: 'fixtures/clean.html', system: 'fixtures/itten.system.json',
   note: 'Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect\'s resource.',
   defects: S.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), ...(s[6] ? { css: s[6] } : { markup: s[5](false) }), fixedInTwin: s[4], ...(s[7] || {}) })),
+  distinct: {
+    page: 'fixtures/distinct.html', twin: 'fixtures/distinct-clean.html',
+    note: 'Inspected without a system file. Each defect must be reported with the severity given. The page and its twin must give the same totals across the sweep, since each fluid range counts as one value, as the fixed size that replaces it does.',
+    defects: D.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), css: s[6], fixedInTwin: s[4], severity: 'info' })),
+  },
 }, null, 2) + '\n');
 writeFileSync(dir + 'd19-data.json', JSON.stringify({ label: 'Drawn from d19-data.json' }) + '\n');

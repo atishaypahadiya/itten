@@ -9,7 +9,9 @@
 //   protocol/02-system.md does not validate, or the validator accepts a
 //   broken file;
 // - the inspector misses a planted defect in fixtures/index.html or reports
-//   anything on fixtures/clean.html (four widths; --full sweeps 41);
+//   anything on fixtures/clean.html, and the same for the distinct-value
+//   pair fixtures/distinct.html and distinct-clean.html (four widths;
+//   --full sweeps 41);
 // - a library asset has no licence beside it.
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
@@ -105,9 +107,10 @@ let fixtureLine = '';
 try {
   const { run } = await import('./fixture-test.js');
   const r = await run({ full: process.argv.includes('--full') });
-  fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twin ${r.findingsOnTwin} findings.`;
+  fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twins ${r.findingsOnTwin} findings.`;
   for (const id of r.missed) fail('Fixtures', `planted defect ${id} was not caught`);
   for (const f of r.falsePositives) fail('Fixtures', `false positive: ${f.check} ${f.message} [${f.elements.join(', ')}]`);
+  if (!r.distinctSweep.equal) fail('Fixtures', `without a system, the sweep totals of distinct.html and its twin differ: ${JSON.stringify(r.distinctSweep.testPrint)} against ${JSON.stringify(r.distinctSweep.twin)}`);
 } catch (e) {
   fail('Fixtures', `the fixture test could not run: ${e.message.split('\n')[0]}`);
 }

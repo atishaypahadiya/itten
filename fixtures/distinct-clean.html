@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector test print without a system, clean twin</title>
+<link rel="stylesheet" href="fixture.css">
+<style>
+/* Shared by both pages. */
+.display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
+.gutter { padding: 12px 24px; }
+</style>
+</head>
+<body>
+<main>
+  <section id="d21">
+    <h2>Fluid type without a system</h2>
+    <p class="small">The heading is set at 32 px.</p>
+    <p class="display">A heading that grows with the window</p>
+  </section>
+  <section id="d22">
+    <h2>Fluid spacing without a system</h2>
+    <p class="small">The side padding is 24 px.</p>
+    <div class="tint gutter"><p>Side padding that grows with the window</p></div>
+  </section>
+</main>
+</body>
+</html>
