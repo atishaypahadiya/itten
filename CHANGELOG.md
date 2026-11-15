@@ -2,6 +2,37 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
+## 0.3.0 · 15 November 2026
+
+The inspector on every pull request, and overrides that ITTEN can count, as planned for 0.3 in `ROADMAP.md`. Not yet released: the parts that need GitHub are listed under 0.3 there.
+
+### GitHub Action
+
+- `action.yml` at the root, a composite action used as `atishaypahadiya/itten@v0.3.0`. It serves a static directory, runs a serve command and waits for its URL, or opens a deployed URL; inspects each page in `pages` in Chromium and WebKit; uploads `report.html` and the crops as an artifact; and writes the counts to the job summary.
+- On a pull request it keeps one comment, found by a hidden marker and edited on later runs: counts by page and severity, what is new and fixed since the baseline, and the top ten findings. Pull requests from forks, and any run whose token cannot comment, get the job summary only, without failing.
+- `fail-on`: `errors`, `warnings` or `never`. With a baseline, only findings that are new or more severe count.
+- Inputs `mode` (`quick` or `full`), `system` (`none` for distinct-value mode), `baseline`, `write-baseline`, `overrides`, `comment`, `name`, `working-directory`; outputs for the counts, the report directory and the artifact URL.
+- Third-party actions pinned by commit SHA; Playwright's browsers cached between runs.
+- `.github/workflows/self-test.yml` runs the action on the fixtures on every push and pull request and fails unless `fixture-test.js --from` scores its reports at full recall and precision.
+
+### Baseline
+
+- `inspect.js --baseline <file>` compares a run with a committed baseline: new findings, fixed ones, and ones whose severity changed, in `report.json` and in a new section of `report.html`. `--write-baseline [file]` writes the page's findings into it, keeping other pages; `--page` sets the page's key.
+- Each finding now carries a `fingerprint`, its check and grouping key, which stays the same between runs while its id and wording change. `report.json` records the ITTEN version.
+- `--engines webkit,firefox` chooses the second-opinion engines.
+
+### Overrides and telemetry
+
+- `itten.overrides.json`, validated by `schema/overrides.schema.json`: rule ID, selector or scope, reason, date and ITTEN version, with the check, the values and whether floors hold as options. The validator also requires a rule that exists and a real date.
+- `scripts/overrides.js render` writes `docs/itten-overrides.md` from it; `check` fails when the page is out of date. The action runs the check when the file exists.
+- `scripts/telemetry.js` reads, with the gh CLI, the overrides of the owner's public repositories that include ITTEN as a submodule, and nothing else from them; flags rules overridden in three or more projects with the reasons side by side; and writes `research/telemetry.md`. A monthly workflow opens or updates one issue. First run: ten public repositories, one with ITTEN (neptune-fork, no overrides file yet), nothing flagged.
+
+### Other
+
+- `scripts/serve.js` serves any directory, as the action's static server.
+- The schema validator supports `pattern`.
+- `npm run check` also runs the action tests, the overrides and telemetry checks, and fails on any action not pinned by SHA.
+
 ## 0.2.0 · 15 November 2026
 
 Typographic finish and motion, the two check families planned for 0.2 in `ROADMAP.md`, and the rest of 0.1.1.

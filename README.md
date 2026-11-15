@@ -10,15 +10,17 @@ If you are using ITTEN in a project, read [ITTEN.md](ITTEN.md).
 
 | Path | What it holds |
 |---|---|
-| `ITTEN.md` | The entry file for projects: the loop, precedence, install, overrides. |
+| `ITTEN.md` | The entry file for projects: the loop, precedence, install, the GitHub Action, overrides. |
+| `action.yml` | The GitHub Action: the inspector on every pull request, with one comment, a baseline and the report as an artifact. |
 | `protocol/` | The four steps: `01-teardown.md` (read inspiration as measurements), `02-system.md` (turn them into `itten.system.json`), `03-craft.md` (20 up-close rules, each with how it is verified), `04-inspect.md` (run the inspector and fix in order). |
-| `schema/system.schema.json` | The schema for a project's `itten.system.json`. |
+| `schema/` | The schemas for a project's `itten.system.json` and `itten.overrides.json`. |
 | `inspector/` | `inspect.js` and its parts. Opens a page in Chromium and measures it across widths, doubled text size, light and dark, and two pixel ratios, then checks the layout again in WebKit and Firefox. Writes `report.json`, `report.html` and zoomed crops. |
 | `fixtures/` | A test print with one planted defect per inspector check, and its clean twin. |
 | `reference/` | The rules corpus: 131 rules with IDs, strengths and evidence levels. The protocol cites it. |
 | `library/` | Earlier research on fashion colourways, typefaces, icons and texture, with the font and icon files. Use any of it only when a project's brief asks for it. |
 | `research/baselines/` | Inspector summaries of real pages, kept for comparison. |
-| `scripts/` | `check.js`, `fixture-test.js`, `serve.js`, and a small JSON Schema validator in `lib/`. |
+| `research/telemetry.md` | The latest count of overrides by rule across projects that use ITTEN. |
+| `scripts/` | `check.js`, `fixture-test.js`, `serve.js`, `overrides.js`, `telemetry.js`, the action's steps in `action/` and their tests in `action-test.js`, and a small JSON Schema validator in `lib/`. |
 
 ## Run it
 
@@ -39,7 +41,9 @@ npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 - a file or commit message names an automated writing tool or assistant, or a private file is tracked;
 - the schema, the fixtures' system file or the example in `protocol/02-system.md` does not validate, or the validator accepts a deliberately broken file;
 - the inspector misses a planted defect on the test print or reports anything on the clean twin;
-- a font or icon folder in `library/` has no licence file.
+- a font or icon folder in `library/` has no licence file;
+- the overrides example, its rendered page or the overrides validator is wrong, or the telemetry script, run on the seven test repositories in `fixtures/telemetry/`, flags anything but CRF-16;
+- the action's tests fail (the baseline comparison, the fail-on gate, the static server, and the pull request comment against a stand-in for the GitHub API), or an action or workflow uses a third-party action not pinned by commit SHA.
 
 The check takes about 40 seconds at four widths and a little over a minute with `--full`, most of it the fixture run. Reports and crops go to `dist/`, which is not committed.
 
