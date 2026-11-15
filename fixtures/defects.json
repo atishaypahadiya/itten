@@ -162,7 +162,7 @@
       "check": "page-load",
       "title": "Drawn after measuring",
       "planted": "the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.",
-      "markup": "<div class=\"d20-figure\"></div>\n    <script>\n      addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));\n    </script>",
+      "markup": "<div class=\"d20-figure\"></div>\n    <script>\n      addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));\n    </script>\n    <svg class=\"d20-chart\" width=\"96\" height=\"24\" aria-hidden=\"true\"></svg>\n    <script>\n      // On both pages: a chart drawn again on every resize, with ids from a counter. Not late.\n      let d20n = 0;\n      const d20draw = () => { document.querySelector('#d20 .d20-chart').innerHTML = '<path id=\"d20-arc-' + (d20n++) + '\" d=\"M0 20 Q48 0 96 20\" fill=\"none\" stroke=\"currentColor\"/>'; };\n      d20draw(); addEventListener('resize', d20draw);\n    </script>",
       "fixedInTwin": "The figure draws as the page is read, before the load event."
     },
     {
@@ -170,7 +170,7 @@
       "check": "widow",
       "title": "Widow",
       "planted": "a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.",
-      "css": "#d23 .note { max-width: 220px; }",
+      "css": "#d23 .note:not(.ref) { max-width: 220px; }",
       "fixedInTwin": "At 288 px the note sets on one line."
     },
     {

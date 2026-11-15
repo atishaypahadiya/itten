@@ -9,6 +9,13 @@ A test print for the inspector, in the way a 3D printer's calibration model exer
 
 Both pages also contain a figure with an svg and a div-drawn diagram that break the system on purpose (a 13.7 px svg text size, 3 px radii, 3.5 px padding). The inspector must skip the insides of graphics, so these must not be reported. The h1 on both pages is set with clamp() from 32 to 40 px, a fluid step the system declares, so it must not be reported either. Every paragraph, list item and caption on both pages is set with `text-wrap: pretty` and `hyphens: auto`, and every heading with `text-wrap: balance`, as a careful build would be; d23 to d28 each take one of these away, or narrow the measure. Every animation and transition uses the system's durations and easings and stops under `prefers-reduced-motion: reduce`; d31 to d35 each break one of these.
 
+Four more things on both pages must not be reported, each found on a real site:
+
+- in d20, a small chart drawn again on every resize, its path id taken from a counter, so the id differs each time it is drawn (not late content);
+- in d23, a reference ending on a DOI alone on its last line (a citation ends on its link; not a widow);
+- in d23, a paragraph in a 104 px column without hyphenation, ending on one word (every line there is a fragment; not judged as a widow);
+- in d31, a 250 ms transition reversed after 150 ms, which the browser runs for less than 250 ms (the declared duration is judged, not the shortened one).
+
 ## Planted defects
 
 | ID | Check | Planted | In the clean twin |

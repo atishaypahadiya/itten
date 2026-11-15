@@ -85,13 +85,24 @@ export function motionReport() {
     const easing = kind === 'CSSAnimation' ? (kfs[0]?.easing || timing.easing) : (timing.easing !== 'linear' ? timing.easing : (kfs[0]?.easing || 'linear'));
     const q = el.getBoundingClientRect();
     const s = getComputedStyle(el);
+    // A transition reversed before it finished runs for less than its
+    // declared duration (CSS Transitions, the reversing shortening factor);
+    // the declared one is the author's choice, so it is the one judged.
+    let duration = typeof timing.duration === 'number' ? timing.duration : 0;
+    if (kind === 'CSSTransition') {
+      const props = s.transitionProperty.split(',').map((x) => x.trim());
+      const durs = s.transitionDuration.split(',').map((x) => parseFloat(x) * (x.trim().endsWith('ms') ? 1 : 1000));
+      let i = props.indexOf(a.transitionProperty);
+      if (i < 0) i = props.indexOf('all');
+      if (i >= 0 && durs.length) duration = Math.max(duration, durs[i % durs.length]);
+    }
     // Luminance at each keyframe, for flashing: background colour and
     // opacity where the keyframe sets them, the element's own otherwise.
     const lums = kfs.map((k) => M.lum(k.backgroundColor || s.backgroundColor, k.opacity !== undefined ? parseFloat(k.opacity) : parseFloat(s.opacity)));
     anims.push({
       sel: sel(el), label: label(el), pseudo: e.pseudoElement || null, rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)],
       kind, name: a.animationName || a.transitionProperty || a.id || '', phase,
-      duration: typeof timing.duration === 'number' ? timing.duration : 0, delay: timing.delay, iterations: timing.iterations, direction: timing.direction,
+      duration, delay: timing.delay, iterations: timing.iterations, direction: timing.direction,
       easing, props, lums,
       ignore: ['motion-timing', 'reduced-motion', 'motion-layout', 'flash'].filter((c) => ignored(el, c)),
     });

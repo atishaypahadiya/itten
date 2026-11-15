@@ -153,7 +153,9 @@ function lateInit() {
     return (p ? sel(p) + ' > ' : '') + el.localName + (same.length > 1 ? `:nth-of-type(${same.indexOf(el) + 1})` : '');
   };
   const own = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join(' ').replace(/\s+/g, ' ').trim();
-  const key = (el) => sel(el) + '|' + own(el).slice(0, 80);
+  // Ids that differ only by a counter (arc-3, arc-15) name the same thing
+  // drawn again, as a chart does on every resize.
+  const key = (el) => sel(el).replace(/#[A-Za-z][\w-]*/g, (id) => id.replace(/\d+/g, 'N')) + '|' + own(el).slice(0, 80);
   const drawn = () => [...document.body.querySelectorAll('*')].filter((el) => !/^(script|style|template|noscript)$/.test(el.localName) && el.getClientRects().length);
   const ignored = (el) => { const h = el.closest('[data-itten-ignore]'); return !!h && /(^|\s)(page-load|all)(\s|$)/.test(h.getAttribute('data-itten-ignore')); };
   L.start = () => {
@@ -1116,10 +1118,13 @@ async function opticalIssues(page, cands) {
     if (ink === null || ref === null) return;
     // A round or pointed letter whose ink only meets the edge already looks
     // indented; one whole pixel short of it, at display size, is reported.
+    // A single pixel is the smallest offset the screen can draw and is at
+    // the edge of what shows at 1x, so it is listed as info; two or more
+    // is a warning.
     const d = ink - ref;
     if (d < 1) return;
     const y = c.glyph[1], h = c.glyph[3];
-    out.push({ check: 'optical-margin', severity: 'warning', key: c.el.sel, count: 1, elements: [c.el], crop: 'marks',
+    out.push({ check: 'optical-margin', severity: d >= 2 ? 'warning' : 'info', key: c.el.sel, count: 1, elements: [c.el], crop: 'marks',
       marks: [{ x1: ref, y1: y, x2: ink, y2: y + h }],
       message: `The ink of the "${c.letter}" at ${c.fs} px starts ${d} px to the right of the ink of the "${c.refLetter}" in ${c.ref.label}, though their boxes share an edge. Round and pointed letters at display sizes need to reach past that edge to look aligned: pull the line left until the ink passes the edge slightly, about ${Math.round(((d + 0.015 * c.fs) / c.fs) * 100) / 100}em with text-indent, and log it as an optical adjustment (CRF-04).` });
   });

@@ -87,6 +87,9 @@ figure { display: flex; flex-direction: column; gap: 8px; }
 /* d23 to d28: a narrow measure, the same at every width */
 .measure { max-width: 240px; }
 .note { max-width: 288px; }
+/* d23, both pages: a column too narrow for widows to be judged */
+.narrow { max-width: 104px; hyphens: manual; }
+.ref { overflow-wrap: anywhere; }
 /* d24 columns */
 .cols { width: 288px; columns: 2; column-gap: 16px; }
 /* d28 justified */
@@ -98,6 +101,8 @@ figure { display: flex; flex-direction: column; gap: 8px; }
 /* d31 to d35: motion, every value from the system's durations and easings */
 .lift { transition: transform 250ms cubic-bezier(0.2, 0, 0, 1); }
 .lift:hover { transform: translateY(-4px); }
+.reveal { margin-top: 12px; transition: opacity 250ms cubic-bezier(0.2, 0, 0, 1); }
+.reveal.dim { opacity: 0.6; }
 .pulse { width: 96px; height: 24px; background: var(--tint-deep); animation: pulse 1000ms linear infinite alternate; }
 @keyframes pulse { to { opacity: 0.6; } }
 .grow { width: 160px; transform-origin: left; transition: transform 250ms cubic-bezier(0.2, 0, 0, 1); }

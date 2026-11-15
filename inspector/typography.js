@@ -169,14 +169,24 @@ export function typography(opts) {
     // is the copy, the measure or a no-break space).
     const plain = wrapStyle(s) === 'plain';
     const fill = (ln) => (ln.right - ln.left) / box.width;
+    // Widows and rag are judged against a real measure. Where full lines
+    // average under 20 characters every line is a fragment, and the fault
+    // is the measure, not the break.
+    const full = L.slice(0, -1);
+    const chars = full.length ? full.reduce((n, ln) => n + ln.words.reduce((m, w) => m + w.text.length, 0) + ln.words.length - 1, 0) / full.length : 0;
+    const narrow = chars < 20;
     const oneWord = (ls) => ls.length >= 2 && ls.at(-1).words.length === 1 && ls.at(-1).words[0].piece === 0 && !ls.at(-2).forced;
     let pretty = null;
-    if (!head && L.length >= 2 && plain && ragged(s) && (oneWord(L) || fill(last) < 1 / 3) && tested < 250 && (want.has('text-wrap-pretty') || want.has('widow'))) {
+    if (!head && !narrow && L.length >= 2 && plain && ragged(s) && (oneWord(L) || fill(last) < 1 / 3) && tested < 250 && (want.has('text-wrap-pretty') || want.has('widow'))) {
       tested++;
       pretty = withStyle(el, { 'text-wrap': 'pretty' }, () => lines(el, fs));
     }
     const prettyHelps = !!pretty && pretty.length <= L.length + 1 && ((oneWord(L) && !oneWord(pretty)) || (!oneWord(L) && fill(pretty.at(-1)) >= 1 / 3 && fill(pretty.at(-1)) - fill(last) >= 0.1));
-    if (want.has('widow') && !head && oneWord(L) && !prettyHelps && live(el, 'widow')) {
+    // A citation ends on its link by convention, and a link cannot be
+    // joined to the word before it; a last line that is a URL or DOI is not
+    // judged.
+    const link = /^(https?:\/\/|www\.|doi:)|^[\w-]+(\.[\w-]+)+\/\S/i;
+    if (want.has('widow') && !head && !narrow && oneWord(L) && !link.test(last.words[0].text) && !prettyHelps && live(el, 'widow')) {
       const w = last.words[0].text;
       report('widow', 'warning', el, `The last line holds one word, "${w.length > 24 ? w.slice(0, 23) + '…' : w}", under ${L.length - 1} full line${L.length > 2 ? 's' : ''}${plain ? ', and text-wrap: pretty does not move it' : ', with text-wrap: pretty set'}. Change the measure or the copy, or join the last two words with a no-break space.`, [mark(last)]);
     }
@@ -215,7 +225,7 @@ export function typography(opts) {
 
     // Rag: a line, other than the last or one ended by force, that stops far
     // short of the measure, where hyphenation would fill it.
-    if (want.has('rag') && !head && L.length >= 3 && ragged(s) && !hyphenated(el, s) && live(el, 'rag')) {
+    if (want.has('rag') && !head && !narrow && L.length >= 3 && ragged(s) && !hyphenated(el, s) && live(el, 'rag')) {
       const holes = L.slice(0, -1).map((ln, i) => ({ ln, i, d: ln.forced ? 0 : shortfall(ln, box, s) }));
       const worst = holes.reduce((a, b) => (b.d > a.d ? b : a));
       if (worst.d > 0.25) {

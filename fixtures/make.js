@@ -39,8 +39,17 @@ const S = [
   ['d20', 'page-load', 'Drawn after measuring', 'Planted: the figure draws 2.5 s after the load event, by which time the inspector has begun measuring.', 'The figure draws as the page is read, before the load event.', (clean) => `<div class="d20-figure"></div>
     <script>
       ${clean ? "document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';" : "addEventListener('load', () => setTimeout(() => { document.querySelector('.d20-figure').innerHTML = '<p>Drawn 2.5 s after load</p>'; }, 2500));"}
+    </script>
+    <svg class="d20-chart" width="96" height="24" aria-hidden="true"></svg>
+    <script>
+      // On both pages: a chart drawn again on every resize, with ids from a counter. Not late.
+      let d20n = 0;
+      const d20draw = () => { document.querySelector('#d20 .d20-chart').innerHTML = '<path id="d20-arc-' + (d20n++) + '" d="M0 20 Q48 0 96 20" fill="none" stroke="currentColor"/>'; };
+      d20draw(); addEventListener('resize', d20draw);
     </script>`, ''],
-  ['d23', 'widow', 'Widow', 'Planted: a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.', 'At 288 px the note sets on one line.', `<p class="note">Short notes end on one word sometimes.</p>`, `#d23 .note { max-width: 220px; }`],
+  ['d23', 'widow', 'Widow', 'Planted: a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.', 'At 288 px the note sets on one line.', `<p class="note">Short notes end on one word sometimes.</p>
+    <p class="note ref">Data set, version 1.0.1, Zenodo. doi:10.5281/zenodo.24158992</p>
+    <p class="narrow">Post to the neighbourhood feed</p>`, `#d23 .note:not(.ref) { max-width: 220px; }`],
   ['d24', 'orphan', 'Orphan across columns', 'Planted: orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column.', 'Orphans and widows of 2, the default, so the second paragraph breaks two lines and three.', `<div class="cols"><p>The first paragraph runs to four lines in its column here.</p><p>The second runs on longer, and breaks across the two columns of the box below the first.</p></div>`, `#d24 .cols p { orphans: 1; widows: 1; }`],
   ['d25', 'rag', 'Hole in the rag', 'Planted: hyphenation is off, so a long word leaves a line far short of the measure.', 'hyphens: auto, as on every paragraph, fills the line.', `<p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its maintenance.</p>`, `#d25 .measure { hyphens: manual; }`],
   ['d26', 'text-wrap-balance', 'Unbalanced heading', 'Planted: text-wrap is plain wrap, so the heading leaves a short second line.', 'text-wrap: balance, as on every heading, evens the two lines.', `<h3 class="measure">A heading that wraps onto a short second line</h3>`, `#d26 h3 { text-wrap: wrap; }`],
@@ -49,7 +58,12 @@ const S = [
   ['d29', 'hanging-punctuation', 'Punctuation that should hang', 'Planted: the opening quote sits inside the text edge, though the system hangs punctuation.', 'A negative text-indent pulls the quote into the margin.', `<p class="quote">“Quotation marks hang outside the text edge,” the system says, so the letters align.</p>`, `#d29 .quote { text-indent: 0; }`],
   ['d30', 'optical-margin', 'Optical edge of display type', 'Planted: the large O sits on the box edge, so its ink starts inside the edge of the text below.', 'The line is pulled left until the ink of the O meets the text edge, an optical adjustment.', `<p class="hero" data-itten-ignore="near-miss-edge">Orbit</p>
     <p>Hold the edge of this line against the round letter above.</p>`, `#d30 .hero { text-indent: 0; }`],
-  ['d31', 'motion-timing', 'Duration off the system', 'Planted: the hover transition runs 350 ms. The system has 100, 250 and 1000 ms.', 'The transition runs 250 ms with the standard easing, both from the system.', `<div class="tint lift">Hover to lift</div>`, `#d31 .lift { transition-duration: 350ms; }`],
+  ['d31', 'motion-timing', 'Duration off the system', 'Planted: the hover transition runs 350 ms. The system has 100, 250 and 1000 ms.', 'The transition runs 250 ms with the standard easing, both from the system.', `<div class="tint lift">Hover to lift</div>
+    <div class="tint reveal">Dimmed, then restored</div>
+    <script>
+      // On both pages: a 250 ms transition reversed after 150 ms, which the browser shortens. Not off the system.
+      requestAnimationFrame(() => requestAnimationFrame(() => { const r = document.querySelector('#d31 .reveal'); r.classList.add('dim'); setTimeout(() => r.classList.remove('dim'), 150); }));
+    </script>`, `#d31 .lift { transition-duration: 350ms; }`],
   ['d32', 'reduced-motion', 'Motion under Reduce Motion', 'Planted: the pulse keeps looping when the reader asks for reduced motion.', 'The pulse stops under prefers-reduced-motion: reduce, as every animation on the page does.', `<div class="pulse" aria-hidden="true"></div>`, `@media (prefers-reduced-motion: reduce) { #d32 .pulse { animation: pulse 1000ms linear infinite alternate !important; } }`],
   ['d33', 'motion-layout', 'Animated width', 'Planted: the hover transition animates width, so the page is laid out again on every frame.', 'The same growth as a scale transform.', `<div class="tint grow">Hover to widen</div>`, `#d33 .grow { transition-property: width; }\n#d33 .grow:hover { transform: none; width: 176px; }`],
   ['d34', 'frame-timing', 'Dropped frames while scrolling', 'Planted: the box\'s scroll handler holds the main thread for 80 ms each time it fires.', 'The box has no scroll handler.', (clean) => `<div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>${clean ? '' : `

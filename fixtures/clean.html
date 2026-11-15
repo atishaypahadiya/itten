@@ -124,11 +124,20 @@
     <script>
       document.querySelector('.d20-figure').innerHTML = '<p>Drawn as the page is read</p>';
     </script>
+    <svg class="d20-chart" width="96" height="24" aria-hidden="true"></svg>
+    <script>
+      // On both pages: a chart drawn again on every resize, with ids from a counter. Not late.
+      let d20n = 0;
+      const d20draw = () => { document.querySelector('#d20 .d20-chart').innerHTML = '<path id="d20-arc-' + (d20n++) + '" d="M0 20 Q48 0 96 20" fill="none" stroke="currentColor"/>'; };
+      d20draw(); addEventListener('resize', d20draw);
+    </script>
   </section>
   <section id="d23">
     <h2>Widow</h2>
     <p class="small">At 288 px the note sets on one line.</p>
     <p class="note">Short notes end on one word sometimes.</p>
+    <p class="note ref">Data set, version 1.0.1, Zenodo. doi:10.5281/zenodo.24158992</p>
+    <p class="narrow">Post to the neighbourhood feed</p>
   </section>
   <section id="d24">
     <h2>Orphan across columns</h2>
@@ -170,6 +179,11 @@
     <h2>Duration off the system</h2>
     <p class="small">The transition runs 250 ms with the standard easing, both from the system.</p>
     <div class="tint lift">Hover to lift</div>
+    <div class="tint reveal">Dimmed, then restored</div>
+    <script>
+      // On both pages: a 250 ms transition reversed after 150 ms, which the browser shortens. Not off the system.
+      requestAnimationFrame(() => requestAnimationFrame(() => { const r = document.querySelector('#d31 .reveal'); r.classList.add('dim'); setTimeout(() => r.classList.remove('dim'), 150); }));
+    </script>
   </section>
   <section id="d32">
     <h2>Motion under Reduce Motion</h2>
