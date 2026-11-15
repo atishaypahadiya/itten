@@ -131,6 +131,27 @@ export function collect(opts) {
     }
     return (e.lines = out);
   };
+  // A text block's lines over all its text, inline descendants included
+  // (span, a, em), for its edges: when a line begins with an inline child,
+  // the block's own text nodes start somewhere inside it. Text in a
+  // descendant that is laid out as a block of its own is left to that block.
+  const edgeLines = (e) => {
+    if (e.edgeLines) return e.edgeLines;
+    const out = [];
+    const walker = document.createTreeWalker(e.el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.data.trim()) continue;
+      let inline = true;
+      for (let p = n.parentElement; p && p !== e.el; p = p.parentElement) {
+        const d = getComputedStyle(p).display;
+        if (!(d.startsWith('inline') || d === 'contents') || p.namespaceURI !== 'http://www.w3.org/1999/xhtml') { inline = false; break; }
+      }
+      if (!inline) continue;
+      range.selectNodeContents(n);
+      for (const q of range.getClientRects()) if (q.width >= 1 && q.height >= 1) out.push(q);
+    }
+    return (e.edgeLines = out.length ? out : lines(e));
+  };
   const textEntries = visEntries.filter((e) => e.textNodes.length && lines(e).length);
   counts.text = textEntries.length;
 
@@ -251,7 +272,7 @@ export function collect(opts) {
     };
     for (const e of textEntries) {
       if (isInline(e) || !live(e, 'near-miss-edge')) continue;
-      const L = lines(e);
+      const L = edgeLines(e);
       const ta = e.s.textAlign, rtl = e.s.direction === 'rtl';
       const left = ta === 'left' || ta === 'justify' || (ta === 'start' && !rtl) || (ta === 'end' && rtl);
       const right = ta === 'right' || (ta === 'end' && !rtl) || (ta === 'start' && rtl);

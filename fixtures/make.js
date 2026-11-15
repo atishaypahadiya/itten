@@ -60,6 +60,9 @@ const S = [
     </script>`, ''],
   ['d23', 'widow', 'Widow', 'Planted: a narrower measure, 220 px, leaves the last word alone, and text-wrap: pretty cannot move it.', 'At 288 px the note sets on one line.', `<p class="note">Short notes end on one word sometimes.</p>
     <p class="note ref">Data set, version 1.0.1, Zenodo. doi:10.5281/zenodo.24158992</p>
+    <p class="note ref">A chapter in an edited book on the discovery of the planet, with its preprint: arXiv:2108.06305</p>
+    <p class="note ref">The figures are built from notes in the repository, each named for its step: docs/notes/P1B_challis_detection.json</p>
+    <ul class="list refs"><li><span>Brookes</span>, C. J. 1970.</li><li><span>Bouvard</span>, A. 1821.</li></ul>
     <p class="narrow">Post to the neighbourhood feed</p>`, `#d23 .note:not(.ref) { max-width: 220px; }`],
   ['d24', 'orphan', 'Orphan across columns', 'Planted: orphans and widows of 1, so the second paragraph leaves one line at the foot of the first column.', 'Orphans and widows of 2, the default, so the second paragraph breaks two lines and three.', `<div class="cols"><p>The first paragraph runs to four lines in its column here.</p><p>The second runs on longer, and breaks across the two columns of the box below the first.</p></div>`, `#d24 .cols p { orphans: 1; widows: 1; }`],
   ['d25', 'rag', 'Hole in the rag', 'Planted: hyphenation is off, so a long word leaves a line far short of the measure.', 'hyphens: auto, as on every paragraph, fills the line.', `<p class="measure">Our correspondents were uncompromisingly incomprehensible about telecommunications infrastructure and its characteristically unpredictable upkeep and its maintenance.</p>`, `#d25 .measure { hyphens: manual; }`],
