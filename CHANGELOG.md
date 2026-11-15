@@ -2,6 +2,30 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
+## 0.3.1 · 15 November 2026
+
+Frame timing that holds on any machine, two false positives from neptune-fork fixed, a new check for words broken without a hyphen, and fixes to telemetry and the action's browser cache.
+
+### Frame timing
+
+- The motion pass no longer slows every machine's CPU four times. It measures the main thread with a benchmark index in [Lighthouse's units](https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md), slows the CPU by the ratio to a reference device, measures again, and corrects the rate once if it lands more than 10% off. The reference is a benchmark index of 400, what Lighthouse's default 4× makes of a 1600 high-end desktop, inside its mid-tier mobile class; `--reference-index` sets another. A machine at or below the reference is not slowed. d41 was missed on two of three Linux runs of 0.3.0, because a fixed 4× left the fast runner well above a phone.
+- `frame-timing` judges the long animation frames Chromium reports ([Long Animation Frames API](https://w3c.github.io/long-animation-frames/)): frames over 50 ms, three times the 16.7 ms budget of a 60 Hz display. Three or more while doing one thing are a finding, which gives their durations, the frames missed, and the script that took most of the time. Before, slow `requestAnimationFrame` intervals were counted.
+- The index, the rate and the index under the slowdown are in `report.json` (`motion.cpu`), in `report.html` and in the action's job summary. Fingerprints of `frame-timing` findings end in `full` or `reference` instead of `1` or `4`.
+- d41's scroll handler does a fixed amount of work, about 140 ms on the reference device, instead of sizing itself to the machine.
+
+### Typography
+
+- New check, `broken-word` (CRF-22): a word broken at a line end without a hyphen, the emergency break of `overflow-wrap`, `word-break` or `line-break: anywhere`, read across inline children and told apart from hyphenation. It runs in Chromium, WebKit and Firefox, since engines size table columns differently, and reads tables inside a figure. On neptune-fork's companion page it reports Table 2 in WebKit from 900 to 1110 px ("Bouvard|'s", "referenc|e"), and not in Chromium. Planted as d44, a narrow table column with `overflow-wrap: break-word`.
+- `near-miss-edge` measures a text block's edges over all its text, inline children included. A list of references whose names are set in spans read as 0.94 to 2.56 px apart (neptune-fork, issue 4).
+- `widow` does not count a last line that is an arXiv id or other prefixed id, or a file or repository path, as it already did for URLs and DOIs (neptune-fork, issue 5). The pattern is shared with `broken-word`.
+- Both reproductions are specimens on the two fixture pages, in d23. d11's clean twin fits its box to the long word instead of breaking it.
+- CRF-22 says no word is broken without a hyphen, and that hyphenation follows the measure: a container query where the column is a box, the equivalent viewport condition where it is a grid track, with neptune-fork's main column as the example.
+
+### Telemetry and the action
+
+- Telemetry leaves forks out: a fork carries its parent's overrides. They are listed in the report and their files are not read. `fixtures/telemetry/theta` is a fork that would flag LAY-10 if it were counted.
+- The action restores and saves Playwright's browsers explicitly and saves them as soon as they are installed. `actions/cache` saved only when the whole job succeeded, so the failing runs on main never left a cache. A job that calls the action more than once installs the browsers once.
+
 ## 0.3.0 · 15 November 2026
 
 The inspector on every pull request, and overrides that ITTEN can count, as planned for 0.3 in `ROADMAP.md`. Not yet released: the parts that need GitHub are listed under 0.3 there.
