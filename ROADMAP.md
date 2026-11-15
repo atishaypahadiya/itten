@@ -46,6 +46,18 @@ Motion, read through the Web Animations API, CSS transition events and `requestA
 
 **Prior art.** [Lighthouse CI](https://github.com/GoogleChrome/lighthouse-ci) runs Lighthouse on every commit and reports on pull requests; this action does the same for the inspector's findings, with crops in place of scores.
 
+### Evaluated, not built: the action in Playwright's container image
+
+Each self-test job spends 40 to 77 s installing the browsers' system packages with apt (`npx playwright install-deps`), whether or not the browser cache hits; the cache itself saves about 10 s of download (0.3.1 runs 43763528501 and 43763523575). [Playwright's Docker image](https://playwright.dev/docs/docker) includes the browsers and their system packages, so a job run in it (`container: mcr.microsoft.com/playwright:v1.65.1-noble`) would skip the install, the cache and the apt step. What stands in the way, and what to measure first:
+
+- A composite action cannot choose its job's container; the calling workflow sets `container:`. The action would detect browsers already installed and skip its install steps, and the README would show the container as an option. The self-test workflow can use it directly.
+- The image's tag must match the Playwright version in `package-lock.json`, or the browser executables are missing; every Playwright upgrade becomes two changes kept in step.
+- Pulling the image costs time on every job, as the apt step does now. Whether it is shorter than 40 to 77 s has to be measured on GitHub's runners before switching.
+- The image runs as root by default, which turns off Chromium's sandbox; the documentation recommends another user for untrusted pages, and `--ipc=host` for Chromium. Pages a project inspects are its own, but the self-test should run as a user.
+- The image's fonts differ from the runner's. Fallback fonts, and so line breaks, could change, and the fixture baseline and the clean twins' tied words would have to be checked again on it.
+
+To decide: one self-test run in the image, compared with the runs above on job time, and on recall, precision and the baseline.
+
 ## 0.4 · A second opinion from pixels
 
 **Scope.** Checks that work from screenshots alone, for what the DOM cannot see or reports wrongly:
