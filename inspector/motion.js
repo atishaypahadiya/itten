@@ -9,13 +9,34 @@
 // style changes per element, with the luminance after each, to find
 // flashing driven by script.
 //
+// It also observes Long Animation Frames (the 'long-animation-frame'
+// performance entry): every frame the browser took more than 50 ms to
+// produce, with the scripts that ran in it. Each is filed under the phase
+// that was current when the frame started.
+//
 // motionReport reads what was recorded: each animation's target, timing,
-// easing and animated properties, the frame times per phase, and the
-// toggles.
+// easing and animated properties, the frame times and long animation
+// frames per phase, and the toggles.
+//
+// benchmarkIndex measures how fast the page's main thread runs, so the CPU
+// can be slowed to a declared reference device rather than by a fixed
+// factor.
 
 export function motionInit() {
-  const M = (window.__ittenMotion = { phase: 'load', frames: {}, anims: [], seen: new WeakSet(), toggles: new Map(), last: null });
-  M.setPhase = (p) => { M.phase = p; M.last = null; };
+  const M = (window.__ittenMotion = { phase: 'load', frames: {}, anims: [], seen: new WeakSet(), toggles: new Map(), last: null, marks: [[0, 'load']], loafs: [], loafSupported: false });
+  M.setPhase = (p) => { M.phase = p; M.last = null; M.marks.push([performance.now(), p]); };
+  M.addLoafs = (entries) => {
+    for (const e of entries) {
+      if (M.loafs.length >= 5000) return;
+      M.loafs.push({ start: e.startTime, duration: e.duration, blocking: e.blockingDuration,
+        scripts: (e.scripts || []).map((x) => ({ invoker: x.invoker, type: x.invokerType, source: x.sourceURL, fn: x.sourceFunctionName, at: x.sourceCharPosition, duration: x.duration })) });
+    }
+  };
+  try {
+    M.loafObserver = new PerformanceObserver((list) => M.addLoafs(list.getEntries()));
+    M.loafObserver.observe({ type: 'long-animation-frame', buffered: true });
+    M.loafSupported = PerformanceObserver.supportedEntryTypes.includes('long-animation-frame');
+  } catch { /* not supported: frame times only */ }
   const poll = () => {
     if (!document.getAnimations) return;
     for (const a of document.getAnimations()) {
@@ -113,5 +134,48 @@ export function motionReport() {
     const q = el.getBoundingClientRect();
     toggles.push({ sel: sel(el), label: label(el), rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)], rec });
   }
-  return { anims, frames: M.frames, toggles };
+  // Long animation frames by the phase current when each frame began.
+  if (M.loafObserver) M.addLoafs(M.loafObserver.takeRecords());
+  const loafs = {};
+  for (const f of M.loafs) {
+    let ph = 'load';
+    for (const [t, p] of M.marks) { if (t <= f.start) ph = p; else break; }
+    (loafs[ph] ??= []).push(f);
+  }
+  return { anims, frames: M.frames, loafs, loafSupported: M.loafSupported, toggles };
+}
+
+// A benchmark index in the units of Lighthouse's computeBenchmarkIndex
+// (core/lib/page-functions.js), so its published device classes apply:
+// the mean of two half-second loops, one that builds strings and so
+// exercises the garbage collector, one that copies integer arrays and does
+// not, each as iterations per second divided by 10. Lighthouse places a
+// Moto G4-class mid-tier phone between 125 and 800, a high-end desktop
+// between 1500 and 2000 (docs/throttling.md, Chrome 86).
+export function benchmarkIndex() {
+  const withGC = () => {
+    const t0 = Date.now();
+    let n = 0;
+    while (Date.now() - t0 < 500) {
+      let s = '';
+      for (let j = 0; j < 10000; j++) s += 'a';
+      if (s.length === 1) break;
+      n++;
+    }
+    return n / ((Date.now() - t0) / 1000) / 10;
+  };
+  const withoutGC = () => {
+    const a = new Array(100000).fill(0).map((_, i) => i), b = new Array(100000).fill(0);
+    const t0 = Date.now();
+    let n = 0;
+    for (;;) {
+      // Date.now() every 10th iteration, so the clock does not dominate.
+      if (n % 10 === 9 && Date.now() - t0 >= 500) break;
+      const src = n % 2 ? b : a, dst = n % 2 ? a : b;
+      for (let j = 0; j < src.length; j++) dst[j] = src[j];
+      n++;
+    }
+    return n / ((Date.now() - t0) / 1000) / 10;
+  };
+  return Math.round((withGC() + withoutGC()) / 2);
 }

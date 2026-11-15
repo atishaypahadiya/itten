@@ -127,7 +127,10 @@ async function main(out) {
           fixed: b.fixed.map((f) => ({ check: f.check, title: CHECKS[f.check]?.title, severity: f.severity, message: f.message, element: f.elements[0] ?? null })), sameWidths: b.sameWidths } : null,
         top: report.issues.filter((i) => i.severity !== 'info').slice(0, 10).map(brief),
         engines: report.engines ? { ran: Object.keys(report.engines.browsers), notRun: report.engines.notRun, differences: report.engines.differences.length } : null,
+        cpu: report.motion?.cpu ?? null,
       });
+      const cpu = report.motion?.cpu;
+      if (cpu) process.stderr.write(`CPU: benchmark index ${cpu.index}, slowed ${cpu.rate}x to ${cpu.slowedIndex} against a reference of ${cpu.reference}.\n`);
     }
   } catch (e) {
     problems.push(String(e.message || e).split('\n')[0]);

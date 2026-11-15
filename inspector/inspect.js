@@ -6,7 +6,7 @@
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
 //        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
-//        [--wait-for <selector>] [--settle <ms>]
+//        [--wait-for <selector>] [--settle <ms>] [--reference-index 400]
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { platform, release } from 'node:os';
 import { collect } from './collect.js';
 import { typography } from './typography.js';
-import { motionInit, motionReport } from './motion.js';
+import { motionInit, motionReport, benchmarkIndex } from './motion.js';
 import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
@@ -55,7 +55,7 @@ export const CHECKS = {
   'reduced-motion': { title: 'Motion under Reduce Motion', rule: 'CRF-18 · MOT-08' },
   'motion-timing': { title: 'Durations and easings off the system', rule: 'CRF-26 · MOT-07' },
   'motion-layout': { title: 'Animated layout properties', rule: 'CRF-27' },
-  'frame-timing': { title: 'Dropped frames', rule: 'CRF-28 · MOT-11' },
+  'frame-timing': { title: 'Long animation frames', rule: 'CRF-28 · MOT-11' },
 };
 const SEVERITY = ['error', 'warning', 'info'];
 const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
@@ -590,7 +590,7 @@ export async function inspect(url, o = {}) {
         'Moving backgrounds are sampled in two frames 400 ms apart, not at their worst frame.',
         `Fonts are judged against the fonts installed on this machine (${platform()}); another platform can fall back differently.`,
         'Layout checks run in the light scheme only; the dark scheme is checked for contrast and fonts.',
-        'Motion is recorded in Chromium at the last key width: animations running after load, and what hovering each element that declares a transition, tabbing through up to 40 focus stops, and clicking up to 15 buttons and toggles (twice, then Escape) start; frames while doing so and while scrolling the page and each scroll container by wheel, at 1x and again with the CPU slowed 4x. Links and submit buttons are not clicked, navigations are aborted, and motion that only scripts or timers start later is seen only if it runs while recording.',
+        'Motion is recorded in Chromium at the last key width: animations running after load, and what hovering each element that declares a transition, tabbing through up to 40 focus stops, and clicking up to 15 buttons and toggles (twice, then Escape) start; frames while doing so and while scrolling the page and each scroll container by wheel, at full speed and again with the CPU slowed to a reference device (a benchmark index of 400 by default, set with --reference-index); frames are judged by the long animation frames Chromium reports, those over 50 ms. Links and submit buttons are not clicked, navigations are aborted, and motion that only scripts or timers start later is seen only if it runs while recording.',
         'Typographic checks judge the lines Chromium draws; WebKit and Firefox break lines a little differently. Printed pages are not paginated, so orphans and widows across pages are not judged.',
       ],
       summary: {
@@ -933,8 +933,39 @@ const MOVEMENT_PROPS = /^(transform|translate|rotate|scale|offset.*|background-p
 // 25% of a 10° visual field, about 21,824 px² at 1024 × 768.
 const FLASH_AREA = 21824;
 
+// The device the CPU is slowed to for frame timing, as a benchmark index
+// (motion.js, benchmarkIndex). 400 is what Lighthouse's default 4x slowdown
+// makes of a 1600 high-end desktop, inside its mid-tier mobile class (125 to
+// 800). Slowing every machine by the same factor instead gives a fast
+// machine an easier test than a slow one.
+// https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md
+export const REFERENCE_INDEX = 400;
+// A frame at 60 Hz.
+const FRAME_BUDGET = 1000 / 60;
+
+// Measures the page's main thread at full speed (the better of two runs, so
+// a stray task does not set the rate), slows it by the ratio to the
+// reference, and measures again under the slowdown. If that lands more than
+// 10% off the reference, the rate is corrected once by the same ratio.
+async function calibrate(page, cdp, reference) {
+  const index = Math.max(await page.evaluate(benchmarkIndex), await page.evaluate(benchmarkIndex));
+  const cpu = { reference, index, rate: 1, slowedIndex: index, corrected: false };
+  if (index <= reference * 1.05) return cpu;
+  cpu.rate = index / reference;
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu.rate });
+  cpu.slowedIndex = await page.evaluate(benchmarkIndex);
+  if (Math.abs(cpu.slowedIndex - reference) > reference * 0.1) {
+    cpu.rate = Math.max(1, cpu.rate * cpu.slowedIndex / reference);
+    cpu.corrected = true;
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu.rate });
+    cpu.slowedIndex = await page.evaluate(benchmarkIndex);
+  }
+  cpu.rate = Math.round(cpu.rate * 100) / 100;
+  return cpu;
+}
+
 async function motionPasses(browser, url, o, system, w, merge, log) {
-  const out = { width: w, animations: 0, durations: [], easings: [], frames: {}, interactions: {} };
+  const out = { width: w, animations: 0, durations: [], easings: [], frames: {}, interactions: {}, cpu: null };
   const runs = {};
   for (const mode of ['motion', 'reduced']) {
     const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference' });
@@ -985,8 +1016,8 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
       });
       const where = async (q) => page.evaluate((qs) => { const el = document.querySelector(qs); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }, q);
 
-      const interact = async (rate) => {
-        const sfx = rate > 1 ? `@${rate}x` : '';
+      const interact = async (slowed) => {
+        const sfx = slowed ? '@ref' : '';
         for (let i = 0; i < counts.hover; i++) {
           const at = await where(`[data-itten-hover="${i}"]`);
           if (!at) continue;
@@ -1059,13 +1090,17 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
         await page.evaluate(() => scrollTo(0, 0));
       };
 
-      await interact(1);
-      // Again with the CPU slowed four times, as on a mid-range phone, for
-      // frame timing; motion it starts is recorded as well.
+      await interact(false);
+      // Again with the CPU slowed to the reference device, for frame timing;
+      // motion it starts is recorded as well. A machine already at or below
+      // the reference is not slowed, and its first pass stands for both.
       if (mode === 'motion') {
-        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-        await interact(4);
-        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+        const cpu = (out.cpu = await calibrate(page, cdp, o.referenceIndex ?? REFERENCE_INDEX));
+        log(`  CPU: benchmark index ${cpu.index}, slowed ${cpu.rate}x to ${cpu.slowedIndex} (reference ${cpu.reference})${cpu.corrected ? ', rate corrected once' : ''}`);
+        if (cpu.rate > 1) {
+          await interact(true);
+          await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+        }
       }
       await phase('done');
       const rep = await page.evaluate(motionReport);
@@ -1091,7 +1126,7 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
       });
       runs[mode] = { rep, names };
       if (mode === 'motion') out.interactions = { hovered: counts.hover, clicked: counts.click, focused: Object.keys(names).filter((k) => k.startsWith('focus:')).length };
-      const issues = judgeMotion(mode, rep, names, system);
+      const issues = judgeMotion(mode, rep, names, system, out.cpu);
       const pass = { w, mode: mode === 'motion' ? 'motion' : 'reduced motion', label: `${w} px, ${mode === 'motion' ? 'motion' : 'reduced motion'}`, dpr: 1 };
       for (const raw of issues) await merge(page, raw, pass);
       log(`  ${pass.label}: ${rep ? rep.anims.length : 0} animations, ${issues.length} findings`);
@@ -1104,20 +1139,34 @@ async function motionPasses(browser, url, o, system, w, merge, log) {
     out.animations = rep.anims.length;
     out.durations = [...new Set(rep.anims.map((a) => a.duration).filter((d) => d > 0))].sort((a, b) => a - b);
     out.easings = [...new Set(rep.anims.filter((a) => a.duration > 0).map((a) => a.easing))].sort();
-    // Frame times by what was happening, at 1x and at 4x: idle, hovering,
-    // focusing by Tab, clicking, and scrolling each scroller by name.
+    // Frame times and long animation frames by what was happening, at full
+    // speed and on the reference device: idle, hovering, focusing by Tab,
+    // clicking, and scrolling each scroller by name.
     const acc = {};
-    for (const [ph, ds] of Object.entries(rep.frames)) {
-      const m = ph.match(/^(idle|hover|unhover|focus|click|unclick|scroll)(?::([^@]+))?(?:@(\d+)x)?$/);
-      if (!m || !ds.length) continue;
+    const slot = (ph) => {
+      const m = ph.match(/^(idle|hover|unhover|focus|click|unclick|scroll)(?::([^@]+))?(@ref)?$/);
+      if (!m) return null;
       const kind = { unhover: 'hover', unclick: 'click' }[m[1]] ?? m[1];
       const k = kind === 'scroll' ? (runs.motion.names['scroll:' + m[2]]?.sel ?? ph) : kind;
-      ((acc[k] ??= {})[`${m[3] || 1}x`] ??= []).push(...ds);
+      return ((acc[k] ??= {})[m[3] ? 'reference' : 'full'] ??= { ds: [], loafs: [] });
+    };
+    for (const [ph, ds] of Object.entries(rep.frames)) slot(ph)?.ds.push(...ds);
+    for (const [ph, ls] of Object.entries(rep.loafs ?? {})) slot(ph)?.loafs.push(...ls);
+    for (const [k, byRate] of Object.entries(acc)) {
+      out.frames[k] = Object.fromEntries(Object.entries(byRate).filter(([, g]) => g.ds.length).map(([r, g]) => [r, { ...frameStats(g.ds), ...loafStats(g.loafs) }]));
     }
-    for (const [k, byRate] of Object.entries(acc)) out.frames[k] = Object.fromEntries(Object.entries(byRate).map(([r, ds]) => [r, frameStats(ds)]));
+    out.longAnimationFrames = !!rep.loafSupported;
   }
   return out;
 }
+
+// Long animation frames: how many, the longest, and the 60 Hz frames they
+// cost beyond their own (a frame of d ms spans ceil(d / 16.7) frame slots).
+const loafStats = (ls) => ({
+  long: ls.length,
+  longest: ls.length ? Math.round(Math.max(...ls.map((f) => f.duration))) : 0,
+  missed: ls.reduce((n, f) => n + Math.ceil(f.duration / FRAME_BUDGET) - 1, 0),
+});
 
 const frameStats = (ds) => {
   const s = [...ds].sort((a, b) => a - b);
@@ -1126,7 +1175,7 @@ const frameStats = (ds) => {
     histogram: { '≤17 ms': s.filter((d) => d <= 17.5).length, '≤33 ms': s.filter((d) => d > 17.5 && d <= 34).length, '≤50 ms': s.filter((d) => d > 34 && d <= 50).length, '>50 ms': s.filter((d) => d > 50).length } };
 };
 
-function judgeMotion(mode, rep, names, system) {
+function judgeMotion(mode, rep, names, system, cpu) {
   if (!rep) return [];
   const out = [];
   const el = (a) => ({ sel: a.sel, label: a.label + (a.pseudo ? ` ${a.pseudo}` : ''), rect: a.rect });
@@ -1193,31 +1242,48 @@ function judgeMotion(mode, rep, names, system) {
     if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
       message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
   }
-  // Dropped frames while hovering, focusing, clicking or scrolling, at 1x
-  // and with the CPU slowed 4x: frames over 50 ms, three or more frames of
-  // a 60 Hz display, are visible as a stall. A hover or a click and the
-  // move away from it are counted together.
+  // Long animation frames while hovering, focusing, clicking or scrolling,
+  // at full speed and on the reference device. The browser reports a frame
+  // as a long animation frame when it takes over 50 ms, three times the
+  // 16.7 ms budget of a 60 Hz display; three or more of them while doing one
+  // thing are a visible stall. A hover or a click and the move away from it
+  // are counted together. The scripts the browser names in those frames say
+  // where the time went.
   const byTarget = new Map();
-  for (const [ph, ds] of Object.entries(rep.frames)) {
-    const m = ph.match(/^(hover|unhover|focus|click|unclick|scroll):([^@]+)(?:@(\d+)x)?$/);
+  for (const [ph, ls] of Object.entries(rep.loafs ?? {})) {
+    const m = ph.match(/^(hover|unhover|focus|click|unclick|scroll):([^@]+)(@ref)?$/);
     if (!m) continue;
     const kind = { unhover: 'hover', unclick: 'click' }[m[1]] ?? m[1];
     const who = names[`${kind}:${m[2]}`];
     if (!who) continue;
-    const rate = Number(m[3] || 1);
-    const k = `${who.sel}|${kind}|${rate}`;
+    const slowed = !!m[3];
+    const k = `${who.sel}|${kind}|${slowed ? 'reference' : 'full'}`;
     let g = byTarget.get(k);
-    if (!g) byTarget.set(k, (g = { who, kind, rate, ds: [] }));
-    g.ds.push(...ds);
+    if (!g) byTarget.set(k, (g = { who, kind, slowed, ls: [], frames: 0 }));
+    g.ls.push(...ls);
+    g.frames += (rep.frames[ph] ?? []).length;
   }
+  const where = (x) => {
+    let src = '';
+    try { src = x.source ? new URL(x.source).pathname : ''; } catch { src = x.source; }
+    const what = x.type === 'event-listener' ? `a ${String(x.invoker).split('.on').pop()} listener on ${String(x.invoker).split('.on')[0]}` : x.type === 'user-callback' ? `a callback (${x.invoker})` : `${x.type || 'script'} ${x.invoker || ''}`.trim();
+    return `${what}${x.fn ? `, ${x.fn}()` : ''}${src ? ` in ${src}` : ''}`;
+  };
   for (const [k, g] of byTarget) {
-    const st = frameStats(g.ds);
-    const long = st.histogram['>50 ms'];
-    if (long < 3) continue;
-    const h = Object.entries(st.histogram).map(([x, v]) => `${x} ${v}`).join(', ');
+    if (g.ls.length < 3) continue;
+    const st = loafStats(g.ls);
+    const shortest = Math.round(Math.min(...g.ls.map((f) => f.duration)));
+    const bySource = new Map();
+    for (const x of g.ls.flatMap((f) => f.scripts)) {
+      const w = where(x);
+      bySource.set(w, (bySource.get(w) ?? 0) + x.duration);
+    }
+    const top = [...bySource.entries()].sort((a, b) => b[1] - a[1])[0];
+    const total = g.ls.reduce((n, f) => n + f.duration, 0);
     const doing = { scroll: `scrolling ${g.who.sel === 'html' ? 'the page' : 'this container'}`, hover: 'hovering this element', focus: 'this element took focus', click: 'clicking this element' }[g.kind];
-    out.push({ check: 'frame-timing', severity: 'warning', key: k, count: long, elements: [g.who], marks: [], crop: 'each',
-      message: `While ${doing}${g.rate > 1 ? `, with the CPU slowed ${g.rate} times as on a mid-range phone` : ''}, ${long} of ${st.frames} frames took over 50 ms (median ${st.p50} ms, 95th percentile ${st.p95} ms, longest ${st.max} ms; frame times ${h}). Find the work on the main thread in a performance recording: scroll and pointer handlers, layout or paint on every frame.` });
+    const speed = g.slowed && cpu ? `, with the CPU slowed ${cpu.rate} times to the reference device (benchmark index ${cpu.slowedIndex}, reference ${cpu.reference}; this machine ${cpu.index})` : ', at full speed';
+    out.push({ check: 'frame-timing', severity: 'warning', key: k, count: g.ls.length, elements: [g.who], marks: [], crop: 'each',
+      message: `While ${doing}${speed}, ${g.ls.length} of ${g.frames} animation frames ran past the ${FRAME_BUDGET.toFixed(1)} ms budget of a 60 Hz display, taking ${shortest === st.longest ? `${st.longest} ms each` : `${shortest} to ${st.longest} ms`}: about ${st.missed} frames missed.${top ? ` Most of that time, ${Math.round(top[1])} of ${Math.round(total)} ms, was spent in ${top[0]}.` : ''} Move the work off the frame: debounce or schedule it, or do less per event.` });
   }
   return out;
 }
@@ -1389,6 +1455,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     engines: args['no-engines'] ? [] : typeof args.engines === 'string' ? args.engines.split(',').filter(Boolean) : undefined,
     waitFor: typeof args['wait-for'] === 'string' ? args['wait-for'] : undefined,
     settle: args.settle ? Number(args.settle) : undefined,
+    referenceIndex: args['reference-index'] ? Number(args['reference-index']) : undefined,
     baseline: typeof args.baseline === 'string' ? args.baseline : undefined,
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
