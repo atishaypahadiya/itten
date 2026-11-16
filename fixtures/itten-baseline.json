@@ -3,22 +3,22 @@
   "note": "Known findings per page. Written by inspect.js --write-baseline; compared by --baseline and the ITTEN action.",
   "pages": {
     "/fixtures/clean.html": {
-      "date": "2026-11-15T23:43:51.379Z",
-      "version": "0.3.2",
+      "date": "2026-11-16T08:24:55.819Z",
+      "version": "0.3.3",
       "system": "fixtures/itten.system.json",
       "widths": "320, 768, 1440, 1920",
       "findings": []
     },
     "/fixtures/distinct-clean.html": {
-      "date": "2026-11-15T23:45:31.549Z",
-      "version": "0.3.2",
+      "date": "2026-11-16T08:26:24.840Z",
+      "version": "0.3.3",
       "system": null,
       "widths": "320, 768, 1440, 1920",
       "findings": []
     },
     "/fixtures/distinct.html": {
-      "date": "2026-11-15T23:44:41.634Z",
-      "version": "0.3.2",
+      "date": "2026-11-16T08:25:40.682Z",
+      "version": "0.3.3",
       "system": null,
       "widths": "320, 768, 1440, 1920",
       "findings": [
@@ -43,8 +43,8 @@
       ]
     },
     "/fixtures/index.html": {
-      "date": "2026-11-15T23:41:42.648Z",
-      "version": "0.3.2",
+      "date": "2026-11-16T08:22:59.264Z",
+      "version": "0.3.3",
       "system": "fixtures/itten.system.json",
       "widths": "320, 768, 1440, 1920",
       "findings": [
@@ -52,7 +52,7 @@
           "fingerprint": "page-load|requests",
           "check": "page-load",
           "severity": "error",
-          "message": "2 requests failed while the page was measured: GET http://127.0.0.1:4565/fixtures/d19-missing.json (fetch, HTTP 404); GET http://127.0.0.1:4565/fixtures/missing-font.woff2 (font, HTTP 404). What was measured may be the page's error state. Fix the requests, then inspect again.",
+          "message": "2 requests failed while the page was measured: GET http://127.0.0.1:4467/fixtures/missing-font.woff2 (font, HTTP 404); GET http://127.0.0.1:4467/fixtures/d19-missing.json (fetch, HTTP 404). What was measured may be the page's error state. Fix the requests, then inspect again.",
           "elements": []
         },
         {
@@ -188,7 +188,7 @@
           "fingerprint": "broken-word|table|#d44 > table",
           "check": "broken-word",
           "severity": "warning",
-          "message": "2 words are broken without a hyphen in 2 table cells 56 px wide: \"Bouvar|d's\", \"Verrier'|s\". The column is narrower than its longest words, and overflow-wrap: break-word breaks them wherever the line runs out. Give the column room for its longest word (a minimum width, or let the table scroll in its own box), set the table's text smaller, or allow hyphens: auto with a lang, so a word breaks between syllables, with a hyphen.",
+          "message": "2 words are broken without a hyphen in table cells 56 px wide. At 320, 768, 1440 and 1920 px, 320, 768, 1440 and 1920 px in WebKit: \"Bouvar|d's\", \"Verrier'|s\". The column is narrower than its longest words, and overflow-wrap: break-word breaks them wherever the line runs out. Give the column room for its longest word (a minimum width, or let the table scroll in its own box), set the table's text smaller, or allow hyphens: auto with a lang, so a word breaks between syllables, with a hyphen.",
           "elements": [
             "#d44 > table > tbody > tr:nth-of-type(1) > td:nth-of-type(1)",
             "#d44 > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
@@ -282,7 +282,7 @@
           "fingerprint": "text-resize|all",
           "check": "text-resize",
           "severity": "warning",
-          "message": "1 of 156 text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: 14 px (1). Set font sizes in rem, or give clamp() rem limits.",
+          "message": "1 of 174 text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: 14 px (1). Set font sizes in rem, or give clamp() rem limits.",
           "elements": [
             "#d17 > p:nth-of-type(2)"
           ]
@@ -333,6 +333,16 @@
           "elements": [
             "#d04 > h2",
             "#d03 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "near-miss-edge|#d48 > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1) | #d48 > table > tbody > tr:nth-of-type(2) > td:nth-of-type(2)|base",
+          "check": "near-miss-edge",
+          "severity": "warning",
+          "message": "Baselines 1 px apart: td.sum \"980\" at 13150, td.small \"a year, after tax\" at 13151. Share the edge, or log the optical offset.",
+          "elements": [
+            "#d48 > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)",
+            "#d48 > table > tbody > tr:nth-of-type(2) > td:nth-of-type(2)"
           ]
         },
         {
@@ -422,6 +432,24 @@
           ]
         },
         {
+          "fingerprint": "line-start|#d49 > p:nth-of-type(2)",
+          "check": "line-start",
+          "severity": "warning",
+          "message": "Line 2 of 3 begins with \"·\". A separator belongs to the item before it: put a no-break space before it (&nbsp;·) and an ordinary space after, so a line can end on it but not begin with it.",
+          "elements": [
+            "#d49 > p:nth-of-type(2)"
+          ]
+        },
+        {
+          "fingerprint": "line-start|#d49 > p:nth-of-type(3)",
+          "check": "line-start",
+          "severity": "warning",
+          "message": "Line 2 of 2 begins with \";\". Closing punctuation belongs to the word before it: remove the space before it, or make that space a no-break space.",
+          "elements": [
+            "#d49 > p:nth-of-type(3)"
+          ]
+        },
+        {
           "fingerprint": "hanging-punctuation|#d29 > p:nth-of-type(2)",
           "check": "hanging-punctuation",
           "severity": "warning",
@@ -479,7 +507,7 @@
           "fingerprint": "frame-timing|#d34 > div|scroll|full",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, at full speed, 10 of 46 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 84 to 99 ms: about 50 frames missed. Most of that time, 800 of 955 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, at full speed, 10 of 42 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 82 to 98 ms: about 47 frames missed. Most of that time, 800 of 911 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d34 > div"
           ]
@@ -488,7 +516,7 @@
           "fingerprint": "frame-timing|#d34 > div|scroll|reference",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, with the CPU slowed 9.34 times to the reference device (benchmark index 385, reference 400; this machine 3737), 11 of 39 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 82 to 137 ms: about 59 frames missed. Most of that time, 931 of 1096 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, with the CPU slowed 10.13 times to the reference device (benchmark index 379, reference 400; this machine 4050), 11 of 35 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 95 to 139 ms: about 58 frames missed. Most of that time, 924 of 1114 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d34 > div"
           ]
@@ -497,7 +525,7 @@
           "fingerprint": "frame-timing|#d41 > div|scroll|reference",
           "check": "frame-timing",
           "severity": "warning",
-          "message": "While scrolling this container, with the CPU slowed 9.34 times to the reference device (benchmark index 385, reference 400; this machine 3737), 10 of 35 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 110 to 134 ms: about 71 frames missed. Most of that time, 1134 of 1275 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
+          "message": "While scrolling this container, with the CPU slowed 10.13 times to the reference device (benchmark index 379, reference 400; this machine 4050), 10 of 33 animation frames ran past the 16.7 ms budget of a 60 Hz display, taking 122 to 140 ms: about 71 frames missed. Most of that time, 1126 of 1293 ms, was spent in a scroll listener on DIV in /fixtures/index.html. Move the work off the frame: debounce or schedule it, or do less per event.",
           "elements": [
             "#d41 > div"
           ]
@@ -532,5 +560,5 @@
       ]
     }
   },
-  "version": "0.3.2"
+  "version": "0.3.3"
 }
