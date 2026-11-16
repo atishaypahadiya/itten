@@ -263,15 +263,45 @@ export function collect(opts) {
       if (!painted(e) || e.r.width < 4 || e.r.height < 4 || !live(e, 'near-miss-edge')) continue;
       items.push({ e, l: e.r.left, r: e.r.right, t: e.r.top, box: e.r, cx: (e.r.left + e.r.right) / 2, cy: (e.r.top + e.r.bottom) / 2 });
     }
-    const mcache = new Map();
-    const ascent = (s) => {
-      const f = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
-      if (mcache.has(f)) return mcache.get(f);
-      cx.font = f;
-      const m = cx.measureText('Hxg');
-      const v = m.fontBoundingBoxAscent / (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent);
-      mcache.set(f, v); return v;
-    };
+    // Where the baseline sits in a line's box, as a fraction of the box's
+    // height, measured in this engine: a zero-size inline-block set in the
+    // same font sits on the baseline, and the text after it gives the box.
+    // Font metrics from a canvas are not the engine's: WebKit rounds the
+    // ascent and descent it reports to whole pixels, which put two cells on
+    // one baseline up to a pixel apart. The probes are built in one element,
+    // added once and removed, marked as the inspector's own.
+    const FONT = ['fontStyle', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily', 'fontVariationSettings', 'fontOpticalSizing', 'fontSizeAdjust'];
+    const fontKey = (s) => FONT.map((k) => s[k]).join('|');
+    const ratios = new Map();
+    {
+      const fonts = new Map();
+      for (const e of textEntries) if (!isInline(e) && live(e, 'near-miss-edge')) fonts.set(fontKey(e.s), e.s);
+      const host = document.createElement('div');
+      host.setAttribute('data-itten-probe', '');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;white-space:nowrap;line-height:normal';
+      const probes = [];
+      for (const [k, s] of fonts) {
+        const line = document.createElement('div');
+        for (const p of FONT) line.style[p] = s[p];
+        const mark = document.createElement('span');
+        mark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+        const text = document.createTextNode('Hxg');
+        line.append(mark, text);
+        host.append(line);
+        probes.push([k, mark, text]);
+      }
+      if (probes.length) {
+        document.body.append(host);
+        for (const [k, mark, text] of probes) {
+          const r = document.createRange(); r.selectNodeContents(text);
+          const q = r.getClientRects()[0];
+          if (q && q.height > 0) ratios.set(k, (mark.getBoundingClientRect().bottom - q.top) / q.height);
+        }
+        host.remove();
+      }
+    }
+    const ascent = (s) => ratios.get(fontKey(s)) ?? 0.8;
     for (const e of textEntries) {
       if (isInline(e) || !live(e, 'near-miss-edge')) continue;
       const L = edgeLines(e);
