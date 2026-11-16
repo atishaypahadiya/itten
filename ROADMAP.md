@@ -11,6 +11,7 @@ Status, 16 November 2026: 0.2 shipped as 0.2.0, and 0.3 as 0.3.0 with fixes up t
 | 0.4.x | Fleet protocol | 0.4 |
 | 0.5 | Mutation testing of the inspector and the fixer | 0.4 |
 | 0.6 | `itten lint`, patterns and decode; approved-look snapshots | 0.4 |
+| 0.6.x | Survey and consensus | 0.6 |
 | 0.7 | State coverage | 0.3.5 |
 | 0.8 | Modes and realities | 0.7 |
 | 0.9 | Craft measures, as information | 0.5 |
@@ -91,6 +92,23 @@ Approved-look snapshots: once the owner approves a look, screenshots at the key 
 **Needs.** 0.4, for the system-to-rule mapping it shares with the fixer.
 
 **Acceptance test.** On the fixtures, `itten lint` reports every planted defect that is visible in the source (spacing, type, radius, motion values) and nothing on the clean twin; `--changed` reports only the files changed. `itten decode` on a fixture element with known styles drafts a pattern file with those values, and names correctly which scale with the font size. A new check enforces the first pattern's craft rule: an underline whose thickness or offset stays fixed while its text grows is reported, with a planted defect and a clean twin. A snapshot run on an unchanged page reports nothing; on a page with one planted change, it reports that change with a crop.
+
+## 0.6.x · Survey and consensus
+
+**Scope.** `itten survey <sites.json>` runs the inspector's capture on other people's sites: computed styles, CSS custom properties, fonts and their OpenType features, hover and focus forced through the DevTools protocol (`CSS.forcePseudoState`), the declared animations and transitions from `getAnimations()`, and runs with reduced motion and in dark mode. It records behaviour, not looks.
+
+- **Normalised on features that do not depend on scale**, so sites of different sizes and brands compare: the type-scale ratio; spacing as multiples of a fitted base unit, fitted by least use-weighted displacement as the HundredLives scale was; the radius set; the shapes of the easing curves; duration bands; how underlines and focus behave.
+- **Consensus.** Each candidate rule records where it was seen: "observed in n of N sites", with the date. Where sites disagree, the disagreement is recorded as a design decision with each side's sites, not averaged away as noise. A floor always overrides consensus: a practice most sites share that breaks a floor is recorded as a common failure, never as a rule.
+- **Evidence levels.** Two levels join the existing ones in `reference/README.md`: `observed (n/N, date)`, for a rule seen across surveyed sites, and `reason: inferred`, for the reason given for an observed rule when no source states it.
+- **What is published.** Raw captures stay private, in an ignored directory. Only derived, dated observations and the rules drawn from them are published.
+- **Crawling politely.** robots.txt is respected and each site's terms of use are checked before it is surveyed; a site whose terms forbid automated access is left out. One page at a time, at a slow rate, with a user agent that names the survey. Behaviours only: no assets, fonts, images or brand are kept.
+- **Over time.** The survey runs again each quarter, so a rule's evidence shows when a practice spreads or fades.
+
+**Needs.** 0.6, for decode and for the three kinds of guidance that survey results are sorted into.
+
+**Acceptance test.** On a set of fixture sites with known values, the survey recovers each site's type ratio, base unit, radius set, easing shapes and duration bands; a planted disagreement between two fixture sites is recorded as a decision, not merged; a planted common practice that breaks a floor is reported as a failure, not proposed as a rule; and nothing raw appears in the published output.
+
+**Prior art.** Webzeitgeist built a queryable repository of more than 100,000 web pages and 100 million design elements, with their structure and visual properties ([Kumar, Satyanarayan, Torres, Lim, Ahmad, Klemmer and Talton, "Webzeitgeist: Design Mining the Web", CHI 2013](https://doi.org/10.1145/2470654.2466420)). Rico did the same for Android apps, with their interaction traces ([Deka, Huang, Franzen, Hibschman, Afergan, Li, Nichols and Kumar, "Rico: A Mobile App Dataset for Building Data-Driven Design Applications", UIST 2017](https://doi.org/10.1145/3126594.3126651)). The HTTP Archive's Web Almanac measures CSS use across millions of pages ([CSS chapter, 2022](https://almanac.httparchive.org/en/2022/css), the latest with a CSS chapter). [Project Wallace](https://www.projectwallace.com/) and [CSS Stats](https://cssstats.com/) analyse one site's stylesheets: its colours, sizes, spacing and specificity. None of these combines interaction states, motion and a judgement of craft into rules that can be enforced, each with its agreement across sites.
 
 ## 0.7 · State coverage
 
