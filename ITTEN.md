@@ -82,6 +82,7 @@ concurrency:
 jobs:
   inspect:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30  # 90 with mode: full
     permissions:
       contents: read
       pull-requests: write
@@ -121,6 +122,8 @@ The other inputs:
 | `working-directory` | `.` | Where the paths above are relative to. |
 
 Outputs: `errors`, `warnings`, `info`, `new`, `fixed`, `failing`, `report-dir` and `artifact-url`.
+
+Give every job that runs the action a `timeout-minutes`: 30 for `quick` and 90 for `full` cover a few pages with room to spare. The inspector holds each step to a limit, records a step that runs past it as a `timed-out` error and goes on, and stops itself with exit code 124 after 10 minutes without progress. The job's limit is the last guard, for what happens outside the inspector: a build, a server that never answers, a runner that stalls. GitHub's own default is 360 minutes.
 
 The baseline holds the findings the project has accepted for now, each logged as an override, so a pull request is judged by what it adds. To make one, run the workflow once with `write-baseline: true` (from `workflow_dispatch`, say), download the artifact, and commit its `itten-baseline.json` at the project's root. Write it in CI rather than on a laptop: fonts and line breaks differ between platforms, and those differences would show as new and fixed findings. Rewrite it when an accepted finding is fixed, or the fixed count stays above zero. On the command line, `inspect.js <url> --baseline itten-baseline.json` compares in the same way and `--write-baseline` writes one.
 
