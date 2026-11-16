@@ -143,6 +143,10 @@ figure { display: flex; flex-direction: column; gap: 0.5rem; }
 /* d48 figures and notes in two type sizes, on one baseline per row */
 .totals td { vertical-align: baseline; }
 .totals .sum { font-size: 1.5rem; line-height: 2rem; font-weight: 600; }
+/* d49 bylines as wide as their first item, which is kept whole, so the
+   line breaks right after it */
+.byline { width: min-content; }
+.byline .whole { white-space: nowrap; }
 /* d47 a box sized by script when the page loads */
 .d47-box { background: var(--tint); padding: 0.5rem; }
 /* Two breakpoints for the resize pass to cross, on both pages: a media

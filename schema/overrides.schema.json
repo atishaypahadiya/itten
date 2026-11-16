@@ -74,6 +74,7 @@
             "text-wrap-balance",
             "text-wrap-pretty",
             "hanging-punctuation",
+            "line-start",
             "optical-margin",
             "flash",
             "reduced-motion",
