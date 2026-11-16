@@ -59,6 +59,14 @@ Each self-test job spends 40 to 77 s installing the browsers' system packages wi
 To decide: one self-test run in the image, compared with the runs above on job time, and on recall, precision and the baseline.
 
 
+### Noted for 0.3.5: quick mode around every breakpoint
+
+The quick sweep measures four widths, 320, 768, 1440 and 1920 px, and misses what changes between them. On neptune-fork the full sweep found two findings the quick sweep had passed: Table 2 at 360 px, and a WebKit layout at 1040 px. Both sat next to a media or container query breakpoint, where a layout changes most.
+
+The resize pass already finds every breakpoint, from the breakpoint state at each width of the sweep. Quick mode would add the widths on each side of each breakpoint the four widths cross, in Chromium and in WebKit and Firefox. The full sweep stays as it is. A breakpoint between two of the four default widths can only be found by measuring between them, so the first step is a cheap scan: load once, resize across the range in small steps, and read the breakpoint state at each without measuring.
+
+A width measured alone cannot tell fluid spacing from fixed. `spacing-unit` and `spacing-scale` call a value fluid when it takes three or more values across the sweep. At 1024 px alone, neptune-fork's `--gutter` (4vw, 41 px) was reported as px spacing that ignores the text size; at 1000, 1024 and 1040 px it is not. Widths added around a breakpoint come in pairs or threes, so they keep this judgement.
+
 ## 0.4 · A second opinion from pixels
 
 **Scope.** Checks that work from screenshots alone, for what the DOM cannot see or reports wrongly:
