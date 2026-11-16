@@ -6,7 +6,7 @@
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
 //        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
-//        [--wait-for <selector>] [--settle <ms>] [--reference-index 400]
+//        [--wait-for <selector>] [--settle <ms>] [--reference-index 400] [--slow-to <index>]
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
@@ -382,9 +382,22 @@ export async function inspect(url, o = {}) {
   // How long the page must go without adding an element before it is
   // measured, scaled to this machine (settleTiming).
   const bench = await browser.newPage();
-  const T = settleTiming(Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex)));
+  // With slowTo (for testing), Chromium's CPU is slowed to that benchmark
+  // index, as the frame-timing pass slows it to the reference device, and
+  // every page of the sweep runs at that rate: the inspector waits as it
+  // would on a machine that slow.
+  let slowed = null;
+  if (o.slowTo) {
+    const cdp = await bench.context().newCDPSession(bench);
+    slowed = await calibrate(bench, cdp, o.slowTo);
+  }
+  const T = settleTiming(slowed ? slowed.slowedIndex : Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex)));
   await bench.close();
-  log(`Settle: benchmark index ${T.index}, still for ${T.window} ms, late content watched for ${(T.horizon / 1000).toFixed(1)} s, ceiling ${T.ceiling / 1000} s`);
+  const slow = async (page) => {
+    if (!slowed || slowed.rate <= 1 || page.context().browser()?.browserType().name() !== 'chromium') return;
+    await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: slowed.rate });
+  };
+  log(`Settle: benchmark index ${T.index}${slowed ? ` (slowed ${slowed.rate}x from ${slowed.index})` : ''}, still for ${T.window} ms, late content watched for ${(T.horizon / 1000).toFixed(1)} s, ceiling ${T.ceiling / 1000} s`);
   // A measurement taken while the page added elements is taken again once
   // it has been still for the settle window, up to three times.
   const measured = async (page, fn) => {
@@ -534,6 +547,7 @@ export async function inspect(url, o = {}) {
     let n = 0;
     for (const [a, b] of pairs) {
       const page = await c.newPage();
+      await slow(page);
       await page.setViewportSize({ width: a, height: VIEW_H });
       await load(page, url, o, T, watched.until);
       const pass = { w: b, mode, engine: engine ?? undefined, resize: [a, b], label: `${b} px after resize from ${a} px${engine ? `, ${ENGINE_NAMES[engine]}` : ''}`, dpr: 1, checks: checks.filter((ch) => ch !== 'hairline-subpixel') };
@@ -569,6 +583,7 @@ export async function inspect(url, o = {}) {
     // The watch load: when the page goes still, and what it adds after.
     log(`Loading ${url}`);
     const wpage = await ctx.newPage();
+    await slow(wpage);
     watched = await watchLoad(wpage, url, o, T);
     await wpage.close();
     log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${(watched.quietAt / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
@@ -583,6 +598,7 @@ export async function inspect(url, o = {}) {
         if (cur && cur.w === w) return cur.page;
         await cur?.page.close();
         const page = await c.newPage();
+        await slow(page);
         await page.setViewportSize({ width: w, height: VIEW_H });
         if (errors) page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
         if (prep) await prep(page);
@@ -805,7 +821,7 @@ export async function inspect(url, o = {}) {
       pageErrors: [...new Set(consoleErrors)].slice(0, 20),
       motion,
       load: { networkIdle: watched.networkIdle, waitFor: o.waitFor ?? null, waited: watched.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()],
-        timing: { benchmarkIndex: T.index, window: T.window, horizon: T.horizon, ceiling: T.ceiling },
+        timing: { benchmarkIndex: T.index, scale: T.scale, window: T.window, horizon: T.horizon, ceiling: T.ceiling, ...(slowed ? { slowed: { from: slowed.index, rate: slowed.rate } } : {}) },
         watched: { for: watched.watched, still: watched.still, stillAt: watched.quietAt, late: watched.late.length, lastLate: watched.until }, remeasured },
       issues: list,
     };
@@ -1658,6 +1674,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     waitFor: typeof args['wait-for'] === 'string' ? args['wait-for'] : undefined,
     settle: args.settle ? Number(args.settle) : undefined,
     referenceIndex: args['reference-index'] ? Number(args['reference-index']) : undefined,
+    slowTo: args['slow-to'] ? Number(args['slow-to']) : undefined,
     baseline: typeof args.baseline === 'string' ? args.baseline : undefined,
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,

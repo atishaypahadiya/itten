@@ -17,6 +17,9 @@
 //   rendered from it is wrong, or the validator accepts a broken overrides
 //   file; the telemetry script, run on fixtures/telemetry, flags anything
 //   but CRF-16;
+// - with Chromium slowed to a benchmark index of 800, the settle window does
+//   not scale, or the late figure (d20) is missed or its twin reported
+//   (scripts/settle-test.js);
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
@@ -158,6 +161,16 @@ try {
   if (!r.distinctSweep.equal) fail('Fixtures', `without a system, the sweep totals of distinct.html and its twin differ: ${JSON.stringify(r.distinctSweep.testPrint)} against ${JSON.stringify(r.distinctSweep.twin)}`);
 } catch (e) {
   fail('Fixtures', `the fixture test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------------ Settle
+// The settle window's scaling, run with Chromium slowed to a low benchmark
+// index (scripts/settle-test.js).
+try {
+  const { run: settleTest } = await import('./settle-test.js');
+  for (const f of await settleTest()) fail('Settle', f);
+} catch (e) {
+  fail('Settle', `the settle test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Licences
