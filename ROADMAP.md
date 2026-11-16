@@ -10,7 +10,7 @@ Status, 16 November 2026: 0.2 shipped as 0.2.0, and 0.3 as 0.3.0 with fixes up t
 | 0.4 | `itten fix` and work packets | 0.3.5 |
 | 0.4.x | Fleet protocol | 0.4 |
 | 0.5 | Mutation testing of the inspector and the fixer | 0.4 |
-| 0.6 | `itten lint` and approved-look snapshots | 0.4 |
+| 0.6 | `itten lint`, patterns and decode; approved-look snapshots | 0.4 |
 | 0.7 | State coverage | 0.3.5 |
 | 0.8 | Modes and realities | 0.7 |
 | 0.9 | Craft measures, as information | 0.5 |
@@ -61,13 +61,36 @@ Two tracks run beside these: a public scorecard, and a paper once 0.5 and 0.7 ha
 
 **Prior art.** [Stryker](https://stryker-mutator.io/) mutates program code and reports which mutants a test suite fails to catch; 0.5 mutates the pages instead and measures the inspector as the test suite.
 
-## 0.6 · `itten lint`, and approved-look snapshots
+## 0.6 · `itten lint`, patterns and decode
 
-**Scope.** `itten lint`: [Stylelint](https://stylelint.io/) rules generated from `itten.system.json`, so a value off the spacing scale, a font size outside the steps, a radius outside the set or a duration not in the system is reported in the editor and in pre-commit, before anything renders. Approved-look snapshots: once the owner approves a look, screenshots at the key widths are stored with the project, and a later run reports where the rendered page differs from them, as information with crops, so a change in look is seen and approved rather than slipped in.
+**Scope.** Three kinds of guidance, kept apart everywhere in ITTEN (protocol, reference, reports, the lint output):
+
+- **Craft rules**: proportion and behaviour, such as spacing on the scale or an underline that scales with its text. Enforced; a deliberate departure is logged as an override.
+- **Floors**: accessibility, such as contrast, target size, reflow and visible focus. Enforced, and never overridable (`ITTEN.md`, precedence).
+- **Patterns**: one good implementation of a rule or a floor, decoded from a real site. An opt-in library, never a default look: a project uses a pattern only when its brief asks for it, with its own values.
+
+`patterns/` holds one file per decoded pattern. Each gives the pattern; why it works; a framework-neutral CSS snippet, with the project's values left as custom properties; its provenance (the site, the element and the date it was decoded); the bugs found in the original; the craft rule or floor it satisfies; and the ITTEN check that enforces that rule. `patterns/scaling-underline-and-halo-focus.md` is the first.
+
+`itten decode <url> <selector>` opens the page, reads the element's computed styles in its default, hover, focus-visible and forced-colours states, reports which values scale with the font size (`em`, `max()`, `clamp()`) and which are fixed, and drafts a pattern file. A person curates the draft before it joins `patterns/`; nothing decoded is added unread.
+
+`itten lint`: [Stylelint](https://stylelint.io/) rules generated from `itten.system.json`, so a value off the spacing scale, a font size outside the steps, a radius outside the set or a duration not in the system is reported before anything renders. `itten lint --changed` lints only the files changed since the last commit. It is a plain command, so an editor, a git hook or any other tool can run it after an edit. `ITTEN.md` shows how a project wires it as an on-edit hook in its own private settings, kept out of git; ITTEN itself names no tool.
+
+Published guidance, mined into `reference/` as rules with IDs, each citing the source it came from:
+
+- [Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines) (Vercel, on GitHub);
+- [Invisible Details of Interaction Design](https://rauno.me/craft/interaction-design) (Rauno Freiberg, July 2023);
+- the [GOV.UK Design System](https://design-system.service.gov.uk/) ([source](https://github.com/alphagov/govuk-frontend));
+- [Primer](https://primer.style/), GitHub's design system;
+- [Polaris](https://shopify.dev/docs/api/polaris), Shopify's design system (its React library is [archived](https://github.com/Shopify/polaris) as deprecated, so rules are taken from the current documentation);
+- the [Carbon Design System](https://carbondesignsystem.com/) (IBM).
+
+A rule taken from these enters as a craft rule, a floor or a pattern, never as a look.
+
+Approved-look snapshots: once the owner approves a look, screenshots at the key widths are stored with the project, and a later run reports where the rendered page differs from them, as information with crops, so a change in look is seen and approved rather than slipped in.
 
 **Needs.** 0.4, for the system-to-rule mapping it shares with the fixer.
 
-**Acceptance test.** On the fixtures, `itten lint` reports every planted defect that is visible in the source (spacing, type, radius, motion values) and nothing on the clean twin. A snapshot run on an unchanged page reports nothing; on a page with one planted change, it reports that change with a crop.
+**Acceptance test.** On the fixtures, `itten lint` reports every planted defect that is visible in the source (spacing, type, radius, motion values) and nothing on the clean twin; `--changed` reports only the files changed. `itten decode` on a fixture element with known styles drafts a pattern file with those values, and names correctly which scale with the font size. A new check enforces the first pattern's craft rule: an underline whose thickness or offset stays fixed while its text grows is reported, with a planted defect and a clean twin. A snapshot run on an unchanged page reports nothing; on a page with one planted change, it reports that change with a crop.
 
 ## 0.7 · State coverage
 
@@ -88,11 +111,12 @@ Two tracks run beside these: a public scorecard, and a paper once 0.5 and 0.7 ha
 - right-to-left text, and pseudo-localisation (text lengthened by 30 to 40% and accented) to find layouts that only fit English;
 - iOS realities: dynamic viewport units (`dvh`), safe-area insets ([CSS Environment Variables](https://www.w3.org/TR/css-env-1/)) and the on-screen keyboard over a focused field;
 - layout shift during load ([Cumulative Layout Shift](https://web.dev/articles/cls));
-- colour-blind distinctness: series and states that differ only in hue, checked under simulated protanopia, deuteranopia and tritanopia.
+- colour-blind distinctness: series and states that differ only in hue, checked under simulated protanopia, deuteranopia and tritanopia;
+- focus in forced colours: the focus indicator stays visible. Forced-colours mode sets `box-shadow` to `none` ([CSS Color Adjustment, 3.1](https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties)), so a ring drawn only with a box shadow, on an element whose outline is removed, disappears there.
 
 **Needs.** 0.7, since several of these only show in a state (a field focused, a menu open).
 
-**Acceptance test.** One planted defect per mode, caught, with a clean twin: a border that vanishes in forced colours, a column that overflows under pseudo-localisation, a fixed footer under the iOS keyboard, a chart whose two series merge under deuteranopia, and so on.
+**Acceptance test.** One planted defect per mode, caught, with a clean twin: a border that vanishes in forced colours, a column that overflows under pseudo-localisation, a fixed footer under the iOS keyboard, a chart whose two series merge under deuteranopia, a focus ring drawn only with a box shadow that is gone in forced colours, and so on.
 
 **Prior art.** The translated-text repair above ([Mahajan et al., ICST 2018](https://doi.org/10.1109/ICST.2018.00030)) and MFix ([ICSE 2018](https://doi.org/10.1145/3180155.3180262)) describe the failures pseudo-localisation and the phone passes look for. The colour-blind simulation follows a physiologically based model of colour vision deficiency, which covers anomalous trichromacy at any severity as well as dichromacy ([Machado, Oliveira and Fernandes, "A Physiologically-based Model for Simulation of Color Vision Deficiency", IEEE TVCG 15(6), 2009](https://doi.org/10.1109/TVCG.2009.113)).
 
