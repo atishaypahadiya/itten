@@ -20,6 +20,7 @@ import { motionInit, motionReport, benchmarkIndex } from './motion.js';
 import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
+import { container } from './group.js';
 import { validate } from '../scripts/lib/schema.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -116,6 +117,39 @@ const rangeText = (ws) => {
   return out.join(', ');
 };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const and = (xs) => (xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs.at(-1) : xs.join(''));
+
+// Words broken without a hyphen, across every pass that saw them: one clause
+// per set of widths that broke the same words. entries: [{ at, words,
+// advice, cells: [min, max] | where }], at as "320 px" or "320 px in WebKit".
+export function brokenWordMessage(entries, nCells = 2) {
+  const all = [...new Set(entries.flatMap((e) => e.words))];
+  const sets = new Map();
+  for (const e of entries) {
+    const k = e.words.join('\u0000');
+    if (!sets.has(k)) sets.set(k, { words: e.words, at: [] });
+    if (!sets.get(k).at.includes(e.at)) sets.get(k).at.push(e.at);
+  }
+  // "320, 360 and 400 px, 320 px in WebKit"
+  const atText = (ats) => {
+    const by = new Map();
+    for (const a of ats) {
+      const m = String(a).match(/^(\d+(?:\.\d+)?) px(.*)$/);
+      const [n, rest] = m ? [m[1], m[2]] : [a, null];
+      const k = rest ?? '\u0000' + a;
+      if (!by.has(k)) by.set(k, { rest, ns: [] });
+      by.get(k).ns.push(n);
+    }
+    return [...by.values()].map((g) => (g.rest === null ? g.ns[0] : `${and(g.ns)} px${g.rest}`)).join(', ');
+  };
+  const r2 = (v) => String(Math.round(v * 100) / 100);
+  const cells = entries.filter((e) => e.cells);
+  const where = cells.length
+    ? (() => { const lo = Math.min(...cells.map((e) => e.cells[0])), hi = Math.max(...cells.map((e) => e.cells[1])); return `in ${nCells === 1 ? 'a table cell' : 'table cells'} ${r2(lo)}${hi - lo > 0.5 ? ` to ${r2(hi)}` : ''} px wide`; })()
+    : entries[0].where;
+  const clauses = [...sets.values()].map((g, i) => `${i ? 'at' : 'At'} ${atText(g.at)}: ${g.words.map((w) => `"${w}"`).join(', ')}`);
+  return `${all.length === 1 ? 'A word is' : `${all.length} words are`} broken without a hyphen ${where}. ${clauses.join('; ')}. ${entries[0].advice}`;
+}
 const families = (stack) => stack.match(/"[^"]*"|'[^']*'|[^,]+/g).map((f) => f.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const loose = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a)); };
@@ -421,6 +455,11 @@ export async function inspect(url, o = {}) {
       issues.set(k, it);
     }
     const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
+    // The words broken at this pass, for the message (brokenWordMessage).
+    if (raw.broken) {
+      const at = pass.label.replace(/, light$/, '').replace(/, 200% text$/, ' at 200% text').replace(/, (WebKit|Firefox)$/, ' in $1');
+      (it.broken ??= []).push({ at, ...raw.broken });
+    }
     if (upgrade) { it.severity = raw.severity; it.message = raw.message; it.first = pass.label; }
     if (raw.render) {
       it.render ??= {};
@@ -429,6 +468,18 @@ export async function inspect(url, o = {}) {
     }
     it.count = Math.max(it.count, raw.count);
     for (const el of raw.elements) if (it.elements.length < 8 && !it.elements.some((x) => x.sel === el.sel)) it.elements.push(el);
+    // Where each element in a table or list stands in the document, so a
+    // note that groups them lists them in reading order (group.js).
+    const unplaced = it.elements.filter((e) => e.order === undefined && container(e.sel));
+    if (unplaced.length) {
+      const order = await page.evaluate((sels) => {
+        const idx = new Map();
+        let n = 0;
+        for (const el of document.querySelectorAll('*')) idx.set(el, n++);
+        return sels.map((s) => { try { const el = document.querySelector(s); return el ? idx.get(el) : null; } catch { return null; } });
+      }, unplaced.map((e) => e.sel)).catch(() => unplaced.map(() => null));
+      unplaced.forEach((e, i) => { e.order = order[i]; });
+    }
     (it.seen[pass.mode] ??= []).push(pass.resize ? `${pass.resize[0]}→${pass.resize[1]}` : pass.w);
     if (pass.resize) {
       if (isNew) it.message = `After resize from ${pass.resize[0]} to ${pass.resize[1]} px: ${raw.message}`;
@@ -778,6 +829,12 @@ export async function inspect(url, o = {}) {
         return `${ENGINE_NAMES[n]} ${r.blurred ? `blurs the line across two pixels (${r.blurred} of ${k} samples)` : `snaps it to whole pixels (${k} of ${k} samples crisp)`}`;
       });
       it.message += ` As rendered: ${parts.join('; ')}.`;
+    }
+    for (const it of issues.values()) {
+      if (it.check !== 'broken-word' || !it.broken?.length) continue;
+      it.message = brokenWordMessage(it.broken, it.elements.length);
+      it.count = new Set(it.broken.flatMap((b) => b.words)).size;
+      delete it.broken;
     }
     const list = [...issues.values()].map((it) => ({
       ...it,
