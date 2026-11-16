@@ -2,7 +2,7 @@
 
 The order in which ITTEN grows after 0.1, what each version covers, and the test it has to pass before it ships. A version ships when its acceptance test passes and the fixture test still reports full recall, full precision and no findings on the clean twins. Scope can move between versions; the order of the first three is fixed, because each one feeds the next.
 
-Status, 16 November 2026: 0.2 has shipped as 0.2.0. 0.3 is built as 0.3.0, with fixes in 0.3.1, 0.3.2 and 0.3.3, and waits on the part of its acceptance test that needs a real pull request (see `CHANGELOG.md`). 0.4 is next.
+Status, 16 November 2026: 0.2 has shipped as 0.2.0. 0.3 is built as 0.3.0, with fixes in 0.3.1 to 0.3.4, and waits on the part of its acceptance test that needs a real pull request (see `CHANGELOG.md`). 0.4 is next.
 
 ## 0.2 · Typographic finish and motion
 
