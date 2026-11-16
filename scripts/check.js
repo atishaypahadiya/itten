@@ -20,6 +20,9 @@
 // - with Chromium slowed to a benchmark index of 800, the settle window does
 //   not scale, or the late figure (d20) is missed or its twin reported
 //   (scripts/settle-test.js);
+// - a page that blocks its main thread at one width holds the run, or is
+//   not reported as timed out at that width in every pass, or the watchdog
+//   does not stop a stalled process (scripts/timeout-test.js);
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
@@ -171,6 +174,16 @@ try {
   for (const f of await settleTest()) fail('Settle', f);
 } catch (e) {
   fail('Settle', `the settle test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ---------------------------------------------------------------- Timeouts
+// A page that hangs at one width (fixtures/hang.html), and the watchdog
+// (scripts/timeout-test.js).
+try {
+  const { run: timeoutTest } = await import('./timeout-test.js');
+  for (const f of await timeoutTest()) fail('Timeouts', f);
+} catch (e) {
+  fail('Timeouts', `the timeout test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Licences

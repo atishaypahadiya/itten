@@ -13,7 +13,8 @@
     "overrides": "node scripts/overrides.js",
     "telemetry": "node scripts/telemetry.js",
     "test:action": "node scripts/action-test.js",
-    "test:settle": "node scripts/settle-test.js"
+    "test:settle": "node scripts/settle-test.js",
+    "test:timeout": "node scripts/timeout-test.js"
   },
   "devDependencies": {
     "playwright": "^1.65.1"
