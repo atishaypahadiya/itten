@@ -2,7 +2,7 @@
 
 The order in which ITTEN grows after 0.1, what each version covers, and the test it has to pass before it ships. A version ships when its acceptance test passes and the fixture test still reports full recall, full precision and no findings on the clean twins. Scope can move between versions; the order of the first three is fixed, because each one feeds the next.
 
-Status, 15 November 2026: 0.2 has shipped as 0.2.0. 0.3 is built as 0.3.0, with fixes in 0.3.1 and 0.3.2, and waits on the part of its acceptance test that needs a real pull request (see `CHANGELOG.md`). 0.4 is next.
+Status, 16 November 2026: 0.2 has shipped as 0.2.0. 0.3 is built as 0.3.0, with fixes in 0.3.1, 0.3.2 and 0.3.3, and waits on the part of its acceptance test that needs a real pull request (see `CHANGELOG.md`). 0.4 is next.
 
 ## 0.2 · Typographic finish and motion
 
@@ -35,7 +35,7 @@ Motion, read through the Web Animations API, CSS transition events and `requestA
 
 ## 0.3 · On every pull request, and what overrides say
 
-**Status.** Built in 0.3.0; 0.3.1 is released. The action, the baseline and the comment logic pass their tests locally, including the comment against a stand-in for the GitHub API: one comment, edited on later runs, and none for forks or read-only tokens. Run on the fixtures, the action reproduces the fixture test (0.3.2: recall 47/47, precision 54/54, nothing on the clean twins). On GitHub, the self-test passed on Linux on the 0.3.0 pull request, and the comment was edited in place on later pushes; after the merge it missed d41 on two runs, since a fixed 4× CPU slowdown left the runner faster than a phone, which 0.3.1 fixes by slowing the CPU to a reference device. 0.3.1 also saves the browser cache when a run fails, which no run on main had done. The aggregation script flags CRF-16 and nothing else on eight test repositories kept as folders in `fixtures/telemetry/`, rejects the one whose file does not validate, and leaves out the fork. Still to do on GitHub: the pull request half of the acceptance test below (a planted defect named in the comment, a clean comment once it is removed, artifacts that open with matching crops), a pull request from a fork, and the first scheduled telemetry run. One change from the plan: the overrides record lives at the project's root as `itten.overrides.json`, with `docs/itten-overrides.md` rendered from it.
+**Status.** Built in 0.3.0; 0.3.1 is released. The action, the baseline and the comment logic pass their tests locally, including the comment against a stand-in for the GitHub API: one comment, edited on later runs, and none for forks or read-only tokens. Run on the fixtures, the action reproduces the fixture test (0.3.3: recall 49/49, precision 57/57, nothing on the clean twins). On GitHub, the self-test passed on Linux on the 0.3.0 pull request, and the comment was edited in place on later pushes; after the merge it missed d41 on two runs, since a fixed 4× CPU slowdown left the runner faster than a phone, which 0.3.1 fixes by slowing the CPU to a reference device. 0.3.1 also saves the browser cache when a run fails, which no run on main had done. The aggregation script flags CRF-16 and nothing else on eight test repositories kept as folders in `fixtures/telemetry/`, rejects the one whose file does not validate, and leaves out the fork. Still to do on GitHub: the pull request half of the acceptance test below (a planted defect named in the comment, a clean comment once it is removed, artifacts that open with matching crops), a pull request from a fork, and the first scheduled telemetry run. One change from the plan: the overrides record lives at the project's root as `itten.overrides.json`, with `docs/itten-overrides.md` rendered from it.
 
 **Scope.**
 
@@ -57,6 +57,7 @@ Each self-test job spends 40 to 77 s installing the browsers' system packages wi
 - The image's fonts differ from the runner's. Fallback fonts, and so line breaks, could change, and the fixture baseline and the clean twins' tied words would have to be checked again on it.
 
 To decide: one self-test run in the image, compared with the runs above on job time, and on recall, precision and the baseline.
+
 
 ## 0.4 · A second opinion from pixels
 
