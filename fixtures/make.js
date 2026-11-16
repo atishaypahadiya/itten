@@ -112,6 +112,7 @@ const S = [
     <script>
       addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });
     </script>`}`, '', { resizeOnly: true }],
+  ['d48', 'near-miss-edge', 'Baselines across type sizes', 'Planted: in the second row the note is moved 1 px down, off the baseline it shares with the figure beside it. In the first row a figure at the title step (24 px) and a note at the small step (14 px) share a baseline on both pages, and must not be reported: ITTEN 0.3.2 estimated baselines from canvas font metrics, which WebKit rounds to whole pixels, and put these two 0.6 px apart.', 'The notes in both rows sit on the baseline of the figure beside them.', `<table class="data totals"><tbody><tr><td class="sum">1,250</td><td class="small">a year, before tax</td></tr><tr><td class="sum">980</td><td class="small">a year, after tax</td></tr></tbody></table>`, `#d48 tr:nth-child(2) .small { position: relative; top: 1px; }`],
 ];
 // Distinct-value mode: the same idea, inspected without a system file.
 // Nothing says which fluid values are deliberate, so each fluid range must

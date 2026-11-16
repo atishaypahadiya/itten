@@ -90,6 +90,8 @@
 #d45 .data td { padding: 0.3125rem 0.5rem; }
 /* d46 rag */
 #d46 .notes td { hyphens: manual; }
+/* d48 near-miss-edge */
+#d48 tr:nth-child(2) .small { position: relative; top: 1px; }
 </style>
 </head>
 <body>
@@ -371,6 +373,11 @@
     <script>
       addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });
     </script>
+  </section>
+  <section id="d48">
+    <h2>Baselines across type sizes</h2>
+    <p class="small">Planted: in the second row the note is moved 1 px down, off the baseline it shares with the figure beside it. In the first row a figure at the title step (24 px) and a note at the small step (14 px) share a baseline on both pages, and must not be reported: ITTEN 0.3.2 estimated baselines from canvas font metrics, which WebKit rounds to whole pixels, and put these two 0.6 px apart.</p>
+    <table class="data totals"><tbody><tr><td class="sum">1,250</td><td class="small">a year, before tax</td></tr><tr><td class="sum">980</td><td class="small">a year, after tax</td></tr></tbody></table>
   </section>
 </main>
 <script>

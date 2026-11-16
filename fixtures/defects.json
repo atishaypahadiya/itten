@@ -367,6 +367,14 @@
       "markup": "<div class=\"d47-box\"><p>A box as wide as its column was when the page loaded.</p></div>\n    <script>\n      addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });\n    </script>",
       "fixedInTwin": "The box's width is left to CSS, so it follows the window.",
       "resizeOnly": true
+    },
+    {
+      "id": "d48",
+      "check": "near-miss-edge",
+      "title": "Baselines across type sizes",
+      "planted": "in the second row the note is moved 1 px down, off the baseline it shares with the figure beside it. In the first row a figure at the title step (24 px) and a note at the small step (14 px) share a baseline on both pages, and must not be reported: ITTEN 0.3.2 estimated baselines from canvas font metrics, which WebKit rounds to whole pixels, and put these two 0.6 px apart.",
+      "css": "#d48 tr:nth-child(2) .small { position: relative; top: 1px; }",
+      "fixedInTwin": "The notes in both rows sit on the baseline of the figure beside them."
     }
   ],
   "distinct": {
