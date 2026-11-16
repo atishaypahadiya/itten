@@ -678,7 +678,18 @@ export function collect(opts) {
     const breaks = (nodes) => {
       const map = [];
       let text = '';
-      for (const n of nodes) { for (let i = 0; i < n.data.length; i++) map.push([n, i]); text += n.data; }
+      // Text nodes are those with letters in them; what lies between two of
+      // them in the document (a space in a node of its own, a <br>) still
+      // separates their words.
+      nodes.forEach((n, j) => {
+        if (j) {
+          const gap = document.createRange();
+          gap.setStart(nodes[j - 1], nodes[j - 1].data.length); gap.setEnd(n, 0);
+          if (/\s/.test(gap.toString()) || gap.cloneContents().querySelector('br, img, svg, input, button, select, textarea')) { map.push(null); text += ' '; }
+        }
+        for (let i = 0; i < n.data.length; i++) map.push([n, i]);
+        text += n.data;
+      });
       const out = [];
       for (const m of text.matchAll(/\S+/g)) {
         const tok = m[0];

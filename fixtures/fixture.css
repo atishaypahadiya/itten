@@ -134,6 +134,12 @@ figure { display: flex; flex-direction: column; gap: 0.5rem; }
 /* d46 a table of dated notes in a figure: the date above each note, the note at a 240 px measure, hyphenated as running text is */
 .notes { width: 256px; max-width: 100%; table-layout: fixed; }
 .notes td { hyphens: auto; }
+/* On both pages, in d44: a reference mark and a word, each in an element
+   of its own with a space between them, in a block that allows emergency
+   breaks and is narrower than both on one line. The mark ends the first
+   line; no word is broken. neptune-fork's figure captions do this with a
+   link ("La" then "Lalande's"). */
+.ref-mark { width: 72px; overflow-wrap: break-word; hyphens: manual; }
 /* d47 a box sized by script when the page loads */
 .d47-box { background: var(--tint); padding: 0.5rem; }
 /* Two breakpoints for the resize pass to cross, on both pages: a media
