@@ -6,7 +6,7 @@
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
 //        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
-//        [--wait-for <selector>] [--settle <ms>] [--reference-index 400] [--slow-to <index>]
+//        [--wait-for <selector>] [--settle <ms>] [--reference-index 400] [--slow-to <index>] [--watchdog <minutes>]
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
@@ -171,6 +171,7 @@ export class StepTimeout extends Error {
   }
 }
 export function within(ms, step, work) {
+  mark(step);
   const p = Promise.resolve().then(work);
   // The abandoned work rejects once its context is closed; that is expected.
   p.catch(() => {});
@@ -182,6 +183,26 @@ export function within(ms, step, work) {
 // at most 60 s to the load event, 10 s for the network, 30 s for
 // --wait-for, 8 s of scrolling and the 15 s settle ceiling: 123 s.
 export const TIMEOUTS = { load: 180, check: 120, width: 420, motion: 480, close: 30 };
+
+// The watchdog, for what the limits do not catch: a run that makes no
+// progress (no step begun, no line logged) for `minutes` prints the last
+// step and exits with code 124, as timeout(1) does. It never fires before
+// the longest single limit has run out (atLeast).
+const progress = { at: Date.now(), step: 'starting' };
+export function mark(step) { progress.at = Date.now(); progress.step = step; }
+export function startWatchdog(minutes, exit = (code) => process.exit(code)) {
+  let limit = minutes * 60000;
+  mark('starting');
+  const dog = setInterval(() => {
+    const idle = Date.now() - progress.at;
+    if (idle < limit) return;
+    process.stderr.write(`\nITTEN watchdog: no progress for ${idle < 60000 ? `${Math.round(idle / 1000)} s` : `${(idle / 60000).toFixed(1)} min`}. Last step: ${progress.step} (begun ${new Date(progress.at).toISOString()}). Stopping with exit code 124.\n`);
+    clearInterval(dog);
+    exit(124);
+  }, Math.min(30000, Math.max(100, limit / 4)));
+  dog.unref();
+  return { stop: () => clearInterval(dog), atLeast: (ms) => { limit = Math.max(limit, ms); } };
+}
 
 async function settle(page) {
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -421,7 +442,10 @@ export async function inspect(url, o = {}) {
   const keyWidths = o.keyWidths ?? [320, 768, 1440];
   const system = o.system ?? null;
   const outDir = o.out ? resolve(o.out) : null;
-  const log = o.quiet ? () => {} : (m) => process.stderr.write(m + '\n');
+  const say = o.quiet ? () => {} : (m) => process.stderr.write(m + '\n');
+  const log = (m) => { mark(String(m).trim()); say(m); };
+  // o.watchdog: minutes without progress before the run stops (10; 0 for none).
+  const dog = (o.watchdog ?? 10) > 0 ? startWatchdog(o.watchdog ?? 10) : null;
   if (outDir) { rmSync(join(outDir, 'crops'), { recursive: true, force: true }); mkdirSync(join(outDir, 'crops'), { recursive: true }); }
 
   const { chromium } = await import('playwright');
@@ -466,6 +490,7 @@ export async function inspect(url, o = {}) {
   // The limits on each step, in ms: TIMEOUTS scaled to this machine, or as
   // o.timeouts sets them (in seconds, not scaled).
   const TO = Object.fromEntries(Object.keys(TIMEOUTS).map((k) => [k, o.timeouts?.[k] != null ? o.timeouts[k] * 1000 : TIMEOUTS[k] * 1000 * T.scale]));
+  dog?.atLeast(Math.max(...Object.values(TO)) + 60000);
   const closeQuietly = (c) => (c ? within(TO.close, 'closing the browser context', () => c.close()).catch(() => {}) : null);
   // A measurement taken while the page added elements is taken again once
   // it has been still for the settle window, up to three times.
@@ -1011,6 +1036,7 @@ export async function inspect(url, o = {}) {
     }
     return report;
   } finally {
+    dog?.stop();
     await browser.close();
   }
 }
@@ -1852,6 +1878,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     settle: args.settle ? Number(args.settle) : undefined,
     referenceIndex: args['reference-index'] ? Number(args['reference-index']) : undefined,
     slowTo: args['slow-to'] ? Number(args['slow-to']) : undefined,
+    watchdog: args.watchdog !== undefined ? Number(args.watchdog) : undefined,
     baseline: typeof args.baseline === 'string' ? args.baseline : undefined,
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
