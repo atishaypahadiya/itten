@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector test page that hangs at one width</title>
+<link rel="stylesheet" href="fixture.css">
+</head>
+<body>
+<main>
+  <h1>A page that hangs at 768 px</h1>
+  <p>Loaded at 768 px wide, this page blocks its main thread for good once it has loaded: nothing on it answers again. At any other width it is an ordinary page. scripts/timeout-test.js inspects it and expects one timed-out finding for each pass that loads it at 768 px, and every other width measured.</p>
+</main>
+<script>
+  addEventListener('load', () => { if (innerWidth === 768) setTimeout(() => { for (;;) { /* never returns */ } }, 0); });
+</script>
+</body>
+</html>
