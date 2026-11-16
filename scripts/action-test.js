@@ -1,6 +1,7 @@
 // Tests the ITTEN action's parts that run without a browser: the baseline
 // comparison and the fail-on gate, page addressing, the static server, the
-// Markdown, and the pull request comment against a local stand-in for the
+// Markdown and the report's text (grouped notes in document order, broken
+// words at every width), and the pull request comment against a local stand-in for the
 // GitHub API (one comment, edited on later runs; forks and read-only tokens
 // fall back to the job summary without failing).
 // Usage: node scripts/action-test.js   Exports run() for scripts/check.js.
@@ -15,6 +16,8 @@ import { render, marker } from './action/markdown.js';
 import { upsertComment, main as report } from './action/report.js';
 import { pageUrl, pageName, slug, parsePages } from './action/run.js';
 import { start } from './serve.js';
+import { brokenWordMessage } from '../inspector/inspect.js';
+import { renderHtml } from '../inspector/report-html.js';
 
 const issue = (id, check, key, severity, sel = '#a') => ({ id, fingerprint: `${check}|${key}`, check, title: check, rule: '', severity, message: `${check} message. More.`, elements: [{ sel }] });
 const reportOf = (url, issues) => ({ url, date: '2026-11-15T00:00:00Z', version: 'test', system: 'itten.system.json', sweep: { widths: '320, 768, 1440, 1920' }, issues });
@@ -84,6 +87,28 @@ export async function run() {
     const g = render({ ...s, baseline: 'itten-baseline.json', pages: [{ ...s.pages[0], baseline: { found: true, new: [cell(1), cell(2), cell(3), { ...s.pages[0].top[0] }], worse: [], fixed: [], sameWidths: true } }] });
     ok(/Info · Last line with one word: 3 cells in `#t > table` \(row 1, cell 2; row 2, cell 2; row 3, cell 2\)/.test(g) && !/"w2"/.test(g), 'repeated info findings in one table are one line');
     ok(/Error · Text contrast/.test(g), 'an error next to them stays a line of its own');
+    // In document order, whatever order the sweep found them in: the header
+    // row, the body, the footer.
+    const at = (n, sel, order) => ({ id: `i10${n}`, check: 'text-wrap-pretty', title: 'Last line with one word', severity: 'info', message: `The last line holds one word, "v${n}". More.`, element: `#t > table > ${sel}`, order });
+    const ordered = [at(1, 'tfoot > tr > td', 40), at(2, 'tbody > tr:nth-of-type(2) > td:nth-of-type(2)', 20), at(3, 'tbody > tr:nth-of-type(1) > td:nth-of-type(2)', 12), at(4, 'thead > tr > th:nth-of-type(2)', 5)];
+    const o = render({ ...s, baseline: 'itten-baseline.json', pages: [{ ...s.pages[0], baseline: { found: true, new: ordered, worse: [], fixed: [], sameWidths: true } }] });
+    ok(/4 cells in `#t > table` \(header row 1, cell 2; row 1, cell 2; row 2, cell 2; footer row 1, cell 1\)/.test(o), 'a grouped note lists its cells in document order');
+    const o2 = render({ ...s, baseline: 'itten-baseline.json', pages: [{ ...s.pages[0], baseline: { found: true, new: ordered.map(({ order, ...f }) => f), worse: [], fixed: [], sameWidths: true } }] });
+    ok(/\(header row 1, cell 2; row 1, cell 2; row 2, cell 2; footer row 1, cell 1\)/.test(o2), 'without recorded positions, header rows come first and footer rows last');
+    const html = renderHtml({ url: 'http://x/', version: 'test', date: '2026-11-15T00:00:00Z', mode: 'system', system: 'itten.system.json', environment: { browser: 'Chromium', platform: 'test' },
+      sweep: { widths: '320', keyWidths: [320] }, summary: { error: 0, warning: 0, info: 4, byCheck: {} }, pageErrors: [], renderedFonts: [], engines: null, motion: null, textScaling: null,
+      distinct: { perWidth: [], sweep: { fontSizes: 0, spacing: 0 }, fixed: { fontSizes: [], spacing: [] }, fluid: { fontSizes: [], spacing: [] }, radii: [], svgTextSizes: [] },
+      coverage: { elements: 0, text: 0, ignored: 0, contrastSamples: 0, contrastSkipped: 0 }, notJudged: [], issues: ordered.map((f, i) => ({ ...f, rule: 'CRF-23', seen: { light: '320' }, count: 1, crops: [], elements: [{ sel: f.element, label: 'td', order: f.order }] })) });
+    const rowsAt = [...html.matchAll(/<li id="i10\d">([^:]+):/g)].map((m) => m[1]);
+    ok(rowsAt.join(' | ') === 'header row 1, cell 2 | row 1, cell 2 | row 2, cell 2 | footer row 1, cell 1', `report.html lists a grouped note's cells in document order (${rowsAt.join(' | ')})`);
+    // Broken words, at every width that broke them, not only the first.
+    const bw = brokenWordMessage([
+      { at: '320 px', words: ["Bouvar|d's", 'observ|ations'], cells: [62, 70], advice: 'Give the column room.' },
+      { at: '360 px', words: ["Bouvar|d's", 'observ|ations'], cells: [70, 81], advice: 'Give the column room.' },
+      { at: '1440 px', words: ["Bouvar|d's"], cells: [93, 93], advice: 'Give the column room.' },
+      { at: '320 px in WebKit', words: ['refer|ence'], cells: [62, 62], advice: 'Give the column room.' },
+    ]);
+    ok(bw === `3 words are broken without a hyphen in table cells 62 to 93 px wide. At 320 and 360 px: "Bouvar|d's", "observ|ations"; at 1440 px: "Bouvar|d's"; at 320 px in WebKit: "refer|ence". Give the column room.`, `a broken-word finding lists the words at each width (${bw})`);
 
     // The comment, against a stand-in for the GitHub API.
     const comments = [];

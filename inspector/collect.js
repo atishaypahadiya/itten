@@ -85,6 +85,7 @@ export function collect(opts) {
       marks: extra.marks || [],
       crop: extra.crop || 'union',
       ...(extra.lines ? { lines: extra.lines } : {}),
+      ...(extra.broken ? { broken: extra.broken } : {}),
     });
   };
 
@@ -771,9 +772,12 @@ export function collect(opts) {
       const words = [...new Set(g.words)];
       const shown = words.slice(0, 3).map((w) => `"${w}"`).join(', ') + (words.length > 3 ? `, and ${words.length - 3} more` : '');
       const where = g.cell ? `in ${g.ents.length === 1 ? 'a table cell' : `${g.ents.length} table cells`} ${fmt(Math.min(...g.widths))}${g.widths.length > 1 && Math.max(...g.widths) - Math.min(...g.widths) > 0.5 ? ` to ${fmt(Math.max(...g.widths))}` : ''} px wide` : `in ${label(g.ents[0].el)}`;
+      const advice = `The column is narrower than ${words.length === 1 ? 'the word' : 'its longest words'}, and ${[...g.why].join(', ') || 'the wrapping rules'} breaks ${words.length === 1 ? 'it' : 'them'} wherever the line runs out. ${g.cell ? 'Give the column room for its longest word (a minimum width, or let the table scroll in its own box), set the table\'s text smaller, or' : 'Widen the measure, or'} allow hyphens: auto with a lang, so a word breaks between syllables, with a hyphen.`;
       report('broken-word', 'warning', k,
-        `${words.length === 1 ? 'A word is' : `${words.length} words are`} broken without a hyphen ${where}: ${shown}. The column is narrower than ${words.length === 1 ? 'the word' : 'its longest words'}, and ${[...g.why].join(', ') || 'the wrapping rules'} breaks ${words.length === 1 ? 'it' : 'them'} wherever the line runs out. ${g.cell ? 'Give the column room for its longest word (a minimum width, or let the table scroll in its own box), set the table\'s text smaller, or' : 'Widen the measure, or'} allow hyphens: auto with a lang, so a word breaks between syllables, with a hyphen.`,
-        g.ents, { count: words.length, crop: 'each' });
+        `${words.length === 1 ? 'A word is' : `${words.length} words are`} broken without a hyphen ${where}: ${shown}. ${advice}`,
+        g.ents, { count: words.length, crop: 'each',
+          // Every word, for the report to list the words at each width (inspect.js).
+          broken: { words, advice, ...(g.cell ? { cells: [Math.min(...g.widths), Math.max(...g.widths)] } : { where }) } });
     }
   }
 

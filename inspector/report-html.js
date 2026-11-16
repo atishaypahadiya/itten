@@ -1,6 +1,6 @@
 // Renders report.json as a single static HTML page.
 
-import { groupInfo, place, template, byPlace } from './group.js';
+import { groupInfo, place, template } from './group.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -84,7 +84,7 @@ export function renderHtml(r) {
   const group = (g) => {
     const noun = /(^| > )table(:nth-of-type\(\d+\))?$/.test(g.container) ? 'cells' : 'items';
     const t = template(g.items.map((it) => it.message));
-    const rows = g.items.map((it, i) => ({ it, at: place(it.elements[0].sel, g.container), part: t.parts[i] })).sort((a, b) => byPlace(a.at, b.at));
+    const rows = g.items.map((it, i) => ({ it, at: place(it.elements[0].sel, g.container), part: t.parts[i] }));
     return `
     <article>
       <h3>${esc(g.title)}</h3>

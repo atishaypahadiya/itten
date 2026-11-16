@@ -118,7 +118,7 @@ async function main(out) {
       });
       const fail = failing(report, failOn);
       const byId = new Map(report.issues.map((i) => [i.id, i]));
-      const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, rule: i.rule });
+      const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, order: i.elements[0]?.order ?? null, rule: i.rule });
       const b = report.baseline;
       summary.pages.push({
         page: pageName(p), url, dir, summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },

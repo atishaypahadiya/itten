@@ -30,8 +30,11 @@ export function place(sel, within) {
 
 // Items in order, with each run of two or more info findings of one check in
 // one container replaced, where the first of them stood, by
-// { group: true, check, severity: 'info', title, container, items }.
-export function groupInfo(items, selOf = (i) => i.elements?.[0]?.sel ?? i.element) {
+// { group: true, check, severity: 'info', title, container, items }. A
+// group's items are in document order: the position the inspector recorded
+// for each element (order), or, in a report without it, rows and cells by
+// number (byPlace), which cannot tell a header row from the first body row.
+export function groupInfo(items, selOf = (i) => i.elements?.[0]?.sel ?? i.element, orderOf = (i) => i.elements?.[0]?.order ?? i.order) {
   const keyOf = (i) => {
     if (i.severity !== 'info') return null;
     const c = container(selOf(i));
@@ -51,6 +54,10 @@ export function groupInfo(items, selOf = (i) => i.elements?.[0]?.sel ?? i.elemen
     }
     g.items.push(i);
   }
+  const at = (i) => { const n = orderOf(i); return typeof n === 'number' ? n : Infinity; };
+  for (const g of groups.values()) {
+    g.items.sort((a, b) => (at(a) - at(b)) || byPlace(place(selOf(a), g.container), place(selOf(b), g.container)));
+  }
   return out;
 }
 
@@ -66,8 +73,12 @@ export function template(messages) {
   return { shared, parts: toks.map((t) => t.filter((_, i) => !same[i]).join(' ')) };
 }
 
-// Order of a place within its container: rows and cells by number.
+// Order of a place within its container: header rows, then body rows, then
+// footer rows (a table's order in HTML), and within each, rows and cells by
+// number.
 export function byPlace(a, b) {
+  const part = (s) => (/^header /.test(s) ? 0 : /^footer /.test(s) ? 2 : 1);
+  if (part(a) !== part(b)) return part(a) - part(b);
   const n = (s) => (s.match(/\d+/g) || []).map(Number);
   const x = n(a), y = n(b);
   for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? -1) !== (y[i] ?? -1)) return (x[i] ?? -1) - (y[i] ?? -1);
