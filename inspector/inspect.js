@@ -29,6 +29,7 @@ export const VERSION = JSON.parse(readFileSync(join(HERE, '..', 'package.json'),
 
 export const CHECKS = {
   'page-load': { title: 'Page load', rule: 'CRF-15 · FBK-04' },
+  'timed-out': { title: 'Steps that timed out', rule: 'CRF-15' },
   'contrast': { title: 'Text contrast against rendered pixels', rule: 'CRF-14 · COL-01 · WCAG 1.4.3' },
   'font-fallback': { title: 'Font fallback', rule: 'CRF-13' },
   'overflow': { title: 'Overflow', rule: 'CRF-16 · LAY-03 · WCAG 1.4.10' },
@@ -156,6 +157,31 @@ export function brokenWordMessage(entries, nCells = 2) {
 const families = (stack) => stack.match(/"[^"]*"|'[^']*'|[^,]+/g).map((f) => f.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const loose = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a)); };
+
+// ---------------------------------------------------------------- timeouts
+// A step that does not finish in time. Nothing in a browser is allowed to
+// hold the run: a page that blocks its main thread, a renderer that dies,
+// a browser that stops answering. within() races the work against a timer;
+// the work is abandoned, not stopped, so the caller closes the browser
+// context it ran in, which ends it.
+export class StepTimeout extends Error {
+  constructor(step, ms) {
+    super(`${step} did not finish within ${Math.round(ms / 1000)} s`);
+    this.step = step; this.ms = ms;
+  }
+}
+export function within(ms, step, work) {
+  const p = Promise.resolve().then(work);
+  // The abandoned work rejects once its context is closed; that is expected.
+  p.catch(() => {});
+  let t;
+  return Promise.race([p, new Promise((_, reject) => { t = setTimeout(() => reject(new StepTimeout(step, ms)), ms); })]).finally(() => clearTimeout(t));
+}
+// The limits, in seconds on a machine at a benchmark index of 1600 or more,
+// multiplied by the settle scale (settleTiming) on a slower one. A load is
+// at most 60 s to the load event, 10 s for the network, 30 s for
+// --wait-for, 8 s of scrolling and the 15 s settle ceiling: 123 s.
+export const TIMEOUTS = { load: 180, check: 120, width: 420, motion: 480, close: 30 };
 
 async function settle(page) {
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -418,7 +444,9 @@ export async function inspect(url, o = {}) {
   const resize = { pairs: [], breakpoints: 0 };
   // How long the page must go without adding an element before it is
   // measured, scaled to this machine (settleTiming).
-  const bench = await browser.newPage();
+  // The benchmark has its own limit: a browser that cannot run it cannot
+  // run anything, and the run stops with an error.
+  const bench = await within(TIMEOUTS.check * 1000, 'opening the benchmark page', () => browser.newPage());
   // With slowTo (for testing), Chromium's CPU is slowed to that benchmark
   // index, as the frame-timing pass slows it to the reference device, and
   // every page of the sweep runs at that rate: the inspector waits as it
@@ -428,13 +456,17 @@ export async function inspect(url, o = {}) {
     const cdp = await bench.context().newCDPSession(bench);
     slowed = await calibrate(bench, cdp, o.slowTo);
   }
-  const T = settleTiming(slowed ? slowed.slowedIndex : Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex)));
+  const T = settleTiming(slowed ? slowed.slowedIndex : await within(TIMEOUTS.check * 1000, 'the benchmark', async () => Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex))));
   await bench.close();
   const slow = async (page) => {
     if (!slowed || slowed.rate <= 1 || page.context().browser()?.browserType().name() !== 'chromium') return;
     await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: slowed.rate });
   };
   log(`Settle: benchmark index ${T.index}${slowed ? ` (slowed ${slowed.rate}x from ${slowed.index})` : ''}, still for ${T.window} ms, late content watched for ${(T.horizon / 1000).toFixed(1)} s, ceiling ${T.ceiling / 1000} s`);
+  // The limits on each step, in ms: TIMEOUTS scaled to this machine, or as
+  // o.timeouts sets them (in seconds, not scaled).
+  const TO = Object.fromEntries(Object.keys(TIMEOUTS).map((k) => [k, o.timeouts?.[k] != null ? o.timeouts[k] * 1000 : TIMEOUTS[k] * 1000 * T.scale]));
+  const closeQuietly = (c) => (c ? within(TO.close, 'closing the browser context', () => c.close()).catch(() => {}) : null);
   // A measurement taken while the page added elements is taken again once
   // it has been still for the settle window, up to three times.
   const measured = async (page, fn) => {
@@ -525,6 +557,28 @@ export async function inspect(url, o = {}) {
     if (outDir && raw.elements.length && cropCount < (o.maxCrops ?? 400)) await crop(page, raw, it, { label: it.first });
   };
 
+  // A step that timed out: an error finding naming the width, the pass and
+  // the step. Nothing after that step was measured at that width in that pass.
+  const timedOut = (mode, w, e, label) => {
+    const fingerprint = `timed-out|${mode}|${w}|${e.step}`;
+    if (!issues.has(fingerprint)) {
+      issues.set(fingerprint, { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint, check: 'timed-out', severity: 'error', count: 1, elements: [], seen: { [mode]: [w] }, crops: [], first: label,
+        message: `${e.step[0].toUpperCase() + e.step.slice(1)} did not finish within ${Math.round(e.ms / 1000)} s (${label}). The inspector closed the browser context and went on to the next width, so nothing after that step was measured there. A page that blocks its main thread does this, and so does a renderer or a browser that stops answering. Inspect again: if the same step times out at the same width, the page is the cause.` });
+    }
+    log(`  ${label}: timed out in ${e.step} after ${Math.round(e.ms / 1000)} s; the context is closed and the sweep goes on`);
+  };
+  // One width of a pass, held to the limits: a step that times out closes
+  // the context (reset opens a fresh one), is recorded, and the sweep goes
+  // on. Any other error is thrown as before.
+  const guarded = async (mode, w, label, reset, body) => {
+    try { return await within(TO.width, 'the width as a whole', body); } catch (e) {
+      if (!(e instanceof StepTimeout)) throw e;
+      timedOut(mode, w, e, label);
+      await reset();
+      return null;
+    }
+  };
+
   const crop = async (page, raw, it, pass) => {
     const groups = raw.crop === 'each'
       ? raw.elements.slice(0, 3).map((e) => ({ boxes: [e.rect], marks: [] }))
@@ -596,22 +650,31 @@ export async function inspect(url, o = {}) {
   // resized to the second, measured with the given checks. A finding the
   // fresh load at the second width also had adds nothing; any other is
   // reported as seen after that resize, and says so.
-  const resizePass = async (c, pairs, checks, engine, freshMode) => {
+  // context(): the context to open pages in; reset() closes it and opens a
+  // fresh one, after a step times out.
+  const resizePass = async (context, reset, pairs, checks, engine, freshMode) => {
     const mode = engine ? `${ENGINE_NAMES[engine]} resize` : 'resize';
     let n = 0;
     for (const [a, b] of pairs) {
-      const page = await c.newPage();
-      await slow(page);
-      await page.setViewportSize({ width: a, height: VIEW_H });
-      await load(page, url, o, T, watched.until);
       const pass = { w: b, mode, engine: engine ?? undefined, resize: [a, b], label: `${b} px after resize from ${a} px${engine ? `, ${ENGINE_NAMES[engine]}` : ''}`, dpr: 1, checks: checks.filter((ch) => ch !== 'hairline-subpixel') };
-      const res = await runPass(page, pass);
-      for (const raw of res.issues) {
-        if ((issues.get(raw.check + '|' + raw.key)?.seen[freshMode] ?? []).includes(b)) continue;
-        await merge(page, raw, pass);
-        n++;
-      }
-      await page.close();
+      await guarded(mode, b, pass.label, reset, async () => {
+        const page = await within(TO.load, 'loading the page', async () => {
+          const pg = await context().newPage();
+          await slow(pg);
+          await pg.setViewportSize({ width: a, height: VIEW_H });
+          await load(pg, url, o, T, watched.until);
+          return pg;
+        });
+        const res = await within(TO.check, 'the layout checks', () => runPass(page, pass));
+        await within(TO.check, 'recording and cropping the findings', async () => {
+          for (const raw of res.issues) {
+            if ((issues.get(raw.check + '|' + raw.key)?.seen[freshMode] ?? []).includes(b)) continue;
+            await merge(page, raw, pass);
+            n++;
+          }
+        });
+        await page.close().catch(() => {});
+      });
     }
     log(`  ${engine ? ENGINE_NAMES[engine] : 'Chromium'}, resize pass: ${plural(pairs.length, 'resize')}, ${plural(n, 'finding')} not seen on a fresh load`);
   };
@@ -626,32 +689,55 @@ export async function inspect(url, o = {}) {
 
   try {
     // Pass set 1: light, 100% text, every width; contrast and fonts at key widths, light and dark.
-    const ctx = await browser.newContext({ viewport: { width: widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
-    await ctx.addInitScript(lateInit, T.window);
     // Requests that fail or answer 400 or more, on every Chromium load. A
     // page that catches the failure and shows a message raises no page error,
     // so without this the report would measure the error state as the page.
     const fail = (url, method, type, why) => { if (watching && !failed.has(url)) failed.set(url, { url, method, type, why }); };
-    ctx.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
-    ctx.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
+    const lightContext = async () => {
+      const c = await browser.newContext({ viewport: { width: widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
+      await c.addInitScript(lateInit, T.window);
+      c.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
+      c.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
+      return c;
+    };
+    let ctx = await within(TO.close, 'opening a browser context', lightContext);
+    let lightAt = null, bigAt = null;
+    // After a timeout: close the light context, open a fresh one, and forget
+    // the pages held for the next use.
+    const resetLight = async () => {
+      await closeQuietly(ctx);
+      ctx = await within(TO.close, 'opening a browser context', lightContext);
+      lightAt?.reset(); bigAt?.reset();
+    };
     // The watch load: when the page goes still, and what it adds after.
     log(`Loading ${url}`);
-    const wpage = await ctx.newPage();
-    await slow(wpage);
-    watched = await watchLoad(wpage, url, o, T);
-    await wpage.close();
+    try {
+      watched = await within(TO.load + T.horizon + T.ceiling, 'the watch load', async () => {
+        const wpage = await ctx.newPage();
+        await slow(wpage);
+        const r = await watchLoad(wpage, url, o, T);
+        await wpage.close();
+        return r;
+      });
+    } catch (e) {
+      if (!(e instanceof StepTimeout)) throw e;
+      timedOut('load', widths[0], e, `${widths[0]} px, the watch load`);
+      await resetLight();
+      watched = { networkIdle: null, waited: null, still: null, quietAt: null, watched: 0, late: [], until: 0 };
+    }
     log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${(watched.quietAt / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
     const consoleErrors = [];
     // A fresh page for every width: loaded at that width, so each is the
     // layout a reader who opens the page at that size gets. A page already
     // at the width asked for is kept for the next use (findings judged
     // across the sweep crop from it).
-    const pages = (c, prep, errors = false) => {
+    const pages = (context, prep, errors = false) => {
       let cur = null;
       const at = async (w) => {
         if (cur && cur.w === w) return cur.page;
-        await cur?.page.close();
-        const page = await c.newPage();
+        await cur?.page.close().catch(() => {});
+        cur = null;
+        const page = await context().newPage();
         await slow(page);
         await page.setViewportSize({ width: w, height: VIEW_H });
         if (errors) page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
@@ -660,18 +746,20 @@ export async function inspect(url, o = {}) {
         cur = { w, page };
         return page;
       };
-      at.close = async () => { await cur?.page.close(); cur = null; };
+      at.close = async () => { await cur?.page.close().catch(() => {}); cur = null; };
+      // After its context is closed: nothing is held.
+      at.reset = () => { cur = null; };
       return at;
     };
-    const lightAt = pages(ctx, null, true);
+    lightAt = pages(() => ctx, null, true);
     const sigs = new Map();
 
-    for (const w of widths) {
-      const page = await lightAt(w);
+    for (const w of widths) await guarded('light', w, `${w} px, light`, resetLight, async () => {
+      const page = await within(TO.load, 'loading the page', () => lightAt(w));
       const pass = { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT };
       const t0 = Date.now();
-      sigs.set(w, await page.evaluate(breakpointState));
-      const res = await runPass(page, pass, { recordSizes: w === keyWidths.at(-1) });
+      sigs.set(w, await within(TO.check, 'reading the breakpoints', () => page.evaluate(breakpointState)));
+      const res = await within(TO.check, 'the layout checks', () => runPass(page, pass, { recordSizes: w === keyWidths.at(-1) }));
       if (w === keyWidths.at(-1)) sizes.base = res.data.textSizes;
       for (const k of ['graphics', 'elements', 'text', 'relativeSpacing']) coverage[k] = Math.max(coverage[k], res.counts[k]);
       coverage.ignored = Math.max(coverage.ignored, res.counts.ignored);
@@ -683,15 +771,15 @@ export async function inspect(url, o = {}) {
       for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing.has(k)) obs.spacing.set(k, new Map()); obs.spacing.get(k).set(w, v); }
       for (const [sel, ...v] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
       for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
-      for (const raw of res.issues) await merge(page, raw, pass);
-      const ty = await measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER }));
-      for (const raw of ty.issues) await merge(page, raw, pass);
+      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page, raw, pass); });
+      const ty = await within(TO.check, 'the line checks', () => measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER })));
+      await within(TO.check, 'recording and cropping the line findings', async () => { for (const raw of ty.issues) await merge(page, raw, pass); });
       // Contrast and fonts at the key widths, light and then dark, on the
       // same load: a reader switching the scheme does not reload.
       if (keyWidths.includes(w)) {
-        const cdp = await ctx.newCDPSession(page);
+        const cdp = await page.context().newCDPSession(page);
         await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
-        for (const scheme of ['light', 'dark']) {
+        for (const scheme of ['light', 'dark']) await within(TO.check, `contrast and fonts in ${scheme}`, async () => {
           await page.emulateMedia({ colorScheme: scheme });
           const sp = { w, mode: scheme, label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
           const cr = await runPass(page, sp, { contrast: true, fonts: true });
@@ -703,28 +791,32 @@ export async function inspect(url, o = {}) {
             const oy = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
             for (const raw of await opticalIssues(page, oy.optical)) await merge(page, raw, sp);
           }
-        }
+        });
         await page.emulateMedia({ colorScheme: 'light' });
         await cdp.detach().catch(() => {});
       }
       log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings${keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-    }
-    for (const f of scaleFindings(obs, system, widths, distinct)) await addFinding(lightAt, f);
+    });
+    // A finding judged across the sweep loads a page to crop it; held to the
+    // limits like a width.
+    const findingAt = (at, f) => guarded(f.mode || 'light', f.widths[0], `${f.widths[0]} px, ${f.mode || 'light'}`, resetLight,
+      () => within(TO.load + TO.check, 'loading the page to crop a finding', () => addFinding(at, f)));
+    for (const f of scaleFindings(obs, system, widths, distinct)) await findingAt(lightAt, f);
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
-    const bigAt = pages(ctx, async (page) => {
-      const c = await ctx.newCDPSession(page);
+    bigAt = pages(() => ctx, async (page) => {
+      const c = await page.context().newCDPSession(page);
       await c.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
     });
-    for (const w of widths) {
-      const page2 = await bigAt(w);
+    for (const w of widths) await guarded('200% text', w, `${w} px, 200% text`, resetLight, async () => {
+      const page2 = await within(TO.load, 'loading the page', () => bigAt(w));
       const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
-      const res = await runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true });
+      const res = await within(TO.check, 'the layout checks', () => runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true }));
       if (w === keyWidths.at(-1)) sizes.doubled = res.data.textSizes;
       for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing2.has(k)) obs.spacing2.set(k, new Map()); obs.spacing2.get(k).set(w, v); }
-      for (const raw of res.issues) await merge(page2, raw, pass);
+      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page2, raw, pass); });
       log(`  ${pass.label}: ${res.issues.length} findings`);
-    }
+    });
     log(`  200% text: done`);
 
     // Text whose size does not follow the browser's text size: set in px or
@@ -738,12 +830,12 @@ export async function inspect(url, o = {}) {
         const bySize = new Map();
         for (const k of fixed) bySize.set(sizes.base[k], (bySize.get(sizes.base[k]) || 0) + 1);
         const sizesText = [...bySize].sort((a, b) => a[0] - b[0]).map(([v, n]) => `${v} px (${n})`).join(', ');
-        await addFinding(bigAt, { check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
+        await findingAt(bigAt, { check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
           message: `${fixed.length} of ${keys.length} text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: ${sizesText}. Set font sizes in rem, or give clamp() rem limits.`,
           elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k })) });
       }
     }
-    for (const f of spacingUnitFindings(obs)) await addFinding(bigAt, f);
+    for (const f of spacingUnitFindings(obs)) await findingAt(bigAt, f);
     await bigAt.close();
 
     // The resize pass, in Chromium: load at one width, resize to another,
@@ -753,27 +845,42 @@ export async function inspect(url, o = {}) {
     const pairs = resizePairs(widths, sigs, keyWidths.at(-1));
     resize.pairs = pairs.map(([a, b]) => `${a}→${b}`);
     resize.breakpoints = pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2;
-    await resizePass(ctx, pairs, LAYOUT, null, 'light');
-    await pageLoadFindings(lightAt, watched);
+    await resizePass(() => ctx, resetLight, pairs, LAYOUT, null, 'light');
+    await guarded('light', widths[0], `${widths[0]} px, light`, resetLight,
+      () => within(TO.load + TO.check, 'loading the page to crop the page-load findings', () => pageLoadFindings(lightAt, watched)));
     await lightAt.close();
     watching = false;
-    await ctx.close();
+    await closeQuietly(ctx);
 
     // Pass set 3: device pixel ratio 2, hairlines only.
-    const ctx2 = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
-    await ctx2.addInitScript(lateInit, T.window);
-    const hiAt = pages(ctx2);
-    for (const w of [keyWidths[0], keyWidths.at(-1)]) {
-      const page3 = await hiAt(w);
+    const hiContext = async () => {
+      const c = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
+      await c.addInitScript(lateInit, T.window);
+      return c;
+    };
+    let ctx2 = await within(TO.close, 'opening a browser context', hiContext);
+    const hiAt = pages(() => ctx2);
+    const resetHi = async () => { await closeQuietly(ctx2); ctx2 = await within(TO.close, 'opening a browser context', hiContext); hiAt.reset(); };
+    for (const w of [keyWidths[0], keyWidths.at(-1)]) await guarded('2x', w, `${w} px, 2×`, resetHi, async () => {
+      const page3 = await within(TO.load, 'loading the page', () => hiAt(w));
       const pass = { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] };
-      const res = await runPass(page3, pass);
-      for (const raw of res.issues) await merge(page3, raw, pass);
-    }
-    await ctx2.close();
+      const res = await within(TO.check, 'the hairline check', () => runPass(page3, pass));
+      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page3, raw, pass); });
+    });
+    await closeQuietly(ctx2);
 
     // Pass set 4: motion, in Chromium at the last key width, with motion
     // allowed and again with prefers-reduced-motion: reduce.
-    motion = await motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log, T, watched.until);
+    // Held to one limit as a whole; on a timeout every context it opened is
+    // closed, and the report has no motion section.
+    try {
+      motion = await within(TO.motion, 'the motion passes', () => motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log, T, watched.until));
+    } catch (e) {
+      if (!(e instanceof StepTimeout)) throw e;
+      timedOut('motion', keyWidths.at(-1), e, `${keyWidths.at(-1)} px, motion`);
+      for (const c of browser.contexts()) await closeQuietly(c);
+      motion = null;
+    }
 
     // Pass set 5: WebKit and Firefox, light, layout checks only: four widths,
     // or with --full the whole sweep, each a fresh load; then the resize pass.
@@ -790,24 +897,29 @@ export async function inspect(url, o = {}) {
       }
       try {
         engines.browsers[name] = eb.version();
-        const ectx = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
-        await ectx.addInitScript(lateInit, T.window);
-        const engAt = pages(ectx);
-        for (const w of engines.widths) {
-          const ep = await engAt(w);
+        const engineContext = async () => {
+          const c = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
+          await c.addInitScript(lateInit, T.window);
+          return c;
+        };
+        let ectx = await within(TO.close, 'opening a browser context', engineContext);
+        const engAt = pages(() => ectx);
+        const resetE = async () => { await closeQuietly(ectx); ectx = await within(TO.close, 'opening a browser context', engineContext); engAt.reset(); };
+        for (const w of engines.widths) await guarded(name, w, `${w} px, ${ENGINE_NAMES[name]}`, resetE, async () => {
+          const ep = await within(TO.load, 'loading the page', () => engAt(w));
           const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
-          const res = await runPass(ep, pass);
-          for (const raw of res.issues) await merge(ep, raw, pass);
+          const res = await within(TO.check, 'the layout checks', () => runPass(ep, pass));
+          await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(ep, raw, pass); });
           // Of the line checks, line-start runs in every engine: each breaks
           // lines its own way, and a separator that begins a line in one
           // may not in another.
-          const ty = await measured(ep, () => ep.evaluate(typography, { checks: ['line-start'], system, identifier: IDENTIFIER }));
-          for (const raw of ty.issues) await merge(ep, raw, pass);
+          const ty = await within(TO.check, 'the line checks', () => measured(ep, () => ep.evaluate(typography, { checks: ['line-start'], system, identifier: IDENTIFIER })));
+          await within(TO.check, 'recording and cropping the line findings', async () => { for (const raw of ty.issues) await merge(ep, raw, pass); });
           log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings`);
-        }
+        });
         await engAt.close();
-        await resizePass(ectx, resizePairs(engines.widths, sigs, keyWidths.at(-1)), ENGINE_CHECKS, name, name);
-        await ectx.close();
+        await resizePass(() => ectx, resetE, resizePairs(engines.widths, sigs, keyWidths.at(-1)), ENGINE_CHECKS, name, name);
+        await closeQuietly(ectx);
       } catch (e) {
         engines.notRun[name] = `failed: ${String(e.message || e).split('\n')[0]}`;
         log(`  ${ENGINE_NAMES[name]}: ${engines.notRun[name]}`);
