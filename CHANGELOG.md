@@ -2,6 +2,17 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
+## 0.3.4 · 16 November 2026
+
+The inspector never hangs.
+
+- Every step has a hard limit: 180 s to load the page, 120 s for each check and for recording and cropping its findings, 420 s for one width as a whole, 480 s for the motion passes, 30 s to close or open a browser context. On a slower machine each is multiplied by the settle scale. A step past its limit is abandoned: the inspector closes the browser context it ran in, opens a fresh one, records a `timed-out` error naming the step, the width and the pass ("Loading the page did not finish within 180 s (768 px, light)"), and goes on to the next width. This covers the watch load, every width of every pass in every engine, each resize pair, findings that load a page to crop, and the motion passes. Before, a `page.evaluate` on a renderer that no longer answered waited for ever.
+- A watchdog for the whole run: when nothing has moved (no step begun, no line logged) for 10 minutes, the run prints the last step and exits with code 124 (`--watchdog <minutes>`, `0` for never). It never fires before the longest single step limit has run out.
+- The example workflow in `ITTEN.md` sets `timeout-minutes: 30` (90 for the full sweep), and says why a job still needs its own limit. ITTEN's own jobs had limits already.
+- `fixtures/hang.html` blocks its main thread for good when loaded at 768 px. `scripts/timeout-test.js` inspects it at 320, 768 and 1024 px, with 768 px a key width and in WebKit, and expects a `timed-out` error at 768 px in the light, 200% text, 2×, motion and WebKit passes, 320 and 1024 px measured, and the run finished; and a stalled process stopped by the watchdog with code 124 and its last step named. `scripts/check.js` runs it.
+- What prompted this: on 16 November a full fixture sweep stopped after 600 px on the clean twin, with Node and Chromium idle, and sat for two and a half hours. Run again on its own on the same code, the clean twin's full sweep finished, so the hang did not reproduce. Playwright's browser cache was found deleted later that night, by nothing in ITTEN; whether that was the cause is not known.
+- Fixture test, at the default four widths with WebKit: recall 49/49, precision 57/57, nothing on the clean twins; the hang page is not part of it.
+
 ## 0.3.3 · 16 November 2026
 
 Baselines measured, a check for lines that begin with a separator or closing punctuation, the settle window tested on a slow machine, and two fixes to how the report reads.
