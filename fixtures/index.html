@@ -379,6 +379,13 @@
     <p class="small">Planted: in the second row the note is moved 1 px down, off the baseline it shares with the figure beside it. In the first row a figure at the title step (24 px) and a note at the small step (14 px) share a baseline on both pages, and must not be reported: ITTEN 0.3.2 estimated baselines from canvas font metrics, which WebKit rounds to whole pixels, and put these two 0.6 px apart.</p>
     <table class="data totals"><tbody><tr><td class="sum">1,250</td><td class="small">a year, before tax</td></tr><tr><td class="sum">980</td><td class="small">a year, after tax</td></tr></tbody></table>
   </section>
+  <section id="d49">
+    <h2>A line that begins with a separator</h2>
+    <p class="small">Planted: an ordinary space on each side of each "·", so the byline can break before one; it is set as wide as its first item, so it does, at every width and in every engine, and the second line begins "·". The note below has a space before its semicolon, so its second line begins ";". On both pages a third line begins with the bar of an absolute value, "|O − C|", which opens a word and must not be reported, though the bar and the letter are in elements of their own.</p>
+    <p class="small byline"><span class="whole">Ada Lovelace</span> · 1843 · notes A to G</p>
+    <p class="small byline"><span class="whole">Bouvard, 1821</span> ; Paris</p>
+    <p class="small byline"><span class="whole">Median of</span> |<i>O</i> − <i>C</i>|</p>
+  </section>
 </main>
 <script>
   for (const c of document.querySelectorAll('.photo canvas')) {

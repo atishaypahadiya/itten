@@ -51,6 +51,7 @@ export const CHECKS = {
   'hyphenation': { title: 'Justified text without hyphenation', rule: 'CRF-22' },
   'text-wrap-balance': { title: 'Headings that would balance', rule: 'CRF-23' },
   'text-wrap-pretty': { title: 'Short last lines', rule: 'CRF-23' },
+  'line-start': { title: 'Lines that begin with a separator or closing punctuation', rule: 'CRF-31' },
   'hanging-punctuation': { title: 'Punctuation that should hang', rule: 'CRF-24' },
   'optical-margin': { title: 'Display type off its optical edge', rule: 'CRF-25 · CRF-04' },
   'flash': { title: 'Flashing', rule: 'CRF-29 · MOT-09 · WCAG 2.3.1' },
@@ -64,8 +65,10 @@ const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox
 // Checks run again in WebKit and Firefox. Spacing and type values are
 // computed styles, the same in every engine, so they run in Chromium only.
 // Words broken without a hyphen are judged in every engine: where a word
-// breaks depends on how each sizes a column.
-const ENGINE_CHECKS = ['near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel'];
+// breaks depends on how each sizes a column. So are lines that begin with a
+// separator or closing punctuation (line-start, from typography.js): where a
+// line breaks depends on each engine's font metrics.
+const ENGINE_CHECKS = ['near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel', 'line-start'];
 const LAYOUT = ['spacing-scale', 'type-scale', 'near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel'];
 // A last line, or a word, that is one identifier: a URL or a DOI, a host
 // with a path, an id behind a scheme-like prefix (arXiv:2108.06305, isbn:,
@@ -79,7 +82,7 @@ const TEXT200 = ['overflow', 'clipping', 'overlap'];
 // Typographic checks run in Chromium at every width of the sweep: line
 // breaking differs between engines, and these judge Chromium's lines. The
 // optical edge is measured from pixels at the key widths.
-const TYPO = ['widow', 'orphan', 'rag', 'hyphenation', 'text-wrap-balance', 'text-wrap-pretty', 'hanging-punctuation'];
+const TYPO = ['widow', 'orphan', 'rag', 'hyphenation', 'text-wrap-balance', 'text-wrap-pretty', 'hanging-punctuation', 'line-start'];
 const VIEW_H = 900;
 export const DEFAULT_WIDTHS = [320, 768, 1440, 1920];
 export const FULL_WIDTHS = Array.from({ length: 41 }, (_, i) => 320 + i * 40);
@@ -795,7 +798,12 @@ export async function inspect(url, o = {}) {
           const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
           const res = await runPass(ep, pass);
           for (const raw of res.issues) await merge(ep, raw, pass);
-          log(`  ${pass.label}: ${res.issues.length} findings`);
+          // Of the line checks, line-start runs in every engine: each breaks
+          // lines its own way, and a separator that begins a line in one
+          // may not in another.
+          const ty = await measured(ep, () => ep.evaluate(typography, { checks: ['line-start'], system, identifier: IDENTIFIER }));
+          for (const raw of ty.issues) await merge(ep, raw, pass);
+          log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings`);
         }
         await engAt.close();
         await resizePass(ectx, resizePairs(engines.widths, sigs, keyWidths.at(-1)), ENGINE_CHECKS, name, name);

@@ -250,7 +250,7 @@ Use curly quotes and apostrophes, the ellipsis character, an en dash for ranges,
 
 ## Lines and paragraphs
 
-These rules judge the lines as the browser breaks them, at every width. Line breaking differs between engines, so the inspector judges Chromium's lines; check WebKit by eye where the brief cares.
+These rules judge the lines as the browser breaks them, at every width. Line breaking differs between engines. The inspector judges Chromium's lines, and for CRF-31 WebKit's and Firefox's as well; check the rest in WebKit by eye where the brief cares.
 
 ### CRF-21 · No widows, no orphans
 Strength: SHOULD · Verified by: `widow`, `orphan` (inspector); manual: printed pages
@@ -287,6 +287,13 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 
 *Why:* round and pointed letters carry side bearings and overshoot that grow with size, so at display sizes a box-aligned O looks indented against the text beneath it. Cites: CRF-04, LAY-09; Bringhurst, *The Elements of Typographic Style*.
 
+### CRF-31 · A line begins with a word
+Strength: SHOULD · Verified by: `line-start` (inspector)
+
+No line after the first begins with a separator between items (`·`, `•`, `|`, `/`) or with closing punctuation (a comma, full stop, semicolon, colon, exclamation or question mark, closing bracket or closing quotation mark). A separator belongs to the item before it: put a no-break space before it and an ordinary space after, so a line can end on it but not begin with it. Closing punctuation belongs to the word before it, with no space between them. Lines break differently in each engine, so check in each.
+
+*Why:* a line that opens on a separator or a comma reads as a fragment cut from the line above. The Unicode line breaking algorithm forbids a break before closing punctuation ([UAX #14](https://www.unicode.org/reports/tr14/), classes CL, CP, EX and IS), but a space before the mark, or one between two elements, gives the browser the opportunity anyway; Japanese layout states the same rule as characters not to start a line ([JLREQ, 3.1.7](https://www.w3.org/TR/jlreq/#characters_not_starting_a_line)).
+
 ## Review checklist
 
 | Rule | What it asks | Verified by | Pass |
@@ -321,6 +328,7 @@ A line of display type (32 px and up) that starts with a round or pointed letter
 | CRF-28 | Steady frames | `frame-timing`; manual: slower device | |
 | CRF-29 | No flashing above three a second | `flash` | |
 | CRF-30 | Spacing in rem, following the text size | `spacing-unit` | |
+| CRF-31 | No line begins with a separator or closing punctuation | `line-start` | |
 
 ## Sources
 
