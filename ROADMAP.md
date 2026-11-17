@@ -48,7 +48,7 @@ Two tracks run beside these: a public scorecard, and a paper once 0.5 and 0.7 ha
 
 ## 0.4.x · Fleet protocol
 
-**Scope.** A protocol, `protocol/05-fleet.md`, for fixing a project's packets with several workers at once, each in its own git worktree. Roles: a lead who takes the run and the packets and assigns them; a system owner who alone may change `itten.system.json` and answers the design questions; fixers, one per packet. Every fixer's branch is inspected again before it merges, and a branch that adds a finding is sent back. Questions that need the owner's taste (a new step, a changed look) go to a design-decision queue instead of being guessed. The number of fixers is the smaller of the conflict-free packets and the project's caps (machines, CI minutes, reviewers).
+**Scope.** A protocol, `protocol/05-fleet.md`, for fixing a project's packets with several workers at once, each in its own git worktree. Roles: a lead who takes the run and the packets and assigns them; a system owner who alone may change `itten.system.json` and the shared CSS, and carries out the design decisions the project's owner makes; fixers, one per packet. Every fixer's branch is inspected again before it merges, and a branch that adds a finding is sent back. Questions that need the owner's taste (a new step, a changed look) go to a design-decision queue instead of being guessed. The number of fixers is the smaller of the conflict-free packets and the project's caps (machines, CI minutes, reviewers).
 
 **Needs.** 0.4's packets and their conflict marks.
 
@@ -179,6 +179,24 @@ Approved-look snapshots: once the owner approves a look, screenshots at the key 
 **Acceptance test.** A build made to a teardown on purpose reports deltas within tolerance; the same build with planted drifts (a changed type ratio, a different spacing base, a missing alignment line) reports each drift and nothing else.
 
 **Prior art.** Design2Code (above) measures how closely a generated page matches its reference. 1.2 compares the systems behind the two rather than the pixels, so a build can match its inspiration's proportions at a different size or with different content.
+
+## Architecture: a shared core and specialists
+
+ITTEN checks design detail. Security and load are checked by the same loop with different rules, so the loop is shared and the rules are not.
+
+**The core.** The supervisor loop: brief → lint → inspect → gate → fix. The gate holds a piece of work open while any check fails: nothing is done until the checks pass. Around the loop: one finding format, fingerprints that stay the same from run to run, work packets (0.4), the board, the Action, and the mechanical fixer (0.4). Today the core lives inside ITTEN.
+
+**The board.** The shared state of a run. Every participant (the lead, the system owner, the fixers, the verifier) reads and writes it, so none of them message each other directly. It holds the findings and their work packets, each with its state and owner; which files each packet has claimed, so two fixers never edit the same file; notes participants leave for each other, such as "changed the usage of `--space-3`"; the queue of design decisions waiting for the project's owner, the person whose design it is (the system owner implements the scale and the shared CSS but makes no design calls); and the run's clock and budget. It follows the blackboard architecture of the Hearsay-II speech-understanding system, in which independent knowledge sources cooperate only through a shared data structure ([Erman, Hayes-Roth, Lesser and Reddy, "The Hearsay-II Speech-Understanding System: Integrating Knowledge to Resolve Uncertainty", ACM Computing Surveys 12(2), 1980](https://doi.org/10.1145/356810.356816)). The fleet protocol (0.4.x) is its first user. It is extracted into a package of its own when the second specialist begins, and not before: the shared part is drawn from its second real use, not guessed from the first.
+
+**Specialists.** Each stands alone, with its own rules, checks and fixtures, and publishes its own recall and precision on them.
+
+- **ITTEN**: design detail. This repository.
+- **KERCKHOFFS**: security. Named for Auguste Kerckhoffs, whose "La cryptographie militaire" ([Journal des sciences militaires, vol. IX, January and February 1883](https://www.petitcolas.net/kerckhoffs/)) set out six rules for a military cipher; the second, that the system "must not require secrecy and can be stolen by the enemy without causing trouble", is now stated as Kerckhoffs's principle: a system must stay secure when everything but the key is public. Scope: exposed secrets; authorisation, including access to each object; injection and cross-site scripting; security headers and Content Security Policy; CORS; rate limits; vulnerable dependencies; errors that leak internals. It runs only against the owner's own code and deployments, never against a third party's site.
+- **ERLANG**: load and resilience. Named for Agner Krarup Erlang, whose 1909 paper on telephone traffic, "The Theory of Probabilities and Telephone Conversations", began queueing theory ([MacTutor](https://mathshistory.st-andrews.ac.uk/Biographies/Erlang/); [INFORMS](https://www.informs.org/Explore/History-of-O.R.-Excellence/Biographical-Profiles/Erlang-Agner-Krarup)). Scope: capacity under concurrent load; query patterns (one query per item where one query would do, queries without a limit, pagination); caching; timeouts and retries; backpressure; memory that grows without bound.
+
+**Contracts, not shared code.** Every specialist writes findings in the same format, so the core merges them into one gate. Where two domains conflict, security floors come first, then accessibility floors, then craft. If a strict Content Security Policy forbids an inline style that a design fix relies on, the fix changes, not the policy.
+
+**Order.** ITTEN through 0.4 (the fixer and work packets) first. Then KERCKHOFFS begins, and the core is extracted from ITTEN as it does. ERLANG after.
 
 ## Beside the versions
 
