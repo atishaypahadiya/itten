@@ -18,6 +18,7 @@ import { pageUrl, pageName, slug, parsePages, measuredWidths } from './action/ru
 import { start } from './serve.js';
 import { brokenWordMessage } from '../inspector/inspect.js';
 import { renderHtml } from '../inspector/report-html.js';
+import { compareVersions } from './compare-versions.mjs';
 
 const issue = (id, check, key, severity, sel = '#a') => ({ id, fingerprint: `${check}|${key}`, check, title: check, rule: '', severity, message: `${check} message. More.`, elements: [{ sel }] });
 const reportOf = (url, issues) => ({ url, date: '2026-11-15T00:00:00Z', version: 'test', system: 'itten.system.json', sweep: { widths: '320, 768, 1440, 1920' }, issues });
@@ -69,6 +70,38 @@ export async function run() {
     ok((await get('/nope.html')).startsWith('404'), 'answers 404 for a missing file');
     ok((await get('/.env')).startsWith('403'), 'refuses dotfiles');
     srv.close();
+
+    // Comparing two versions on the same pages (scripts/compare-versions.mjs): new and gone findings, the
+    // widths a version added, a fluid fingerprint that changed on the same element, timing findings from a
+    // run marked unreliable, and two different site builds, which are not compared.
+    const cv = join(dir, 'versions');
+    const put = (v, mode, page, report, meta) => {
+      mkdirSync(join(cv, v, mode, page), { recursive: true });
+      writeFileSync(join(cv, v, mode, page, 'report.json'), JSON.stringify(report));
+      writeFileSync(join(cv, v, mode, page, 'meta.json'), JSON.stringify(meta));
+    };
+    const vr = (widths, issues) => ({ url: 'http://127.0.0.1:8080/runs/', version: 'x', sweep: { widths }, summary: { error: 0, warning: issues.length, info: 0 }, issues });
+    const seen = (f, w, crop) => ({ ...f, seen: { light: w }, crops: crop ? [{ path: `crops/${crop}` }] : [] });
+    put('v1', 'quick', 'runs', vr('320, 768, 1440, 1920', [
+      seen(issue('i001', 'widow', '#a', 'warning'), '768'),
+      seen(issue('i002', 'spacing-scale', 'fluid|16,21,40,40', 'warning', '#gutter'), '320, 768, 1440, 1920'),
+      seen(issue('i003', 'overflow', 'spill|#t', 'warning', '#t'), '320', 'i003-1.png'),
+    ]), { version: '0.1', workers: 1, build: 'b1' });
+    put('v2', 'quick', 'runs', vr('320, 768, 899, 900, 1440, 1920', [
+      seen(issue('i001', 'widow', '#a', 'warning'), '768'),
+      seen(issue('i002', 'spacing-scale', 'fluid|16,21,36,37,40,40', 'warning', '#gutter'), '320, 768, 899, 900, 1440, 1920'),
+      seen(issue('i004', 'rag', '#caption', 'warning', '#caption'), '900', 'i004-1.png'),
+      seen(issue('i005', 'frame-timing', 'loaf|#scene', 'warning', '#scene'), '1440'),
+    ]), { version: '0.2', workers: 4, build: 'b1', timing: 'unreliable' });
+    put('v1', 'full', 'runs', vr('320–1920', []), { build: 'b1' });
+    put('v2', 'full', 'runs', vr('320–1920', []), { build: 'b2' });
+    const vc = compareVersions(cv, { a: 'v1', b: 'v2' });
+    const sect = vc.markdown.split('\n## ').find((x) => x.startsWith('quick')) ?? '';
+    ok(/New 1, gone 1, more severe 0, less severe 0\./.test(sect), `versions: one new (the rag), one gone (the overflow), the fluid gutter matched across widths: ${sect.match(/New \d+, gone \d+[^.]*/)?.[0]}`);
+    ok(/\| i004 \| warning \| rag \| `#caption` \| light 900 \| yes \|/.test(sect), 'a finding seen only at a width the newer version added is marked so');
+    ok(/\| i003 \| warning \| overflow \|/.test(sect) && /Unreliable, not reported: v2 i005 frame-timing/.test(sect) && !/\| i005 /.test(sect), 'gone findings listed; a timing finding from an unreliable run is held back, not reported');
+    ok(vc.copies.some(([f, t]) => f.endsWith(join('v2', 'quick', 'runs', 'crops', 'i004-1.png')) && t === join('crops', 'v2', 'quick', 'runs', 'i004-1.png')) && vc.copies.some(([, t]) => t.endsWith('i003-1.png')), 'the crops of new and gone findings are linked and copied');
+    ok(!vc.sameBuild && /Not compared: v1 measured site build `b1` and v2 `b2`/.test(vc.markdown), 'two different site builds are not compared');
 
     // Markdown: the marker, mentions defused, the note without a baseline.
     const s = {

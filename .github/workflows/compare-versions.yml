@@ -1,0 +1,230 @@
+# Measures one site with two ITTEN versions and lists what the newer one finds that the older one does not,
+# so an upgrade can be judged before a project moves its pin, and heavy sweeps run on GitHub's machines instead
+# of a shared one. One job per version, page and mode, each with ITTEN checked out at its tag, the site built
+# and served from the same commit; then scripts/compare-versions.mjs on all of them. Reports, crops and the
+# comparison (new.md, with the crops of every finding it lists) are uploaded as artifacts.
+#
+# Run it from the Actions tab or with:
+#   gh workflow run compare-versions.yml -f site-repo=owner/repo -f site-ref=<sha> -f pages='/, /about/' \
+#     -f version-a=v0.3.4 -f version-b=v0.3.5 -f modes=both [-f build='...'] [-f serve-dir=docs] [-f system=itten.system.json]
+# A pull request that changes this workflow or the script runs it on ITTEN's own distinct-value fixture, quick
+# mode, so the workflow is tested before it is merged.
+name: Compare versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      site-repo:
+        description: 'Site repository, owner/name (public, or readable with this workflow''s token)'
+        required: true
+      site-ref:
+        description: 'Commit, branch or tag of the site to measure'
+        required: true
+      build:
+        description: 'Shell command run in the site checkout before serving (empty: none)'
+        required: false
+        default: ''
+      serve-dir:
+        description: 'Directory to serve, relative to the site checkout'
+        required: false
+        default: '.'
+      pages:
+        description: 'Pages, relative to the served directory, comma- or newline-separated'
+        required: true
+        default: '/'
+      system:
+        description: 'System file, relative to the site checkout (empty: distinct-value mode)'
+        required: false
+        default: ''
+      version-a:
+        description: 'Older ITTEN tag, such as v0.3.4'
+        required: true
+      version-b:
+        description: 'Newer ITTEN tag, such as v0.3.5'
+        required: true
+      modes:
+        description: 'quick, full, or both'
+        required: true
+        type: choice
+        options: [quick, full, both]
+        default: quick
+      engines:
+        description: 'Second-opinion engines for the inspector'
+        required: false
+        default: 'webkit'
+  pull_request:
+    paths:
+      - .github/workflows/compare-versions.yml
+      - scripts/compare-versions.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      config: ${{ steps.plan.outputs.config }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: One job per version, mode and page
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          # A pull request has no inputs: it measures this repository's fixture at the pull request's head.
+          SITE_REPO: ${{ inputs.site-repo || github.repository }}
+          SITE_REF: ${{ inputs.site-ref || github.event.pull_request.head.sha }}
+          BUILD: ${{ inputs.build }}
+          SERVE_DIR: ${{ inputs.serve-dir || '.' }}
+          PAGES: ${{ inputs.pages || 'fixtures/distinct.html' }}
+          SYSTEM: ${{ inputs.system }}
+          VERSION_A: ${{ inputs.version-a || 'v0.3.4' }}
+          VERSION_B: ${{ inputs.version-b || 'v0.3.5' }}
+          MODES: ${{ inputs.modes || 'quick' }}
+          ENGINES: ${{ inputs.engines || 'webkit' }}
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            import { parsePages, pageName, slug } from "./scripts/action/run.js";
+            const e = process.env;
+            const pages = parsePages(e.PAGES);
+            const modes = e.MODES === "both" ? ["quick", "full"] : [e.MODES];
+            // Tags and the ref end up in checkout refs and artifact names: plain names only.
+            const tag = /^v\d+\.\d+\.\d+$/, ref = /^[\w.\/-]+$/;
+            const bad = [!pages.length && "no pages", !/^[\w.-]+\/[\w.-]+$/.test(e.SITE_REPO) && "site-repo", !ref.test(e.SITE_REF) && "site-ref",
+              !tag.test(e.VERSION_A) && "version-a", !tag.test(e.VERSION_B) && "version-b", !modes.every((m) => ["quick", "full"].includes(m)) && "modes"].filter(Boolean);
+            if (bad.length) { console.error("bad inputs: " + bad.join(", ")); process.exit(64); }
+            const include = [];
+            for (const version of [e.VERSION_A, e.VERSION_B]) for (const mode of modes) for (const p of pages) include.push({ version, mode, path: pageName(p), page: slug(pageName(p)) });
+            const config = { siteRepo: e.SITE_REPO, siteRef: e.SITE_REF, build: e.BUILD, serveDir: e.SERVE_DIR, system: e.SYSTEM, a: e.VERSION_A, b: e.VERSION_B, engines: e.ENGINES };
+            appendFileSync(e.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nconfig=${JSON.stringify(config)}\n`);
+            console.log(`${include.length} jobs: ${[e.VERSION_A, e.VERSION_B].join(" and ")}, ${modes.join(" and ")}, ${pages.length} page${pages.length === 1 ? "" : "s"} of ${e.SITE_REPO} at ${e.SITE_REF}`);
+          '
+
+  inspect:
+    needs: plan
+    name: ${{ matrix.version }} ${{ matrix.mode }} ${{ matrix.path }}
+    runs-on: ubuntu-24.04
+    # A full sweep of a long page by a version without parallel jobs can take more than an hour here.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      CONFIG: ${{ needs.plan.outputs.config }}
+      VERSION: ${{ matrix.version }}
+      MODE: ${{ matrix.mode }}
+      PAGE_PATH: ${{ matrix.path }}
+      PAGE: ${{ matrix.page }}
+    steps:
+      - name: ITTEN at ${{ matrix.version }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ matrix.version }}
+          path: itten
+          persist-credentials: false
+      - name: The site
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ fromJSON(needs.plan.outputs.config).siteRepo }}
+          ref: ${{ fromJSON(needs.plan.outputs.config).siteRef }}
+          path: site
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: The inspector's dependencies and browsers, as ${{ matrix.version }} pins them
+        working-directory: itten
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium webkit
+      - name: Build the site
+        working-directory: site
+        run: |
+          build="$(node -p 'JSON.parse(process.env.CONFIG).build')"
+          if [ -n "$build" ]; then bash -euo pipefail -c "$build"; else echo "no build command"; fi
+      - name: Serve it, and record the build
+        run: |
+          dir="site/$(node -p 'JSON.parse(process.env.CONFIG).serveDir')"
+          # The same checksum on any machine: file paths in byte order, .git left out.
+          build="$(cd "$dir" && find . -path ./.git -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)"
+          echo "BUILD=$build" >> "$GITHUB_ENV"; echo "site build $build"
+          nohup python3 -m http.server 8080 --bind 127.0.0.1 --directory "$dir" > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf -o /dev/null "http://127.0.0.1:8080$PAGE_PATH" && exit 0; sleep 1; done
+          echo "the page did not answer at http://127.0.0.1:8080$PAGE_PATH"; cat "$RUNNER_TEMP/server.log"; exit 1
+      - name: Inspect
+        working-directory: itten
+        run: |
+          out="$GITHUB_WORKSPACE/out/$VERSION/$MODE/$PAGE"; mkdir -p "$out"
+          system="$(node -p 'JSON.parse(process.env.CONFIG).system')"
+          flags=(--engines "$(node -p 'JSON.parse(process.env.CONFIG).engines')" --out "$out")
+          [ "$MODE" = full ] && flags+=(--full)
+          [ -n "$system" ] && flags+=(--system "$GITHUB_WORKSPACE/site/$system")
+          # Parallel jobs from 0.3.5; an older inspector measures one width at a time.
+          workers=1; if grep -q -- '--workers' inspector/inspect.js; then workers="$(nproc)"; flags+=(--workers "$workers"); fi
+          started="$(date -u +%FT%TZ)"
+          node inspector/inspect.js "http://127.0.0.1:8080$PAGE_PATH" "${flags[@]}" > "$out.log" 2>&1 || true
+          tail -3 "$out.log"
+          node -e '
+            const fs = require("fs"); const [out, version, mode, page, path, build, workers, started] = process.argv.slice(1);
+            const r = JSON.parse(fs.readFileSync(out + "/report.json", "utf8"));
+            const c = JSON.parse(process.env.CONFIG);
+            fs.writeFileSync(out + "/meta.json", JSON.stringify({ version: r.version, tag: version, mode, page, path, build, workers: Number(workers),
+              site: { repo: c.siteRepo, ref: c.siteRef }, started, finished: new Date().toISOString() }, null, 2));
+            // Only a whole report is compared: not refused or partial, and every engine ran.
+            const notRun = (r.engines && r.engines.notRun) || {};
+            if (["refused", "partial"].includes(r.status) || Object.keys(notRun).length) { console.error("not whole:", r.status, r.reason || "", JSON.stringify(notRun)); process.exit(1); }
+          ' "$out" "$VERSION" "$MODE" "$PAGE" "$PAGE_PATH" "$BUILD" "$workers" "$started"
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: report-${{ matrix.version }}-${{ matrix.mode }}-${{ matrix.page }}
+          path: out
+          retention-days: 30
+          if-no-files-found: error
+
+  compare:
+    needs: [plan, inspect]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: report-*
+          path: out
+          merge-multiple: true
+      - name: Compare
+        env:
+          CONFIG: ${{ needs.plan.outputs.config }}
+        run: |
+          a="$(node -p 'JSON.parse(process.env.CONFIG).a')"; b="$(node -p 'JSON.parse(process.env.CONFIG).b')"
+          echo "A=$a" >> "$GITHUB_ENV"; echo "B=$b" >> "$GITHUB_ENV"
+          node scripts/compare-versions.mjs out --a "$a" --b "$b" --out compare/new.md --crops compare && status=0 || status=$?
+          cat compare/new.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Upload the comparison
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compare-${{ env.A }}-${{ env.B }}
+          path: compare
+          retention-days: 30
+          if-no-files-found: error
