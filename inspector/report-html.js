@@ -71,6 +71,24 @@ function motionSection(r) {
   </section>`;
 }
 
+// Moving tiles (the contrast pass, 16 px): the most in any one pass, and the
+// most of them over nothing that should move. A report from before the
+// counts gives its regions' area instead.
+export function movingTiles(r) {
+  let most = null;
+  for (const d of r.drawing ?? []) {
+    const tiles = d.tiles ?? Math.round(d.regions.reduce((n, [, , w, h]) => n + w * h, 0) / 256);
+    if (!most || tiles > most.tiles) most = { tiles, at: d.at };
+  }
+  return { tiles: most?.tiles ?? 0, at: most?.at ?? null, unexplained: Math.max(0, ...(r.drawing ?? []).map((d) => d.unexplained ?? 0)), passes: (r.drawing ?? []).length };
+}
+
+const movingText = (r) => {
+  const m = movingTiles(r);
+  if (!m.tiles) return 'Moving background: no pixels behind the text changed between the contrast pass\'s two frames.';
+  return `Moving background: ${m.tiles} tiles of 16 px changed between the contrast pass's two frames (the most at one width: ${esc(m.at)}), so contrast findings over them do not fail parity. ${m.unexplained ? `${m.unexplained} of them are over nothing that should move (no running animation, canvas, video, iframe or image): check why.` : 'All of them are over a running animation, canvas, video, iframe or image.'}`;
+};
+
 export function renderHtml(r) {
   const checks = Object.entries(r.summary.byCheck).filter(([, c]) => c.error + c.warning + c.info);
   const table = checks.length ? `
@@ -178,7 +196,7 @@ export function renderHtml(r) {
   ${engineSection(r)}
   <section>
     <h2>Coverage</h2>
-    <p>${r.coverage.elements} visible elements, ${r.coverage.text} with text. ${r.coverage.ignored} element and check pairs skipped by <code>data-itten-ignore</code>. ${r.coverage.contrastSamples} background pixels sampled for contrast; ${r.coverage.contrastSkipped} text elements skipped (transparent or clipped-to-background text).</p>
+    <p>${movingText(r)} ${r.coverage.elements} visible elements, ${r.coverage.text} with text. ${r.coverage.ignored} element and check pairs skipped by <code>data-itten-ignore</code>. ${r.coverage.contrastSamples} background pixels sampled for contrast; ${r.coverage.contrastSkipped} text elements skipped (transparent or clipped-to-background text).</p>
     <h3>Not judged</h3>
     <ul>${r.notJudged.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
     ${r.pageErrors.length ? `<h3>Script errors on the page</h3><ul>${r.pageErrors.map((e) => `<li><code>${esc(e)}</code></li>`).join('')}</ul>` : ''}

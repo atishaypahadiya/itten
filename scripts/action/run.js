@@ -28,6 +28,7 @@ import { spawn } from 'node:child_process';
 import { start } from '../serve.js';
 import { inspect, loadSystem, VERSION, CHECKS } from '../../inspector/inspect.js';
 import { failing } from '../../inspector/baseline.js';
+import { movingTiles } from '../../inspector/report-html.js';
 import { checkFiles } from '../overrides.js';
 
 const env = (k, d = '') => (process.env[k] ?? '').trim() || d;
@@ -143,6 +144,7 @@ async function main(out) {
       summary.pages.push({
         page: pageName(p), url, dir, summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
         failing: fail.length,
+        moving: (({ tiles, unexplained }) => ({ tiles, unexplained }))(movingTiles(report)),
         baseline: b ? { found: b.found, new: b.new.map((id) => brief(byId.get(id))), worse: b.worse.map((w) => ({ ...brief(byId.get(w.id)), was: w.was })),
           fixed: b.fixed.map((f) => ({ check: f.check, title: CHECKS[f.check]?.title, severity: f.severity, message: f.message, element: f.elements[0] ?? null })), sameWidths: b.sameWidths } : null,
         top: report.issues.filter((i) => i.severity !== 'info').slice(0, 10).map(brief),

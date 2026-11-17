@@ -12,7 +12,8 @@
   .scene p { position: absolute; left: 32px; top: 64px; margin: 0; color: #fff; }
   .still { width: 512px; padding: 16px 32px; margin: 0 0 32px; background: #bbb; }
   .still p { margin: 0; color: #fff; }
-  .narrow { width: 96px; margin: 0; white-space: nowrap; background: #eee; }
+  .narrow { width: 96px; margin: 0 0 32px; white-space: nowrap; background: #eee; }
+  .ticker { width: 96px; height: 32px; }
 </style>
 </head>
 <body>
@@ -26,10 +27,15 @@
   <div class="still"><p class="over-still">Text over a background that holds still</p></div>
   <!-- A line too long for its painted box: an overflow error (Text spills ... out of its own box), unrelated to the canvas. -->
   <p class="narrow">This line runs out of its narrow box</p>
+  <!-- A box a script recolours every frame, with no animation, canvas or video: its moving tiles are unexplained. -->
+  <div class="ticker"></div>
   <script>
     const c = document.querySelector('canvas'), g = c.getContext('2d');
     const draw = (t) => { g.fillStyle = `hsl(${(t / 8) % 360} 55% 70%)`; g.fillRect(0, 0, c.width, c.height); requestAnimationFrame(draw); };
     requestAnimationFrame(draw);
+    const k = document.querySelector('.ticker');
+    const tick = (t) => { k.style.background = `hsl(${(t / 4) % 360} 60% 60%)`; requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
   </script>
 </body>
 </html>

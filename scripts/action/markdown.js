@@ -48,11 +48,13 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
     if (s.failOn === 'never') out.push('This check does not fail the build (fail-on: never).', '');
     else out.push(t.failing ? `This check fails: ${plural(t.failing, s.failOn === 'warnings' ? 'error or warning' : 'error')} ${by} (fail-on: ${s.failOn}).` : `This check passes: no ${s.failOn === 'warnings' ? 'errors or warnings' : 'errors'} ${by} (fail-on: ${s.failOn}).`, '');
 
-    out.push(`| Page | Errors | Warnings | Info${s.baseline ? ' | New | Fixed' : ''} |`, `|---|--:|--:|--:${s.baseline ? '|--:|--:' : ''}|`);
+    // Moving tiles: where contrast findings over a moving background are exempt from parity.
+    out.push(`| Page | Errors | Warnings | Info | Moving tiles${s.baseline ? ' | New | Fixed' : ''} |`, `|---|--:|--:|--:|--:${s.baseline ? '|--:|--:' : ''}|`);
     for (const p of pages) {
       const b = p.baseline;
-      out.push(`| ${code(p.page)} | ${p.summary.error} | ${p.summary.warning} | ${p.summary.info}${s.baseline ? ` | ${b?.found ? b.new.length + b.worse.length : 'no entry'} | ${b?.found ? b.fixed.length : ''}` : ''} |`);
+      out.push(`| ${code(p.page)} | ${p.summary.error} | ${p.summary.warning} | ${p.summary.info} | ${p.moving ? `${p.moving.tiles}${p.moving.unexplained ? ` (${p.moving.unexplained} unexplained)` : ''}` : '·'}${s.baseline ? ` | ${b?.found ? b.new.length + b.worse.length : 'no entry'} | ${b?.found ? b.fixed.length : ''}` : ''} |`);
     }
+    if (pages.some((p) => p.moving?.tiles)) out.push('', `Moving tiles: 16 px tiles behind text that changed between two frames 400 ms apart. Contrast findings over them depend on the frame and are exempt from parity${pages.some((p) => p.moving?.unexplained) ? '; unexplained tiles are over no animation, canvas, video, iframe or image, so check what changed there' : ''}.`);
     out.push('');
 
     if (s.baseline) {
