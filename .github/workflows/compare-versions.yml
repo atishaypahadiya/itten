@@ -97,10 +97,18 @@ jobs:
             const e = process.env;
             const pages = parsePages(e.PAGES);
             const modes = e.MODES === "both" ? ["quick", "full"] : [e.MODES];
-            // Tags and the ref end up in checkout refs and artifact names: plain names only.
-            const tag = /^v\d+\.\d+\.\d+$/, ref = /^[\w.\/-]+$/;
-            const bad = [!pages.length && "no pages", !/^[\w.-]+\/[\w.-]+$/.test(e.SITE_REPO) && "site-repo", !ref.test(e.SITE_REF) && "site-ref",
-              !tag.test(e.VERSION_A) && "version-a", !tag.test(e.VERSION_B) && "version-b", !modes.every((m) => ["quick", "full"].includes(m)) && "modes"].filter(Boolean);
+            // Everything here reaches a checkout, a path or an artifact name: plain names only. No leading "-"
+            // (git would read it as an option), no ".." (a ref cannot hold one; a path would leave the checkout),
+            // no absolute paths.
+            const tag = /^v\d+\.\d+\.\d+$/;
+            const repo = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/;
+            const ref = (x) => /^[A-Za-z0-9][\w.\/-]*$/.test(x) && !x.includes("..");
+            const rel = (x) => x === "" || x === "." || (/^[\w][\w.\/-]*$/.test(x) && !x.split("/").includes(".."));
+            const page = (x) => /^\/[\w.\/~%-]*$/.test(x) && !x.split("/").includes("..");
+            const bad = [!pages.length && "no pages", !repo.test(e.SITE_REPO) && "site-repo", !ref(e.SITE_REF) && "site-ref",
+              !tag.test(e.VERSION_A) && "version-a", !tag.test(e.VERSION_B) && "version-b", !modes.every((m) => ["quick", "full"].includes(m)) && "modes",
+              !rel(e.SERVE_DIR) && "serve-dir", !rel(e.SYSTEM) && "system", !pages.every((p) => page(pageName(p))) && "pages",
+              !/^[a-z]+(,[a-z]+)*$/.test(e.ENGINES) && "engines"].filter(Boolean);
             if (bad.length) { console.error("bad inputs: " + bad.join(", ")); process.exit(64); }
             const include = [];
             for (const version of [e.VERSION_A, e.VERSION_B]) for (const mode of modes) for (const p of pages) include.push({ version, mode, path: pageName(p), page: slug(pageName(p)) });
