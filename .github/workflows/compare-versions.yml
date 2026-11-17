@@ -6,7 +6,7 @@
 #
 # Run it from the Actions tab or with:
 #   gh workflow run compare-versions.yml -f site-repo=owner/repo -f site-ref=<sha> -f pages='/, /about/' \
-#     -f version-a=v0.3.4 -f version-b=v0.3.5 -f modes=both [-f build='...'] [-f serve-dir=docs] [-f system=itten.system.json]
+#     -f version-a=v0.3.4 -f version-b=v0.3.5 -f modes=both [-f build='...'] [-f serve-dir=docs] [-f system=itten.system.json] [-f workers=1]
 # A pull request that changes this workflow or the script runs it on ITTEN's own distinct-value fixture, quick
 # mode, so the workflow is tested before it is merged.
 name: Compare versions
@@ -52,6 +52,10 @@ on:
         description: 'Second-opinion engines for the inspector'
         required: false
         default: 'webkit'
+      workers:
+        description: 'Inspector workers per job, for versions with parallel jobs (0.3.5 on); empty: the runner''s CPUs'
+        required: false
+        default: ''
   pull_request:
     paths:
       - .github/workflows/compare-versions.yml
@@ -90,6 +94,7 @@ jobs:
           VERSION_B: ${{ inputs.version-b || 'v0.3.5' }}
           MODES: ${{ inputs.modes || 'quick' }}
           ENGINES: ${{ inputs.engines || 'webkit' }}
+          WORKERS: ${{ inputs.workers }}
         run: |
           node --input-type=module -e '
             import { appendFileSync } from "node:fs";
@@ -108,11 +113,11 @@ jobs:
             const bad = [!pages.length && "no pages", !repo.test(e.SITE_REPO) && "site-repo", !ref(e.SITE_REF) && "site-ref",
               !tag.test(e.VERSION_A) && "version-a", !tag.test(e.VERSION_B) && "version-b", !modes.every((m) => ["quick", "full"].includes(m)) && "modes",
               !rel(e.SERVE_DIR) && "serve-dir", !rel(e.SYSTEM) && "system", !pages.every((p) => page(pageName(p))) && "pages",
-              !/^[a-z]+(,[a-z]+)*$/.test(e.ENGINES) && "engines"].filter(Boolean);
+              !/^[a-z]+(,[a-z]+)*$/.test(e.ENGINES) && "engines", !/^([1-9][0-9]{0,2})?$/.test(e.WORKERS) && "workers"].filter(Boolean);
             if (bad.length) { console.error("bad inputs: " + bad.join(", ")); process.exit(64); }
             const include = [];
             for (const version of [e.VERSION_A, e.VERSION_B]) for (const mode of modes) for (const p of pages) include.push({ version, mode, path: pageName(p), page: slug(pageName(p)) });
-            const config = { siteRepo: e.SITE_REPO, siteRef: e.SITE_REF, build: e.BUILD, serveDir: e.SERVE_DIR, system: e.SYSTEM, a: e.VERSION_A, b: e.VERSION_B, engines: e.ENGINES };
+            const config = { siteRepo: e.SITE_REPO, siteRef: e.SITE_REF, build: e.BUILD, serveDir: e.SERVE_DIR, system: e.SYSTEM, a: e.VERSION_A, b: e.VERSION_B, engines: e.ENGINES, workers: e.WORKERS };
             appendFileSync(e.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nconfig=${JSON.stringify(config)}\n`);
             console.log(`${include.length} jobs: ${[e.VERSION_A, e.VERSION_B].join(" and ")}, ${modes.join(" and ")}, ${pages.length} page${pages.length === 1 ? "" : "s"} of ${e.SITE_REPO} at ${e.SITE_REF}`);
           '
@@ -177,8 +182,12 @@ jobs:
           flags=(--engines "$(node -p 'JSON.parse(process.env.CONFIG).engines')" --out "$out")
           [ "$MODE" = full ] && flags+=(--full)
           [ -n "$system" ] && flags+=(--system "$GITHUB_WORKSPACE/site/$system")
-          # Parallel jobs from 0.3.5; an older inspector measures one width at a time.
-          workers=1; if grep -q -- '--workers' inspector/inspect.js; then workers="$(nproc)"; flags+=(--workers "$workers"); fi
+          # Parallel jobs from 0.3.5, as many as asked (validated in the plan job) or one per CPU; an older inspector
+          # measures one width at a time. A page that draws WebGL every frame is drawn in software here, so it may
+          # need fewer workers than CPUs.
+          want="$(node -p 'JSON.parse(process.env.CONFIG).workers || ""')"
+          case "$want" in ''|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "bad workers: $want"; exit 64 ;; esac
+          workers=1; if grep -q -- '--workers' inspector/inspect.js; then workers="${want:-$(nproc)}"; flags+=(--workers "$workers"); fi
           started="$(date -u +%FT%TZ)"
           node inspector/inspect.js "http://127.0.0.1:8080$PAGE_PATH" "${flags[@]}" > "$out.log" 2>&1 || true
           tail -3 "$out.log"
