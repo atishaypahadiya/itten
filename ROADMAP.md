@@ -2,7 +2,7 @@
 
 The order in which ITTEN grows, what each version covers, what it needs first, and the test it has to pass before it ships. Every version also has to keep the fixture test at full recall, full precision and no findings on the clean twins. Scope can move between versions; the order holds where a version depends on the one before.
 
-Status, 16 November 2026: 0.2 shipped as 0.2.0, and 0.3 as 0.3.0 with fixes up to 0.3.4 (`CHANGELOG.md`). Still open from 0.3's acceptance test: the pull request half on a test repository (a planted defect named in the comment, a clean comment once it is removed), a pull request from a fork, and the first scheduled telemetry run. 0.3.5 is in review.
+Status, 17 November 2026: 0.2 shipped as 0.2.0, 0.3 as 0.3.0 with fixes up to 0.3.4, and the parallel inspector as 0.3.5 (`CHANGELOG.md`). Still open from 0.3's acceptance test: the pull request half on a test repository (a planted defect named in the comment, a clean comment once it is removed), a pull request from a fork, and the first scheduled telemetry run. 0.4 is next.
 
 | Version | What it adds | Needs |
 |---|---|---|
