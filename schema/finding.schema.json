@@ -227,7 +227,7 @@
         "symbol": {
           "type": "string",
           "minLength": 1,
-          "description": "The function, method or class, such as listOrders. A fingerprint built from file and symbol survives edits that move the line."
+          "description": "The function, method, class or variable, such as listOrders or DATABASE_URL. A fingerprint built from file and symbol survives edits that move the line."
         }
       }
     },
