@@ -22,6 +22,7 @@ import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
 import { container } from './group.js';
+import { toFinding, pagePath, REPORT } from './finding.js';
 import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
 import { validate } from '../scripts/lib/schema.js';
 
@@ -210,18 +211,25 @@ export const TIMEOUTS = { load: 180, check: 120, width: 420, motion: 480, close:
 // the longest single limit has run out (atLeast).
 const progress = { at: Date.now(), step: 'starting' };
 export function mark(step) { progress.at = Date.now(); progress.step = step; }
-export function startWatchdog(minutes, exit = (code) => process.exit(code)) {
+export function startWatchdog(minutes, exit = (code) => process.exit(code), stopped = () => {}, write = (m) => process.stderr.write(m)) {
   let limit = minutes * 60000;
   mark('starting');
   const dog = setInterval(() => {
     const idle = Date.now() - progress.at;
     if (idle < limit) return;
-    process.stderr.write(`\nITTEN watchdog: no progress for ${idle < 60000 ? `${Math.round(idle / 1000)} s` : `${(idle / 60000).toFixed(1)} min`}. Last step: ${progress.step} (begun ${new Date(progress.at).toISOString()}). Stopping with exit code 124.\n`);
+    write(`\nITTEN watchdog: no progress for ${idle < 60000 ? `${Math.round(idle / 1000)} s` : `${(idle / 60000).toFixed(1)} min`}. Last step: ${progress.step} (begun ${new Date(progress.at).toISOString()}). Stopping with exit code 124.\n`);
     clearInterval(dog);
+    stopped(`no progress for ${Math.round(idle / 1000)} s; last step: ${progress.step}`);
     exit(124);
   }, Math.min(30000, Math.max(100, limit / 4)));
   dog.unref();
   return { stop: () => clearInterval(dog), atLeast: (ms) => { limit = Math.max(limit, ms); } };
+}
+
+// report/1 for a run that judged nothing (schema/report.schema.json). A gate
+// reads the status before the findings, so its empty list never reads as clean.
+export function refusedReport(url, reason, started = new Date()) {
+  return { schema: REPORT, specialist: 'itten', version: VERSION, status: 'refused', reason, subject: url, started: new Date(started).toISOString(), tool: 'itten-inspector', date: new Date().toISOString(), findings: [] };
 }
 
 async function settle(page) {
@@ -553,8 +561,17 @@ export async function inspect(url, o = {}) {
   const shard = o.shard ?? null;
   const merging = !!o.mergeFrom?.length;
   // o.watchdog: minutes without progress before the run stops (10; 0 for none).
-  const dog = (o.watchdog ?? 10) > 0 ? startWatchdog(o.watchdog ?? 10) : null;
-  if (outDir) { rmSync(join(outDir, 'crops'), { recursive: true, force: true }); mkdirSync(join(outDir, 'crops'), { recursive: true }); }
+  const started = new Date();
+  // Until this run writes its report, report.json says it was refused: a run
+  // that crashes, is stopped by the watchdog or is killed never leaves an
+  // earlier run's report, or none, to be read as this one's.
+  const refuse = (reason) => { if (outDir && !shard) writeFileSync(join(outDir, 'report.json'), JSON.stringify(refusedReport(url, reason, started), null, 2)); };
+  const dog = (o.watchdog ?? 10) > 0 ? startWatchdog(o.watchdog ?? 10, undefined, (why) => refuse(`stopped by the watchdog: ${why}`)) : null;
+  if (outDir) {
+    rmSync(join(outDir, 'crops'), { recursive: true, force: true }); mkdirSync(join(outDir, 'crops'), { recursive: true });
+    if (!shard) rmSync(join(outDir, 'report.html'), { force: true });
+    refuse('the run stopped before it wrote its report');
+  }
   const timings = readTimings(o.timings);
   const pageKey = timingKey(url);
   const took = [];
@@ -1195,8 +1212,18 @@ export async function inspect(url, o = {}) {
     // Arrays of [value, count]: objects with numeric keys do not keep their order.
     const sortNum = (x) => Object.entries(x).map(([k, v]) => [parseFloat(k), v]).sort((a, b) => a[0] - b[0]);
     const resize = { pairs: plan.pairs.map(([a, b]) => `${a}→${b}`), breakpoints: plan.pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2 };
+    // report/1: complete unless a step timed out or the page never showed
+    // what --wait-for named; then partial, saying which.
+    const nTimedOut = list.filter((i) => i.check === 'timed-out').length;
+    const gaps = [
+      nTimedOut ? `${nTimedOut} ${nTimedOut === 1 ? 'step' : 'steps'} timed out, and nothing after ${nTimedOut === 1 ? 'it' : 'them'} was measured at ${nTimedOut === 1 ? 'that width' : 'those widths'}` : '',
+      watched.waited === false ? `no element matched --wait-for ${o.waitFor}, so the page was measured without it` : '',
+    ].filter(Boolean);
     const report = {
-      tool: 'itten-inspector', version: VERSION, url, date: new Date().toISOString(),
+      schema: REPORT, specialist: 'itten', version: VERSION,
+      status: gaps.length ? 'partial' : 'complete', ...(gaps.length ? { reason: gaps.join('; ') + '.' } : {}),
+      subject: url, started: started.toISOString(),
+      tool: 'itten-inspector', date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
       sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
@@ -1230,7 +1257,8 @@ export async function inspect(url, o = {}) {
       load: { networkIdle: watched.networkIdle, waitFor: o.waitFor ?? null, waited: watched.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0)),
         timing: { benchmarkIndex: T.index, scale: T.scale, window: T.window, horizon: T.horizon, ceiling: T.ceiling, ...(slowed ? { slowed: { from: slowed.index, rate: slowed.rate } } : {}) },
         watched: { for: watched.watched, still: watched.still, stillAt: watched.quietAt, late: watched.late.length, lastLate: watched.until }, remeasured },
-      issues: list,
+      // finding/1 (inspector/finding.js, schema/finding.schema.json).
+      findings: list.map((i) => toFinding(i, pagePath(url))),
     };
     // Against a committed baseline: what this run adds and what it fixes.
     if (o.baseline) report.baseline = compare(report, readBaseline(o.baseline), o.baseline, o.page);
@@ -2355,10 +2383,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     baseline: typeof args.baseline === 'string' ? args.baseline : undefined,
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
+  }).catch((e) => {
+    // The run judged nothing: say so in report.json, with the error, then fail.
+    if (!shard) { mkdirSync(resolve(out), { recursive: true }); writeFileSync(join(resolve(out), 'report.json'), JSON.stringify(refusedReport(url, `the run failed: ${String(e.message || e).split('\n')[0]}`), null, 2)); }
+    console.error(e.stack || String(e));
+    process.exit(1);
   });
   if (report.shard) process.exit(0);
   const s = report.summary;
   console.log(`\n${s.error} errors, ${s.warning} warnings, ${s.info} info. Report: ${join(out, 'report.html')}`);
+  if (report.status !== 'complete') console.log(`Partial run: ${report.reason}`);
   const b = report.baseline;
   if (b) console.log(b.found ? `Against ${b.file}: ${b.new.length} new, ${b.fixed.length} fixed.` : `${b.file} has no entry for ${b.page}.`);
   if (args['write-baseline']) console.log(`Baseline written for this page to ${typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json'}.`);

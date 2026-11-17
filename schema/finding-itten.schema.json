@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/atishaypahadiya/itten/schema/finding-itten.schema.json",
+  "title": "finding/1, ITTEN's extension",
+  "description": "The \"itten\" object of a finding/1 that ITTEN wrote: its own fields, beside the core in schema/finding.schema.json.",
+  "type": "object",
+  "required": [
+    "id",
+    "count",
+    "seen",
+    "first",
+    "title",
+    "rule",
+    "crops"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^i\\d{3,}$",
+      "description": "The finding's id in this report (i001, ...), in the order findings were first seen. Not stable between runs; use the fingerprint."
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many times the finding occurs, where more than its listed elements."
+    },
+    "seen": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Per mode (light, dark, 200% text, an engine, a resize), the widths it was seen at, as ranges."
+    },
+    "first": {
+      "type": "string",
+      "description": "The pass it was first seen in."
+    },
+    "title": {
+      "type": "string"
+    },
+    "rule": {
+      "type": "string",
+      "description": "The rules it comes from, as shown to the reader: reference/ IDs and WCAG criteria. The IDs alone are also in the core's rules."
+    },
+    "crops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "zoom",
+          "at",
+          "region"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "zoom": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "at": {
+            "type": "string"
+          },
+          "region": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "engine": {
+            "enum": [
+              "webkit",
+              "firefox"
+            ]
+          },
+          "composited": {
+            "enum": [
+              true
+            ],
+            "description": "Made from the frame the finding was measured in: the text laid over that frame's background."
+          }
+        }
+      }
+    },
+    "elements": {
+      "type": "array",
+      "description": "Per element of where.elements, in the same order: ITTEN's own fields, or null.",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "order": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Position in document order."
+          },
+          "pseudo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "movingBackground": {
+      "enum": [
+        true
+      ],
+      "description": "A contrast finding over pixels that changed between two frames: its value depends on the frame."
+    },
+    "resize": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "engine"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          },
+          "engine": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "URLs of failed requests (page-load)."
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "crisp",
+          "blurred"
+        ],
+        "properties": {
+          "crisp": {
+            "type": "integer"
+          },
+          "blurred": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "broken": {
+      "type": "array"
+    }
+  }
+}

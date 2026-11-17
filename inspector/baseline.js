@@ -9,6 +9,7 @@
 // by its id or its message, which change from run to run.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { view, findingsOf } from './finding.js';
 
 const SEVERITY = ['error', 'warning', 'info'];
 
@@ -26,11 +27,11 @@ const entryFor = (report) => ({
   version: report.version,
   system: report.system,
   widths: report.sweep.widths,
-  findings: report.issues.map((i) => ({ fingerprint: i.fingerprint, check: i.check, severity: i.severity, message: i.message, elements: i.elements.map((e) => e.sel) })),
+  findings: findingsOf(report).map((i) => ({ fingerprint: i.fingerprint, check: i.check, severity: i.severity, message: i.message, elements: i.elements.map((e) => e.sel) })),
 });
 
 // Adds or replaces this page's entry; other pages' entries are kept.
-export function writeBaseline(path, report, key = pageKey(report.url)) {
+export function writeBaseline(path, report, key = pageKey(report.subject ?? report.url)) {
   const b = readBaseline(path) ?? { tool: 'itten-inspector', note: 'Known findings per page. Written by inspect.js --write-baseline; compared by --baseline and the ITTEN action.', pages: {} };
   b.version = report.version;
   b.pages[key] = entryFor(report);
@@ -41,13 +42,14 @@ export function writeBaseline(path, report, key = pageKey(report.url)) {
 
 // New: in this run, not in the baseline. Fixed: in the baseline, not in this
 // run. Worse and better: in both, at a different severity.
-export function compare(report, baseline, file, page = pageKey(report.url)) {
+export function compare(report, baseline, file, page = pageKey(report.subject ?? report.url)) {
   const entry = baseline?.pages?.[page];
   if (!entry) return { file, page, found: false, new: [], fixed: [], worse: [], better: [] };
   const before = new Map(entry.findings.map((f) => [f.fingerprint, f]));
   const now = new Set(report.issues.map((i) => i.fingerprint));
+  const issues = findingsOf(report);
   const out = { file, page, found: true, date: entry.date, widths: entry.widths, sameWidths: entry.widths === report.sweep.widths, new: [], fixed: [], worse: [], better: [] };
-  for (const i of report.issues) {
+  for (const i of issues) {
     const was = before.get(i.fingerprint);
     if (!was) out.new.push(i.id);
     else if (SEVERITY.indexOf(i.severity) < SEVERITY.indexOf(was.severity)) out.worse.push({ id: i.id, was: was.severity });
@@ -66,5 +68,5 @@ export function failing(report, level) {
   const b = report.baseline;
   const counted = b?.found ? new Set([...b.new, ...b.worse.map((w) => w.id)]) : null;
   const sev = lv === 'warning' ? ['error', 'warning'] : ['error'];
-  return report.issues.filter((i) => sev.includes(i.severity) && (!counted || counted.has(i.id)));
+  return findingsOf(report).filter((i) => sev.includes(i.severity) && (!counted || counted.has(i.id)));
 }

@@ -18,6 +18,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspect, loadSystem, phaseOverlaps, measuredFields } from '../inspector/inspect.js';
+import { view, findingsOf } from '../inspector/finding.js';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { duration } from '../inspector/timings.js';
 
@@ -62,15 +63,16 @@ const glyphless = (v) => JSON.stringify(v ?? null).replace(/: \d+ glyphs/g, ': <
 // The summary counted without the findings over a moving background.
 const steadySummary = (r) => {
   const by = {};
-  for (const i of r.issues) if (!i.movingBackground) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
+  for (const i of findingsOf(r)) if (!i.movingBackground) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
   return JSON.stringify(Object.keys(by).sort().map((k) => [k, by[k]]));
 };
 
 // The differences between two reports of the same page, as sentences.
 export function compare(a, b, name = 'page', notes = []) {
   const diffs = [];
-  const A = new Map(a.issues.map((i) => [i.fingerprint, shape(i)]));
-  const B = new Map(b.issues.map((i) => [i.fingerprint, shape(i)]));
+  // Either shape: finding/1, or a report saved before it (view() reads both).
+  const A = new Map(findingsOf(a).map((i) => [i.fingerprint, shape(i)]));
+  const B = new Map(findingsOf(b).map((i) => [i.fingerprint, shape(i)]));
   for (const [k, x] of A) {
     const y = B.get(k);
     if (!y) { (x.movingBackground ? notes : diffs).push(`${name}: ${k} (${x.severity}) only in the first run${x.movingBackground ? MOVING : ''}`); continue; }
@@ -111,7 +113,7 @@ export async function run({ n = 6, pages }) {
   const diffs = [], notes = [];
   for (const name of Object.keys(serial)) diffs.push(...compare(serial[name], parallel[name], name, notes));
   for (const [label, reps] of [['one worker', serial], [`${n} workers`, parallel]]) for (const [name, rep] of Object.entries(reps)) for (const x of phaseOverlaps(rep.schedule.phases)) diffs.push(`${name}, ${label}: ${x}`);
-  const findings = Object.values(serial).reduce((x, r) => x + r.issues.length, 0);
+  const findings = Object.values(serial).reduce((x, r) => x + findingsOf(r).length, 0);
   return { diffs, notes, findings, pages: Object.keys(serial).length, seconds: { serial: s1, parallel: s2 }, workers: n, serial, parallel };
 }
 
@@ -147,7 +149,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       for (const [k, u] of urls.entries()) {
         const name = `${k + 1}-${new URL(u).pathname.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'index'}`;
         reps[name] = await inspect(u, { system: system?.system ?? null, systemPath: sys ?? null, full, workers: w, quiet: true, out: join(out, label, name) });
-        console.log(`  ${label}: ${u}, ${reps[name].issues.length} findings, ${duration(reps[name].schedule.seconds.total)}`);
+        console.log(`  ${label}: ${u}, ${findingsOf(reps[name]).length} findings, ${duration(reps[name].schedule.seconds.total)}`);
       }
       return reps;
     };

@@ -17,7 +17,8 @@ import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
-import { inspect, loadSystem } from '../inspector/inspect.js';
+import { inspect, loadSystem, startWatchdog, refusedReport } from '../inspector/inspect.js';
+import { view, findingsOf } from '../inspector/finding.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Short limits, in seconds, so the test takes minutes, not the defaults' hours.
@@ -30,6 +31,15 @@ export async function run({ quiet = true } = {}) {
     `const m = await import(${JSON.stringify(new URL('../inspector/inspect.js', import.meta.url).href)}); m.startWatchdog(0.02); m.mark('a step that never ends'); setInterval(() => {}, 1000);`], { encoding: 'utf8', timeout: 60000 });
   if (child.status !== 124) fails.push(`the watchdog did not stop a stalled process with exit code 124 (status ${child.status}, signal ${child.signal})`);
   if (!/no progress for [\d.]+ (s|min)\. Last step: a step that never ends/.test(child.stderr)) fails.push(`the watchdog did not name the last step: ${child.stderr.trim().slice(0, 200)}`);
+  // When the watchdog stops a run, the run is told why first, so its report.json
+  // can say it was refused (report/1) instead of leaving nothing, or an older report.
+  // The watchdog's timer is unref'd so it never keeps a process alive; a held
+  // timer keeps this one alive until the watchdog fires (or 10 s pass).
+  const hold = setTimeout(() => {}, 10000);
+  const stop = await new Promise((done) => { let why = null; startWatchdog(0.001, (code) => done({ code, why }), (w) => { why = w; }, () => {}); });
+  clearTimeout(hold);
+  if (stop.code !== 124 || !/^no progress for \d+ s; last step: /.test(stop.why ?? '')) fails.push(`the watchdog did not say why it stopped before stopping: ${JSON.stringify(stop)}`);
+  if (refusedReport('http://x/', stop.why ?? 'x').status !== 'refused' || refusedReport('http://x/', 'x').findings.length) fails.push('a refused report is not refused, or holds findings');
   const { system } = loadSystem(join(ROOT, 'fixtures', 'itten.system.json'));
   const port = 4175 + Math.floor(Math.random() * 500);
   const server = await start(port);
@@ -39,7 +49,9 @@ export async function run({ quiet = true } = {}) {
       system, systemPath: 'fixtures/itten.system.json', quiet, out: join(ROOT, 'dist', 'fixtures', 'hang'),
       widths: [320, 768, 1024], keyWidths: [320, 768], engines: ['webkit'], engineWidths: [320, 768, 1024], timeouts: LIMITS, workers: 3, timings: false,
     });
-    const timed = r.issues.filter((i) => i.check === 'timed-out');
+    const timed = findingsOf(r).filter((i) => i.check === 'timed-out');
+    // Steps timed out, so the run is partial (report/1), and says so.
+    if (r.status !== 'partial' || !/timed out/.test(r.reason ?? '')) fails.push(`a run with steps that timed out is ${r.status}, not partial with a reason (${r.reason})`);
     // The report gives the widths a finding was seen at as text: "320, 768".
     const ws = (v) => String(v ?? '').split(',').map((x) => Number(x.trim())).filter(Boolean);
     const at = (mode) => timed.find((i) => ws(i.seen[mode]).includes(768));

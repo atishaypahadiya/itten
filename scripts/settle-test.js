@@ -13,6 +13,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem, settleTiming } from '../inspector/inspect.js';
+import { view, findingsOf } from '../inspector/finding.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fixtures');
@@ -46,7 +47,7 @@ export async function run({ quiet = true } = {}) {
       if (!(t.scale >= 1.5) || t.window <= 500 || t.horizon <= 5000) {
         fails.push(`${at}: index ${t.benchmarkIndex} (${t.slowed.rate}x from ${t.slowed.from}) gave scale ${t.scale}, window ${t.window} ms, watch ${t.horizon} ms; the scaling did not run`);
       }
-      const load = r.issues.filter((i) => i.check === 'page-load');
+      const load = findingsOf(r).filter((i) => i.check === 'page-load');
       if (!twin && !load.some(inD20)) fails.push(`${at}: d20, drawn 2.5 s after load, was not reported as late`);
       if (twin && load.length) fails.push(`${at}: the clean twin has page-load findings: ${load.map((i) => i.message.slice(0, 120)).join(' | ')}`);
     }

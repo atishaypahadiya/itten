@@ -81,6 +81,8 @@ export async function run() {
     ok(md.startsWith(marker('itten-report')), 'the comment starts with its marker');
     ok(!md.includes('@someone') && !md.includes('<b>'), 'page text cannot mention people or open HTML');
     ok(/No baseline/.test(md) && /This check fails: 1 error in all/.test(md), 'states the verdict and the missing baseline');
+    const part = render({ ...s, pages: [{ ...s.pages[0], status: 'partial', reason: '2 steps timed out.' }] });
+    ok(/Partial run on `[^`]+`: 2 steps timed out\. Its findings are real but do not cover the whole page\./.test(part) && !/Partial run/.test(render(s)), 'a partial run is stated under the table, and only then');
     ok(render({ ...s, pages: Array(400).fill(s.pages[0]) }, { limit: 5000 }).length <= 5000, 'the comment is cut to the limit');
     // Info findings repeated across one table's cells: one line, naming the cells.
     const cell = (n) => ({ id: `i00${n}`, check: 'text-wrap-pretty', title: 'Last line with one word', severity: 'info', message: `The last line holds one word, "w${n}". More.`, element: `#t > table > tbody > tr:nth-of-type(${n}) > td:nth-of-type(2)` });

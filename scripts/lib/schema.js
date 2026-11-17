@@ -2,7 +2,8 @@
 // schema/system.schema.json and schema/overrides.schema.json. No dependencies.
 // Supported: type, required, properties, additionalProperties, items,
 // minItems, maxItems, enum, minimum, maximum, exclusiveMinimum, minLength,
-// minProperties, pattern, oneOf, anyOf, $ref (local #/...), and one ITTEN keyword:
+// minProperties, propertyNames, pattern, oneOf, anyOf, uniqueItems, $ref (local #/..., or another
+// schema given to register(), by its $id or a path relative to this one's), and one ITTEN keyword:
 // "ascending": true, which requires a number array in ascending order with
 // no repeats.
 
@@ -14,15 +15,23 @@ function matchesType(v, t) {
   return typeOf(v) === t;
 }
 
+const registry = new Map();
+// Makes a schema reachable by $ref from other schemas, by its $id.
+export function register(schema) { registry.set(schema.$id, schema); return schema; }
+
+// Returns [the schema a $ref points to, the root it is to be read against].
 function deref(root, ref) {
-  if (!ref.startsWith('#/')) throw new Error(`Only local $ref is supported: ${ref}`);
-  return ref.slice(2).split('/').reduce((n, k) => n?.[k.replace(/~1/g, '/').replace(/~0/g, '~')], root);
+  if (ref.startsWith('#/')) return [ref.slice(2).split('/').reduce((n, k) => n?.[k.replace(/~1/g, '/').replace(/~0/g, '~')], root), root];
+  const id = root.$id ? new URL(ref, root.$id).href : ref;
+  const other = registry.get(id);
+  if (!other || id.includes('#')) throw new Error(`$ref ${ref} is not a registered schema`);
+  return [other, other];
 }
 
 export function validate(schema, value, root = schema, path = '') {
   const errors = [];
   const at = path || '(root)';
-  if (schema.$ref) return validate(deref(root, schema.$ref), value, root, path);
+  if (schema.$ref) { const [s, r] = deref(root, schema.$ref); return validate(s, value, r, path); }
   if (schema.type) {
     const types = [schema.type].flat();
     if (!types.some((t) => matchesType(value, t))) return [`${at}: expected ${types.join(' or ')}, got ${typeOf(value)}`];
@@ -38,6 +47,7 @@ export function validate(schema, value, root = schema, path = '') {
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) errors.push(`${at}: needs at least ${schema.minItems} items`);
     if (schema.maxItems !== undefined && value.length > schema.maxItems) errors.push(`${at}: allows at most ${schema.maxItems} items`);
+    if (schema.uniqueItems && new Set(value.map((v) => JSON.stringify(v))).size !== value.length) errors.push(`${at}: items must not repeat`);
     if (schema.items) value.forEach((v, i) => errors.push(...validate(schema.items, v, root, `${path}[${i}]`)));
     if (schema.ascending) {
       for (let i = 1; i < value.length; i++) {
@@ -48,6 +58,7 @@ export function validate(schema, value, root = schema, path = '') {
   if (typeOf(value) === 'object') {
     for (const k of schema.required ?? []) if (!(k in value)) errors.push(`${at}: missing required "${k}"`);
     if (schema.minProperties !== undefined && Object.keys(value).length < schema.minProperties) errors.push(`${at}: needs at least ${schema.minProperties} entries`);
+    if (schema.propertyNames) for (const k of Object.keys(value)) for (const e of validate(schema.propertyNames, k, root, path)) errors.push(`${at}: property name ${e.slice(e.indexOf(':') + 2)}`);
     for (const [k, v] of Object.entries(value)) {
       const sub = schema.properties?.[k];
       if (sub) errors.push(...validate(sub, v, root, `${path}.${k}`));
@@ -57,10 +68,10 @@ export function validate(schema, value, root = schema, path = '') {
   }
   if (schema.oneOf) {
     const passing = schema.oneOf.filter((s) => validate(s, value, root, path).length === 0).length;
-    if (passing !== 1) errors.push(`${at}: must match exactly one of: ${schema.oneOf.map((s) => (s.required ? s.required.join(' + ') : 'a form')).join(', ')} (matched ${passing})`);
+    if (passing !== 1) errors.push(`${at}: must match exactly one of: ${schema.oneOf.map((s) => (s.title ?? (s.required ? s.required.join(' + ') : 'a form'))).join(', ')} (matched ${passing})`);
   }
   if (schema.anyOf && !schema.anyOf.some((s) => validate(s, value, root, path).length === 0)) {
-    errors.push(`${at}: must match at least one of: ${schema.anyOf.map((s) => (s.required ? s.required.join(' + ') : 'a form')).join(', ')}`);
+    errors.push(`${at}: must match at least one of: ${schema.anyOf.map((s) => (s.title ?? (s.required ? s.required.join(' + ') : 'a form'))).join(', ')}`);
   }
   return errors;
 }

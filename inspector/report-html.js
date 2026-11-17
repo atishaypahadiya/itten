@@ -1,6 +1,7 @@
 // Renders report.json as a single static HTML page.
 
 import { groupInfo, place, template } from './group.js';
+import { view, findingsOf } from './finding.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -90,6 +91,7 @@ const movingText = (r) => {
 };
 
 export function renderHtml(r) {
+  r = { ...r, findings: undefined, issues: findingsOf(r) };   // finding/1, or a report from before it
   const checks = Object.entries(r.summary.byCheck).filter(([, c]) => c.error + c.warning + c.info);
   const table = checks.length ? `
     <table>
@@ -169,7 +171,7 @@ export function renderHtml(r) {
 <body>
 <main>
   <h1>Inspection report</h1>
-  <p><a href="${esc(r.url)}">${esc(r.url)}</a></p>
+  <p><a href="${esc(r.subject ?? r.url)}">${esc(r.subject ?? r.url)}</a></p>${r.status && r.status !== 'complete' ? `\n  <p>Partial run: ${esc(r.reason)} The findings below are real, but they do not cover the whole page.</p>` : ''}
   <p class="meta">${esc(r.date)} · ${esc(r.environment.browser)} on ${esc(r.environment.platform)} · ${r.mode === 'system' ? `checked against <code>${esc(r.system)}</code>` : 'no system file: distinct-value mode'}</p>
   <p>${plural(r.summary.error, 'error')}, ${plural(r.summary.warning, 'warning')}, ${r.summary.info} info. Widths ${esc(r.sweep.widths)} px in light; contrast and fonts at ${r.sweep.keyWidths.join(', ')} px in light and dark; overflow, clipping and overlap again at 200% text; hairlines again at 2×; motion at the last key width, with and without reduced motion. Every width is a fresh load; the layout is checked again after resizing the window ${r.sweep.resize?.pairs?.length ? `${r.sweep.resize.pairs.length} times (${esc(r.sweep.resize.pairs.join(', '))} px)` : 'across each breakpoint'}.</p>
   ${table}

@@ -7,6 +7,7 @@
 // Usage: node scripts/ignore-test.js
 // Exports run() for scripts/check.js; it returns the failures.
 
+import { findingsOf } from '../inspector/finding.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
@@ -24,7 +25,7 @@ export async function run({ quiet = true } = {}) {
       system, systemPath: 'fixtures/itten.system.json', quiet, out: join(ROOT, 'dist', 'fixtures', 'ignore'),
       widths: [1024], keyWidths: [1024], engines: [], engineWidths: [], workers: 1, timings: false, aroundBreakpoints: false,
     });
-    const radii = r.issues.filter((i) => i.check === 'radius').map((i) => i.message.match(/^Radius ([\d.]+) px/)?.[1]).filter(Boolean).sort();
+    const radii = findingsOf(r).filter((i) => i.check === 'radius').map((i) => i.message.match(/^Radius ([\d.]+) px/)?.[1]).filter(Boolean).sort();
     const want = ['5', '9'];
     if (JSON.stringify(radii) !== JSON.stringify(want)) fails.push(`radius findings at ${radii.join(', ') || 'none'} px; expected ${want.join(', ')} px (5: the parent's ignore without -subtree must not reach the box; 9: an ignore of another check must not skip radius; 6, 7 and 10 must be skipped)`);
     // 6 and 7 px skip radius alone; 10 px skips every check that looks at it, so at least 3.

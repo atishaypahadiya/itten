@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/atishaypahadiya/itten/schema/report.schema.json",
+  "title": "report/1",
+  "description": "One run of one specialist on one subject, and its findings. A gate reads status before findings: only a complete run's findings say what is and is not wrong; a partial run's findings are true but do not cover everything; a refused run judged nothing, and its empty list of findings never means clean. The core fields below are reserved; a specialist may keep its own run data beside them. No field holds secret material, or a hash of it (see finding.schema.json). Adding an optional field keeps the format at report/1; renaming or removing a field, or adding a required one, makes it report/2. See protocol/04-inspect.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "specialist",
+    "version",
+    "status",
+    "findings"
+  ],
+  "properties": {
+    "schema": {
+      "enum": [
+        "report/1"
+      ]
+    },
+    "specialist": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The specialist's version."
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "refused"
+      ],
+      "description": "complete: every check ran. partial: some did not (a step timed out, the page never showed what it was waiting for); the reason names them. refused: nothing was judged (the subject could not be reached, the run stopped before judging, or a guard declined to run it); the reason says why."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the run is partial or refused. Required unless complete."
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What was inspected: a page's URL, a repository, a service."
+    },
+    "started": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+      "description": "When the run started, ISO 8601 in UTC."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "finding.schema.json"
+      },
+      "description": "Each a finding/1. Empty when refused."
+    }
+  },
+  "oneOf": [
+    {
+      "title": "status complete",
+      "properties": {
+        "status": {
+          "enum": [
+            "complete"
+          ]
+        }
+      }
+    },
+    {
+      "title": "status partial or refused, with a reason",
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "partial",
+            "refused"
+          ]
+        }
+      }
+    }
+  ]
+}
