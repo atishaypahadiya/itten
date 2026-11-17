@@ -3,7 +3,11 @@
 // 768 px as a key width (contrast, 2×, motion) and in WebKit, every pass
 // that loads it at 768 px must time out, record a timed-out error naming
 // the width and the step, close its browser context and go on: 1024 px must
-// still be measured after 768 px, and the run must finish.
+// still be measured after 768 px, and the run must finish. That includes
+// the resize from 768 px to 320 px, in Chromium and in WebKit: it loads the
+// page at 768 px first. A resize from 320 px to 768 px loads at 320 px and
+// must be measured.
+// The jobs run on three workers, so a hung job must not hold the others.
 // And the watchdog: a process that makes no progress for its limit (here
 // about a second) must stop with exit code 124 and name its last step.
 // Usage: node scripts/timeout-test.js
@@ -33,7 +37,7 @@ export async function run({ quiet = true } = {}) {
   try {
     const r = await inspect(`http://127.0.0.1:${port}/fixtures/hang.html`, {
       system, systemPath: 'fixtures/itten.system.json', quiet, out: join(ROOT, 'dist', 'fixtures', 'hang'),
-      widths: [320, 768, 1024], keyWidths: [320, 768], engines: ['webkit'], engineWidths: [320, 768, 1024], timeouts: LIMITS,
+      widths: [320, 768, 1024], keyWidths: [320, 768], engines: ['webkit'], engineWidths: [320, 768, 1024], timeouts: LIMITS, workers: 3, timings: false,
     });
     const timed = r.issues.filter((i) => i.check === 'timed-out');
     // The report gives the widths a finding was seen at as text: "320, 768".
@@ -45,7 +49,12 @@ export async function run({ quiet = true } = {}) {
       if (it.severity !== 'error') fails.push(`the ${mode} timed-out finding is a ${it.severity}, not an error`);
       if (!/^[A-Z].* did not finish within \d+ s \(768 px/.test(it.message)) fails.push(`the ${mode} timed-out finding does not give the width and the step: ${it.message.slice(0, 160)}`);
     }
-    const elsewhere = timed.filter((i) => Object.values(i.seen).flatMap(ws).some((w) => w !== 768));
+    for (const mode of ['resize', 'WebKit resize']) {
+      const it = timed.find((i) => String(i.seen[mode] ?? '').split(', ').includes('768→320'));
+      if (!it) fails.push(`no timed-out finding for the ${mode} from 768 px to 320 px, which loads the page at 768 px`);
+    }
+    const loadsAt768 = (s) => /^768→|^768$/.test(s.trim());
+    const elsewhere = timed.filter((i) => Object.values(i.seen).flatMap((v) => String(v).split(',')).some((s) => !loadsAt768(s)));
     if (elsewhere.length) fails.push(`timed out at other widths: ${elsewhere.map((i) => i.fingerprint).join('; ')}`);
     const measured = r.distinct.perWidth.map((p) => p.w);
     if (!measured.includes(320) || !measured.includes(1024)) fails.push(`the widths either side of 768 px were not both measured in Chromium: ${measured.join(', ') || 'none'}`);

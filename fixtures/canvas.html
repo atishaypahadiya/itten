@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moving background</title>
+<style>
+  /* In px, so the 200% text pass adds no overflow of its own. */
+  body { margin: 0; padding: 32px; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+  .scene { position: relative; width: 576px; height: 192px; margin: 0 0 32px; }
+  .scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .scene p { position: absolute; left: 32px; top: 64px; margin: 0; color: #fff; }
+  .still { width: 512px; padding: 16px 32px; margin: 0 0 32px; background: #bbb; }
+  .still p { margin: 0; color: #fff; }
+  .narrow { width: 96px; margin: 0; white-space: nowrap; background: #eee; }
+</style>
+</head>
+<body>
+  <!-- scripts/canvas-test.js. -->
+  <!-- White text over a canvas that redraws every frame, its colour cycling through light tones (white on them measures about 1.3 to 3:1): a contrast error over a moving background. -->
+  <div class="scene">
+    <canvas width="576" height="192"></canvas>
+    <p class="over">Text over a scene that keeps drawing</p>
+  </div>
+  <!-- White text over a still grey box: a contrast error over a still background. -->
+  <div class="still"><p class="over-still">Text over a background that holds still</p></div>
+  <!-- A line too long for its painted box: an overflow error (Text spills ... out of its own box), unrelated to the canvas. -->
+  <p class="narrow">This line runs out of its narrow box</p>
+  <script>
+    const c = document.querySelector('canvas'), g = c.getContext('2d');
+    const draw = (t) => { g.fillStyle = `hsl(${(t / 8) % 360} 55% 70%)`; g.fillRect(0, 0, c.width, c.height); requestAnimationFrame(draw); };
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

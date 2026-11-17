@@ -98,9 +98,9 @@ export function renderHtml(r) {
     <article id="${it.id}">
       <h3>${esc(it.title)}</h3>
       <p>${esc(it.message)}</p>
-      <p class="meta">${r.baseline?.found && r.baseline.new.includes(it.id) ? 'New since the baseline · ' : ''}${esc(it.rule)} · ${it.id} · seen at ${seenText(it)}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
-      <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}</span></li>`).join('')}${(it.resources || []).map((u) => `<li><code>${esc(u)}</code></li>`).join('')}</ul>
-      ${it.crops.map((c) => `<figure><img src="${esc(c.path)}" alt="Crop of ${esc(it.title.toLowerCase())} at ${esc(c.at)}, zoomed ${c.zoom} times" loading="lazy"><figcaption>${esc(c.at)}, ${c.zoom}×. Magenta: the elements involved. Blue: the edges compared.</figcaption></figure>`).join('')}
+      <p class="meta">${r.baseline?.found && r.baseline.new.includes(it.id) ? 'New since the baseline · ' : ''}${esc(it.rule)} · ${it.id} · seen at ${seenText(it)}${it.movingBackground ? ' · over a moving background, so the value and the crop depend on the frame' : ''}${!it.resources && it.count > it.elements.length ? ` · ${it.count} occurrences, ${it.elements.length} listed` : ''}</p>
+      <ul class="els">${it.elements.map((e) => `<li><code>${esc(e.sel)}</code> <span class="lbl">${esc(e.label)}${e.text ? ` “${esc(e.text)}”` : ''}</span></li>`).join('')}${(it.resources || []).map((u) => `<li><code>${esc(u)}</code></li>`).join('')}</ul>
+      ${it.crops.map((c) => `<figure><img src="${esc(c.path)}" alt="Crop of ${esc(it.title.toLowerCase())} at ${esc(c.at)}, zoomed ${c.zoom} times" loading="lazy"><figcaption>${esc(c.at)}, ${c.zoom}×${c.composited ? ', composited: text over the measured frame' : ''}. Magenta: the elements involved. Blue: the edges compared.</figcaption></figure>`).join('')}
     </article>`;
 
   const sections = ['error', 'warning', 'info'].map((sev) => {

@@ -56,7 +56,7 @@ node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.jso
 - `--system`: the project's system file. Without it, the inspector reports how many distinct font sizes, spacing values and radii the page uses, instead of checking them against a scale.
 - `--out`: where to write `report.json`, `report.html` and the crops. Add it to `.gitignore`.
 
-By default the inspector measures the page at 320, 768, 1440 and 1920 px wide, each a fresh load, at 200% text, in light and dark, and in WebKit and Firefox as well as Chromium; then it resizes the window across each breakpoint and measures again, since some pages break only after a resize. Add `--full` to sweep every 40 px from 320 to 1920 px, in every engine, before a release or when a finding depends on the width. The report lists each issue by severity with a zoomed crop. `protocol/04-inspect.md` explains every check, what it does not judge, and the order to fix things in.
+By default the inspector measures the page at 320, 768, 1440 and 1920 px wide and at the width on each side of every breakpoint between them, each a fresh load, at 200% text, in light and dark, and in WebKit and Firefox as well as Chromium; then it resizes the window across each breakpoint and measures again, since some pages break only after a resize. Add `--full` to sweep every 40 px from 320 to 1920 px, in every engine, before a release or when a finding depends on the width. The widths and passes run as separate jobs, several at once (`--workers`, by default the CPU cores less two); the findings are the same as on one worker. Before the jobs start it prints its plan and how long it expects to take. The report lists each issue by severity with a zoomed crop. `protocol/04-inspect.md` explains every check, what it does not judge, and the order to fix things in.
 
 ## On every pull request
 
@@ -112,7 +112,7 @@ The other inputs:
 |---|---|---|
 | `pages` | `/` | Paths relative to the served root or `url`, one per line or comma-separated. Inspect each distinct template. |
 | `system` | `itten.system.json` if present | The system file. `none` runs in distinct-value mode. An invalid file fails the run. |
-| `mode` | `quick` | `quick`: 320, 768, 1440 and 1920 px. `full`: every 40 px from 320 to 1920 px. |
+| `mode` | `quick` | `quick`: 320, 768, 1440 and 1920 px, and the width on each side of every breakpoint between them. `full`: every 40 px from 320 to 1920 px. |
 | `fail-on` | `errors` | `errors`, `warnings` or `never`. With a baseline, only findings that are new or more severe count. |
 | `baseline` | `itten-baseline.json` | The committed list of known findings. |
 | `write-baseline` | `false` | `true` writes a fresh `itten-baseline.json` for these pages into the artifact. |
@@ -120,10 +120,59 @@ The other inputs:
 | `comment` | `true` | `false` keeps to the job summary. |
 | `name` | `itten-report` | Names the artifact and the comment. Give each use of the action in one workflow its own name. |
 | `working-directory` | `.` | Where the paths above are relative to. |
+| `workers` | the runner's CPU cores less two | Jobs at once. A standard 4-core Linux runner gets 2. |
+| `shard` | none | `i/n` for one job of a matrix: measure every n-th job of each page and upload `shard.json` (see Sharding). |
+| `merge` | none | For the job after a sharded matrix: the directory the shard artifacts were downloaded into. |
 
 Outputs: `errors`, `warnings`, `info`, `new`, `fixed`, `failing`, `report-dir` and `artifact-url`.
 
 Give every job that runs the action a `timeout-minutes`: 30 for `quick` and 90 for `full` cover a few pages with room to spare. The inspector holds each step to a limit, records a step that runs past it as a `timed-out` error and goes on, and stops itself with exit code 124 after 10 minutes without progress. The job's limit is the last guard, for what happens outside the inspector: a build, a server that never answers, a runner that stalls. GitHub's own default is 360 minutes.
+
+### Sharding
+
+A full sweep of several pages can take longer than one runner should. The matrix below splits each page's jobs across three runners and merges them in a fourth, which crops, measures motion alone, writes the one report and keeps the one comment. Each shard and the merge job serve the site the same way, and every job must pass the same `mode`, `system` and `pages`. A quick sweep rarely needs this.
+
+```yaml
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: atishaypahadiya/itten@v0.3.5
+        with:
+          static-dir: dist
+          mode: full
+          shard: ${{ matrix.shard }}
+          name: itten-shard-${{ strategy.job-index }}
+  report:
+    needs: measure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: itten-shard-*
+          path: itten-shards
+      - uses: atishaypahadiya/itten@v0.3.5
+        with:
+          static-dir: dist
+          mode: full
+          merge: itten-shards
+```
+
+A shard job writes a short job summary and no comment, and does not fail on findings; the merge job reports and fails as an unsharded run would. The merge stops if a shard is missing or was run with other options.
 
 The baseline holds the findings the project has accepted for now, each logged as an override, so a pull request is judged by what it adds. To make one, run the workflow once with `write-baseline: true` (from `workflow_dispatch`, say), download the artifact, and commit its `itten-baseline.json` at the project's root. Write it in CI rather than on a laptop: fonts and line breaks differ between platforms, and those differences would show as new and fixed findings. Rewrite it when an accepted finding is fixed, or the fixed count stays above zero. On the command line, `inspect.js <url> --baseline itten-baseline.json` compares in the same way and `--write-baseline` writes one.
 
@@ -167,7 +216,7 @@ node itten/scripts/overrides.js check    # validates, and fails if the page is o
 
 The action runs the same check whenever `itten.overrides.json` exists. `fixtures/overrides/` holds an example of both files.
 
-To silence an inspector check on an element whose override is logged, add `data-itten-ignore="<check>"` to it, for example `data-itten-ignore="near-miss-edge"`. The report counts ignored elements, so an ignore without a matching override entry is easy to find.
+To silence an inspector check on an element whose override is logged, add `data-itten-ignore="<check>"` to it, for example `data-itten-ignore="near-miss-edge"`. It skips that check on that element only; add `data-itten-ignore-subtree` as well to skip it on everything inside the element. The report counts ignored elements, so an ignore without a matching override entry is easy to find.
 
 Overrides are also how ITTEN learns. Once a month, `scripts/telemetry.js` reads `itten.overrides.json` from each public repository of ITTEN's owner that includes ITTEN as a submodule, and nothing else from those repositories. A rule overridden in three or more projects gets an issue in ITTEN with the reasons side by side, since a rule that many projects set aside is a rule to rewrite. The latest run is in `research/telemetry.md`.
 

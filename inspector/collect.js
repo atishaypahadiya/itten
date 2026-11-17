@@ -18,7 +18,7 @@ export function collect(opts) {
   const sx = window.scrollX, sy = window.scrollY;
   const issues = [];
   const counts = { graphics: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0 };
-  const data = { spacing: {}, fontSizes: {}, radii: {}, capsules: 0, text: [], fontReps: [], fontFaces: [], textSizes: {}, spacingObs: [], typeObs: [], labels: {} };
+  const data = { spacing: {}, fontSizes: {}, radii: {}, capsules: 0, text: [], fontReps: [], fontFaces: [], textSizes: {}, spacingObs: [], typeObs: [], labels: {}, texts: {} };
   const r2 = (v) => Math.round(v * 100) / 100;
   const r1 = (v) => Math.round(v * 10) / 10;
   const P = (q) => [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)];
@@ -56,22 +56,35 @@ export function collect(opts) {
     selCache.set(el, s);
     return s;
   };
-  const ownText = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join(' ').replace(/\s+/g, ' ').trim();
-  const label = (el) => {
-    let t = ownText(el) || (el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || '').replace(/\s+/g, ' ').trim();
-    if (t.length > 40) t = t.slice(0, 39) + '…';
-    const cls = el.classList && el.classList[0] ? '.' + el.classList[0] : '';
-    return el.localName + cls + (t ? ` "${t}"` : '');
+  // A label names the element by its tag and first class, never by its
+  // text: text can change while the page runs (a counter, a story line), and
+  // a label is compared between runs. The selector beside it says which one.
+  const label = (el) => el.localName + (el.classList && el.classList[0] ? '.' + el.classList[0] : '');
+  // The opening text of an element, about 60 characters, for a reader of
+  // the report only: it is never compared between runs (the text can change
+  // while the page runs) and never part of a fingerprint or a label.
+  const opening = (el) => {
+    let t = (el.getAttribute?.('aria-label') || el.getAttribute?.('alt') || '').trim();
+    if (!t) {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (/^(script|style|noscript|template)$/i.test(n.parentNode?.localName ?? '') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      for (let n; (n = w.nextNode()) && t.length < 80;) t += ' ' + n.data;
+    }
+    t = t.replace(/\s+/g, ' ').trim();
+    return t.length > 60 ? t.slice(0, 59) + '…' : t;
   };
-  const E = (e) => ({ sel: sel(e.el), label: label(e.el), rect: P(e.r) });
+  const E = (e) => { const t = opening(e.el); return { sel: sel(e.el), label: label(e.el), ...(t ? { text: t } : {}), rect: P(e.r) }; };
 
-  // data-itten-ignore="check-id ..." on the element or an ancestor.
+  // data-itten-ignore="check-id ..." on the element itself; on an ancestor
+  // only when that ancestor also has data-itten-ignore-subtree.
   const ignoredPairs = new Set();
   const live = (e, check) => {
-    const h = e.el.closest('[data-itten-ignore]');
-    if (!h) return true;
-    const v = h.getAttribute('data-itten-ignore').split(/\s+/);
-    if (!v.includes(check) && !v.includes('all')) return true;
+    let hit = false;
+    for (let x = e.el; x && x.nodeType === 1 && !hit; x = x.parentElement) {
+      if (!x.hasAttribute('data-itten-ignore') || (x !== e.el && !x.hasAttribute('data-itten-ignore-subtree'))) continue;
+      const v = x.getAttribute('data-itten-ignore').split(/\s+/);
+      hit = v.includes(check) || v.includes('all');
+    }
+    if (!hit) return true;
     const k = check + '|' + sel(e.el);
     if (!ignoredPairs.has(k)) { ignoredPairs.add(k); counts.ignored++; }
     return false;
@@ -234,7 +247,7 @@ export function collect(opts) {
         const x = r2(Math.abs(v.value));
         if (x < 0.01) continue;
         data.spacing[x] = (data.spacing[x] || 0) + 1;
-        if (data.spacingObs.length < 30000) { const k = sel(e.el); data.spacingObs.push([k, p, x]); if (!(k in data.labels)) data.labels[k] = label(e.el); }
+        if (data.spacingObs.length < 30000) { const k = sel(e.el); data.spacingObs.push([k, p, x]); if (!(k in data.labels)) { data.labels[k] = label(e.el); data.texts[k] = opening(e.el); } }
       }
     }
   }
@@ -242,7 +255,7 @@ export function collect(opts) {
     data.typeObs = [];
     for (const e of textEntries) {
       const fs = r2(parseFloat(e.s.fontSize));
-      if (opts.recordSizes && Object.keys(data.textSizes).length < 3000 && live(e, 'text-resize')) { const k = sel(e.el); data.textSizes[k] = fs; if (!(k in data.labels)) data.labels[k] = label(e.el); }
+      if (opts.recordSizes && Object.keys(data.textSizes).length < 3000 && live(e, 'text-resize')) { const k = sel(e.el); data.textSizes[k] = fs; if (!(k in data.labels)) { data.labels[k] = label(e.el); data.texts[k] = opening(e.el); } }
       if (!want.has('type-scale') || !live(e, 'type-scale')) continue;
       data.fontSizes[fs] = (data.fontSizes[fs] || 0) + 1;
       const lh = e.s.lineHeight === 'normal' ? 'normal' : r2(parseFloat(e.s.lineHeight));
@@ -253,7 +266,7 @@ export function collect(opts) {
       while (b && isInline(b)) b = b.parent;
       const run = isInline(e) && !!b && b.textNodes?.length > 0 && Math.abs(parseFloat(b.s.fontSize) - fs) < 0.05;
       const family = e.s.fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
-      if (data.typeObs.length < 10000) { const k = sel(e.el); data.typeObs.push([k, fs, lh, parseFloat(e.s.fontWeight), family, run]); if (!(k in data.labels)) data.labels[k] = label(e.el); }
+      if (data.typeObs.length < 10000) { const k = sel(e.el); data.typeObs.push([k, fs, lh, parseFloat(e.s.fontWeight), family, run]); if (!(k in data.labels)) { data.labels[k] = label(e.el); data.texts[k] = opening(e.el); } }
     }
   }
 

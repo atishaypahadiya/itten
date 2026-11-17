@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ignore scope</title>
+<style>
+  body { margin: 0; padding: 2rem; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+  .box { width: 12rem; height: 3rem; margin: 0 0 1rem; background: #dde; }
+  .r5 { border-radius: 5px; } .r6 { border-radius: 6px; } .r7 { border-radius: 7px; }
+  .r9 { border-radius: 9px; } .r10 { border-radius: 10px; }
+</style>
+</head>
+<body>
+  <!-- scripts/ignore-test.js: each box has a radius outside the system's 4 and 12 px, one value per case. -->
+  <!-- 5 px: the ignore is on the parent, without -subtree, so the box is still checked. -->
+  <div data-itten-ignore="radius"><div class="box r5"></div></div>
+  <!-- 6 px: the ignore is on the box itself. Not reported. -->
+  <div class="box r6" data-itten-ignore="radius"></div>
+  <!-- 7 px: the parent ignores radius for everything inside it. Not reported. -->
+  <div data-itten-ignore="radius" data-itten-ignore-subtree><div class="box r7"></div></div>
+  <!-- 9 px: the box ignores another check, so radius is still checked. -->
+  <div class="box r9" data-itten-ignore="overlap"></div>
+  <!-- 10 px: the box ignores every check. Not reported. -->
+  <div class="box r10" data-itten-ignore="all"></div>
+</body>
+</html>

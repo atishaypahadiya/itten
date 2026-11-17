@@ -14,7 +14,10 @@
     "telemetry": "node scripts/telemetry.js",
     "test:action": "node scripts/action-test.js",
     "test:settle": "node scripts/settle-test.js",
-    "test:timeout": "node scripts/timeout-test.js"
+    "test:timeout": "node scripts/timeout-test.js",
+    "test:parity": "node scripts/parity-test.js",
+    "test:ignore": "node scripts/ignore-test.js",
+    "test:canvas": "node scripts/canvas-test.js"
   },
   "devDependencies": {
     "playwright": "^1.65.1"

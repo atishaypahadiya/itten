@@ -8,12 +8,13 @@
 //        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
 //        [--wait-for <selector>] [--settle <ms>] [--reference-index 400] [--slow-to <index>] [--watchdog <minutes>]
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
+//        [--workers N] [--shard i/n | --merge <shard dir>,<shard dir>,...] [--no-breakpoint-widths]
 //   node itten/inspector/inspect.js --validate itten.system.json
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { platform, release } from 'node:os';
+import { platform, release, cpus, totalmem } from 'node:os';
 import { collect } from './collect.js';
 import { typography } from './typography.js';
 import { motionInit, motionReport, benchmarkIndex } from './motion.js';
@@ -21,6 +22,7 @@ import { decodePng, encodePng, upscale, outline } from './png.js';
 import { renderHtml } from './report-html.js';
 import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
 import { container } from './group.js';
+import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
 import { validate } from '../scripts/lib/schema.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,6 +64,24 @@ export const CHECKS = {
   'frame-timing': { title: 'Long animation frames', rule: 'CRF-28 · MOT-11' },
 };
 const SEVERITY = ['error', 'warning', 'info'];
+// Measured fields: values a timing-sensitive check produces, which differ
+// between any two runs of the same page (frame counts, durations, settle
+// windows, benchmark figures). A finding names them in `measured`; "message"
+// there means the numbers in its message. Parity compares every other field
+// exactly and reports a difference in a measured one as a note with both
+// values (scripts/parity-test.js). Reports saved before 0.3.5 have no
+// marker; measuredFields() answers for them from the same table.
+// "elements.rect" means the elements' boxes: the motion checks take them
+// while the page moves, so they shift by fractions of a pixel between runs.
+const MOTION_CHECKS = new Set(['motion-timing', 'motion-layout', 'reduced-motion', 'flash', 'frame-timing']);
+export function measuredFields(f) {
+  const fp = f.fingerprint ?? `${f.check}|${f.key}`;
+  const m = MOTION_CHECKS.has(f.check) ? ['elements.rect'] : [];
+  if (f.check === 'frame-timing') m.unshift('count', 'message');   // frames over budget, their durations, the CPU slow-down
+  if (f.check === 'page-load' && /\|(never-still|late)$/.test(fp)) m.unshift('message');   // seconds watched, when elements appeared, the settle window
+  if (f.check === 'flash' && /\|script$/.test(fp)) m.unshift('message');   // colour changes counted in one second of a script's run
+  return m.length ? m : null;
+}
 const ENGINE_NAMES = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
 // Checks run again in WebKit and Firefox. Spacing and type values are
 // computed styles, the same in every engine, so they run in Chromium only.
@@ -273,8 +293,16 @@ function lateInit(W) {
   const key = (el) => sel(el).replace(/#[A-Za-z][\w-]*/g, (id) => id.replace(/\d+/g, 'N')) + '|' + own(el).slice(0, 80);
   const UNDRAWN = /^(script|style|template|noscript|link|meta|title|base)$/;
   const drawn = () => (document.body ? [...document.body.querySelectorAll('*')] : []).filter((el) => !UNDRAWN.test(el.localName) && el.getClientRects().length);
-  const ignored = (el) => { const h = el.closest?.('[data-itten-ignore]'); return !!h && /(^|\s)(page-load|all)(\s|$)/.test(h.getAttribute('data-itten-ignore')); };
-  const ours = (el) => [...el.attributes].some((a) => a.name.startsWith('data-itten-') && a.name !== 'data-itten-ignore');
+  // data-itten-ignore="page-load" on the element itself, or on a container
+  // that also has data-itten-ignore-subtree (a carousel, a live feed).
+  const ignored = (el) => {
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      if (!e.hasAttribute('data-itten-ignore') || (e !== el && !e.hasAttribute('data-itten-ignore-subtree'))) continue;
+      if (/(^|\s)(page-load|all)(\s|$)/.test(e.getAttribute('data-itten-ignore'))) return true;
+    }
+    return false;
+  };
+  const ours = (el) => [...el.attributes].some((a) => a.name.startsWith('data-itten-') && a.name !== 'data-itten-ignore' && a.name !== 'data-itten-ignore-subtree');
   // When an element, or the nearest ancestor, was added.
   const added = (el) => { let a = el, t; while (a && (t = L.times.get(a)) === undefined) a = a.parentElement; return t; };
   new MutationObserver((list) => {
@@ -435,41 +463,129 @@ async function lineRender(page, L) {
   return ink >= 0.4 ? 'blurred' : null;
 }
 
+// ------------------------------------------------------- breakpoint scan
+// One page, loaded at the first width and resized across the range in
+// 16 px steps, reading the breakpoint state (breakpointState) at each
+// without measuring anything. A change between two steps is narrowed to
+// the pixel by halving. Returns the state at each width asked for, and the
+// breakpoints: each the first width of a new state. Two breakpoints less
+// than 16 px apart can be seen as one.
+export async function scanBreakpoints(page, from, to, ask, step = 16) {
+  const seen = new Map();
+  const at = async (w) => {
+    if (!seen.has(w)) {
+      await page.setViewportSize({ width: w, height: VIEW_H });
+      seen.set(w, await page.evaluate(breakpointState));
+    }
+    return seen.get(w);
+  };
+  const grid = [];
+  for (let w = from; w < to; w += step) grid.push(w);
+  grid.push(to);
+  for (const w of grid) await at(w);
+  const breakpoints = [];
+  for (let i = 0; i + 1 < grid.length; i++) {
+    let lo = grid[i], hi = grid[i + 1];
+    if ((await at(lo)) === (await at(hi))) continue;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if ((await at(mid)) === (await at(lo))) lo = mid; else hi = mid; }
+    breakpoints.push(hi);
+  }
+  const sigs = new Map();
+  for (const w of ask) sigs.set(w, await at(w));
+  return { sigs, breakpoints };
+}
+
+// Quick mode measures the four default widths and, for every breakpoint
+// between the first and the last, the width on each side of it: the last
+// width of the old layout and the first of the new.
+export function aroundBreakpoints(widths, breakpoints) {
+  const lo = widths[0], hi = widths.at(-1);
+  const add = breakpoints.flatMap((b) => [b - 1, b]).filter((w) => w >= lo && w <= hi);
+  return [...new Set([...widths, ...add])].sort((a, b) => a - b);
+}
+
+// ---------------------------------------------------------------- workers
+// How many jobs run at once unless --workers says: the CPU cores less two,
+// left for the browsers' own processes and the system, and no more than one
+// per GB of memory beyond the first 2 GB.
+export function defaultWorkers(cores = cpus().length, mem = totalmem()) {
+  return Math.max(1, Math.min(cores - 2, Math.floor(mem / 2 ** 30 - 2)));
+}
+
+// Runs work(job) for each index in `order`, at most n at once, each worker
+// taking the next index as it comes free. Results land at the job's index.
+async function pool(jobs, order, n, work) {
+  const out = new Array(jobs.length);
+  let next = 0;
+  const run = async () => { while (next < order.length) { const i = order[next++]; out[i] = await work(jobs[i], i); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, order.length)) }, run));
+  return out;
+}
+
 // --------------------------------------------------------------- the run
+// A run has five phases (protocol/04-inspect.md, "How a run is scheduled"):
+// 1. Alone: the CPU benchmark, the watch load (when the page goes still and
+//    what it adds after) and the breakpoint scan. Every later load waits as
+//    the first two say, so nothing runs beside them.
+// 2. The jobs: each width of each pass (light, 200% text, 2x, each engine)
+//    and each resize, every one a fresh load in a browser context of its
+//    own, up to `workers` at once. A job measures and returns what it found;
+//    it records nothing.
+// 3. What the jobs found is recorded in one fixed order, the order a serial
+//    run takes the passes in, so ids, first sightings and messages are the
+//    same however many workers ran and however the jobs were sharded.
+// 4. Crops: a finding is cropped at the pass it was first seen in (or got
+//    worse in), on a page loaded again as that pass loaded it.
+// 5. Alone again, on a quiet machine: motion and frame timing.
+// With o.shard ({ i, n }) a run does phases 1 and 2 for every n-th job and
+// writes shard.json; o.mergeFrom (shard directories) does phases 3 to 5.
 export async function inspect(url, o = {}) {
-  // Four widths by default; the full sweep, 320 to 1920 px in 40 px steps, with full.
-  const widths = o.widths ?? (o.full ? FULL_WIDTHS : DEFAULT_WIDTHS);
+  // Four widths by default, with the widths around each breakpoint between
+  // them; the full sweep, 320 to 1920 px in 40 px steps, with full.
+  let widths = o.widths ?? (o.full ? FULL_WIDTHS : DEFAULT_WIDTHS);
+  const quick = !o.full && !o.widths && o.aroundBreakpoints !== false;
   const keyWidths = o.keyWidths ?? [320, 768, 1440];
   const system = o.system ?? null;
   const outDir = o.out ? resolve(o.out) : null;
   const say = o.quiet ? () => {} : (m) => process.stderr.write(m + '\n');
   const log = (m) => { mark(String(m).trim()); say(m); };
+  const workers = Math.max(1, Math.floor(o.workers ?? defaultWorkers()));
+  const shard = o.shard ?? null;
+  const merging = !!o.mergeFrom?.length;
   // o.watchdog: minutes without progress before the run stops (10; 0 for none).
   const dog = (o.watchdog ?? 10) > 0 ? startWatchdog(o.watchdog ?? 10) : null;
   if (outDir) { rmSync(join(outDir, 'crops'), { recursive: true, force: true }); mkdirSync(join(outDir, 'crops'), { recursive: true }); }
+  const timings = readTimings(o.timings);
+  const pageKey = timingKey(url);
+  const took = [];
+  const clock = { start: Date.now() };
+  // When each phase began and ended, in ms from the start, and for the
+  // phases that time things, how many other browser contexts were open.
+  const phases = [];
+  const phase = (name) => { const p = { name, start: Date.now() - clock.start, end: null }; phases.push(p); return (extra = {}) => Object.assign(p, { end: Date.now() - clock.start }, extra); };
 
   const { chromium } = await import('playwright');
   // The full Chromium build renders WebGL on the GPU where one is available;
   // the default headless shell falls back to software rendering, which can
   // slow animated pages to a few frames a minute.
   const browser = await chromium.launch({ channel: 'chromium' }).catch(() => chromium.launch());
-  const issues = new Map();
-  const distinct = { fontSizes: {}, spacing: {}, radii: {}, insideGraphics: {}, perWidth: [] };
-  const coverage = { graphics: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0, contrastSamples: 0, contrastSkipped: 0, fontGroups: 0 };
-  const renderedFonts = new Map();
-  const sizes = {};
-  const obs = { spacing: new Map(), spacing2: new Map(), type: new Map(), labels: new Map() };
-  let cropCount = 0, idCount = 0;
-  const failed = new Map();
-  let watching = true;
-  let motion = null;
-  let remeasured = 0;
-  let watched = { until: 0 };
-  const resize = { pairs: [], breakpoints: 0 };
-  // How long the page must go without adding an element before it is
-  // measured, scaled to this machine (settleTiming).
-  // The benchmark has its own limit: a browser that cannot run it cannot
-  // run anything, and the run stops with an error.
+  // WebKit and Firefox, launched when a job first needs one.
+  const others = new Map();
+  const engineBrowser = (name) => {
+    if (!others.has(name)) {
+      others.set(name, import('playwright').then((pw) => pw[name].launch()).then((b) => ({ b }), (e) => {
+        const m = String(e.message || e);
+        const err = (m.match(/\[err\] (?!\*\*\*)(.+)/) || [])[1];
+        return { error: /Executable doesn't exist/.test(m) ? `not installed (npx playwright install ${name})` : `the browser failed to start${err ? ` ("${err.trim()}")` : ''}` };
+      }));
+    }
+    return others.get(name);
+  };
+
+  // Phase 1, alone. The benchmark has its own limit: a browser that cannot
+  // run it cannot run anything, and the run stops with an error.
+  let t0 = Date.now();
+  const benchDone = phase('benchmark');
   const bench = await within(TIMEOUTS.check * 1000, 'opening the benchmark page', () => browser.newPage());
   // With slowTo (for testing), Chromium's CPU is slowed to that benchmark
   // index, as the frame-timing pass slows it to the reference device, and
@@ -482,6 +598,8 @@ export async function inspect(url, o = {}) {
   }
   const T = settleTiming(slowed ? slowed.slowedIndex : await within(TIMEOUTS.check * 1000, 'the benchmark', async () => Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex))));
   await bench.close();
+  benchDone({ others: browser.contexts().length });
+  took.push(['bench', (Date.now() - t0) / 1000]);
   const slow = async (page) => {
     if (!slowed || slowed.rate <= 1 || page.context().browser()?.browserType().name() !== 'chromium') return;
     await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: slowed.rate });
@@ -492,61 +610,72 @@ export async function inspect(url, o = {}) {
   const TO = Object.fromEntries(Object.keys(TIMEOUTS).map((k) => [k, o.timeouts?.[k] != null ? o.timeouts[k] * 1000 : TIMEOUTS[k] * 1000 * T.scale]));
   dog?.atLeast(Math.max(...Object.values(TO)) + 60000);
   const closeQuietly = (c) => (c ? within(TO.close, 'closing the browser context', () => c.close()).catch(() => {}) : null);
+
+  // A browser context for one job. Requests that fail or answer 400 or more
+  // are noted where `failed` is given (the Chromium passes at 100% and 200%
+  // text): a page that catches the failure and shows a message raises no
+  // page error, so without this the report would measure the error state as
+  // the page.
+  const newContext = async (b, { dpr = 1, width, failed = null, init = [] } = {}) => {
+    const c = await b.newContext({ viewport: { width, height: VIEW_H }, deviceScaleFactor: dpr, colorScheme: 'light' });
+    for (const s of init) await c.addInitScript(s);
+    await c.addInitScript(lateInit, T.window);
+    if (failed) {
+      const fail = (u, method, type, why) => { if (!failed.has(u)) failed.set(u, { url: u, method, type, why }); };
+      c.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
+      c.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
+    }
+    return c;
+  };
+  let watched = { networkIdle: null, waited: null, still: null, quietAt: null, watched: 0, late: [], until: 0 };
+  // A fresh page loaded as a pass loads it: at its width, or at the first
+  // width of a resize; with the browser's text size doubled for the 200%
+  // pass. A reader who opens the page at that size gets this layout.
+  const openPass = async (ctx, pass, errors = null) => {
+    const page = await ctx.newPage();
+    await slow(page);
+    await page.setViewportSize({ width: pass.resize ? pass.resize[0] : pass.w, height: VIEW_H });
+    if (errors) page.on('pageerror', (e) => errors.push(String(e.message || e)));
+    if (pass.text === 200) await (await page.context().newCDPSession(page)).send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
+    await load(page, url, o, T, watched.until);
+    return page;
+  };
   // A measurement taken while the page added elements is taken again once
   // it has been still for the settle window, up to three times.
-  const measured = async (page, fn) => {
+  const measured = async (page, fn, r) => {
     for (let i = 0; ; i++) {
-      const mark = await page.evaluate(() => performance.now());
-      const r = await fn();
-      const changed = await page.evaluate((m) => (window.__ittenLate?.lastAdd ?? 0) > m, mark).catch(() => false);
-      if (!changed || i === 2) return r;
-      remeasured++;
+      const m = await page.evaluate(() => performance.now());
+      const res = await fn();
+      const changed = await page.evaluate((x) => (window.__ittenLate?.lastAdd ?? 0) > x, m).catch(() => false);
+      if (!changed || i === 2) return res;
+      r.remeasured++;
       await waitStill(page, T);
     }
   };
-
-  const merge = async (page, raw, pass) => {
-    if (raw.check === 'hairline-subpixel') await judgeHairline(page, raw, pass);
-    const k = raw.check + '|' + raw.key;
-    let it = issues.get(k);
-    const isNew = !it;
-    if (!it) {
-      it = { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint: k, check: raw.check, severity: raw.severity, message: raw.message, count: raw.count, elements: [], seen: {}, crops: [], first: pass.label };
-      issues.set(k, it);
-    }
-    const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
-    // The words broken at this pass, for the message (brokenWordMessage).
-    if (raw.broken) {
-      const at = pass.label.replace(/, light$/, '').replace(/, 200% text$/, ' at 200% text').replace(/, (WebKit|Firefox)$/, ' in $1');
-      (it.broken ??= []).push({ at, ...raw.broken });
-    }
-    if (upgrade) { it.severity = raw.severity; it.message = raw.message; it.first = pass.label; }
-    if (raw.render) {
-      it.render ??= {};
-      const r = (it.render[raw.render.engine] ??= { crisp: 0, blurred: 0 });
-      r.crisp += raw.render.crisp; r.blurred += raw.render.blurred;
-    }
-    it.count = Math.max(it.count, raw.count);
-    for (const el of raw.elements) if (it.elements.length < 8 && !it.elements.some((x) => x.sel === el.sel)) it.elements.push(el);
-    // Where each element in a table or list stands in the document, so a
-    // note that groups them lists them in reading order (group.js).
-    const unplaced = it.elements.filter((e) => e.order === undefined && container(e.sel));
-    if (unplaced.length) {
+  const runPass = async (page, pass, extra, r) => {
+    if (page.viewportSize()?.width !== pass.w) await page.setViewportSize({ width: pass.w, height: VIEW_H });
+    await page.evaluate(() => scrollTo(0, 0));
+    await settle(page);
+    await waitStill(page, T, watched.until);
+    return measured(page, () => page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, identifier: IDENTIFIER, ...extra }), r);
+  };
+  // What a job keeps of a finding, judged on its own page: how a thin line
+  // was actually drawn, and where each element of a table or list stands in
+  // the document, so a note that groups them lists them in reading order
+  // (group.js).
+  const keep = async (page, r, raws, pass) => {
+    for (const raw of raws) if (raw.check === 'hairline-subpixel') await judgeHairline(page, raw, pass);
+    const els = raws.flatMap((raw) => raw.elements.filter((e) => e.order === undefined && container(e.sel)));
+    if (els.length) {
       const order = await page.evaluate((sels) => {
         const idx = new Map();
         let n = 0;
         for (const el of document.querySelectorAll('*')) idx.set(el, n++);
         return sels.map((s) => { try { const el = document.querySelector(s); return el ? idx.get(el) : null; } catch { return null; } });
-      }, unplaced.map((e) => e.sel)).catch(() => unplaced.map(() => null));
-      unplaced.forEach((e, i) => { e.order = order[i]; });
+      }, els.map((e) => e.sel)).catch(() => els.map(() => null));
+      els.forEach((e, i) => { e.order = order[i]; });
     }
-    (it.seen[pass.mode] ??= []).push(pass.resize ? `${pass.resize[0]}→${pass.resize[1]}` : pass.w);
-    if (pass.resize) {
-      if (isNew) it.message = `After resize from ${pass.resize[0]} to ${pass.resize[1]} px: ${raw.message}`;
-      (it.resize ??= []).push({ from: pass.resize[0], to: pass.resize[1], engine: pass.engine || 'chromium' });
-    }
-    const wantCrop = (isNew || upgrade || (pass.engine && pass.engine !== 'chromium' && !it.crops.some((c) => c.engine === pass.engine))) && raw.severity !== 'info';
-    if (wantCrop && outDir && cropCount < (o.maxCrops ?? 400)) await crop(page, raw, it, pass);
+    for (const raw of raws) r.events.push([raw, pass]);
   };
 
   // Thin lines off the device-pixel grid: measure how this engine drew them.
@@ -563,242 +692,18 @@ export async function inspect(url, o = {}) {
     raw.severity = blurred ? 'warning' : 'info';
   };
 
-  // A finding judged across the sweep: seen at a list of light-pass widths.
-  const addFinding = async (pageAt, f) => {
-    const w = f.widths[0];
-    const page = await pageAt(w);
-    const mode = f.mode || 'light';
-    const it = { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: [], seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
-    issues.set(it.fingerprint, it);
-    await settle(page);
-    const rects = await page.evaluate((sels) => sels.map((s) => {
-      let el = null; try { el = document.querySelector(s); } catch { /* bad selector */ }
-      if (!el) return null;
-      const q = el.getBoundingClientRect();
-      return [q.left + scrollX, q.top + scrollY, q.width, q.height].map((v) => Math.round(v * 100) / 100);
-    }), f.elements.slice(0, 8).map((e) => e.sel));
-    it.elements = f.elements.slice(0, 8).map((e, i) => ({ ...e, rect: rects[i] || [0, 0, 0, 0] }));
-    const raw = { elements: it.elements.filter((e) => e.rect[2] > 0), marks: [], crop: 'each' };
-    if (outDir && raw.elements.length && cropCount < (o.maxCrops ?? 400)) await crop(page, raw, it, { label: it.first });
-  };
-
-  // A step that timed out: an error finding naming the width, the pass and
-  // the step. Nothing after that step was measured at that width in that pass.
-  const timedOut = (mode, w, e, label) => {
-    const fingerprint = `timed-out|${mode}|${w}|${e.step}`;
-    if (!issues.has(fingerprint)) {
-      issues.set(fingerprint, { id: `i${String(++idCount).padStart(3, '0')}`, fingerprint, check: 'timed-out', severity: 'error', count: 1, elements: [], seen: { [mode]: [w] }, crops: [], first: label,
-        message: `${e.step[0].toUpperCase() + e.step.slice(1)} did not finish within ${Math.round(e.ms / 1000)} s (${label}). The inspector closed the browser context and went on to the next width, so nothing after that step was measured there. A page that blocks its main thread does this, and so does a renderer or a browser that stops answering. Inspect again: if the same step times out at the same width, the page is the cause.` });
-    }
-    log(`  ${label}: timed out in ${e.step} after ${Math.round(e.ms / 1000)} s; the context is closed and the sweep goes on`);
-  };
-  // One width of a pass, held to the limits: a step that times out closes
-  // the context (reset opens a fresh one), is recorded, and the sweep goes
-  // on. Any other error is thrown as before.
-  const guarded = async (mode, w, label, reset, body) => {
-    try { return await within(TO.width, 'the width as a whole', body); } catch (e) {
-      if (!(e instanceof StepTimeout)) throw e;
-      timedOut(mode, w, e, label);
-      await reset();
-      return null;
-    }
-  };
-
-  const crop = async (page, raw, it, pass) => {
-    const groups = raw.crop === 'each'
-      ? raw.elements.slice(0, 3).map((e) => ({ boxes: [e.rect], marks: [] }))
-      : raw.crop === 'marks'
-        ? raw.marks.slice(0, 3).map((m) => ({ boxes: [], marks: [m], region: [Math.min(m.x1, m.x2) - 40, m.y1 - 48, Math.min(Math.abs(m.x2 - m.x1), 640) + 80, Math.abs(m.y2 - m.y1) + 96] }))
-        : [{ boxes: raw.elements.slice(0, 4).map((e) => e.rect), marks: raw.marks }];
-    const dims = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]);
-    for (const g of groups) {
-      const pad = 24;
-      const region = (bs) => {
-        const x1 = Math.min(...bs.map((b) => b[0])) - pad, y1 = Math.min(...bs.map((b) => b[1])) - pad;
-        const x2 = Math.max(...bs.map((b) => b[0] + b[2])) + pad, y2 = Math.max(...bs.map((b) => b[1] + b[3])) + pad;
-        return [x1, y1, x2 - x1, y2 - y1];
-      };
-      let [x, y, w, h] = g.region || region(g.boxes);
-      if (!g.region && (w > 720 || h > 540)) [x, y, w, h] = region([g.boxes[0]]);
-      w = Math.min(w, 720); h = Math.min(h, 540);
-      x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
-      w = Math.max(8, Math.min(Math.ceil(w), dims[0] - x)); h = Math.max(8, Math.min(Math.ceil(h), dims[1] - y));
-      let img;
-      try { img = decodePng(await page.screenshot({ clip: { x, y, width: w, height: h }, fullPage: true })); } catch { continue; }
-      const z = img.width * 4 <= 1440 ? 4 : img.width * 3 <= 1440 ? 3 : 2;
-      const big = upscale(img, z);
-      for (const b of g.boxes) outline(big, (b[0] - x) * z - 1, (b[1] - y) * z - 1, b[2] * z + 1, b[3] * z + 1, [230, 0, 150]);
-      for (const m of g.marks || []) for (const d of [0, 1]) outline(big, (m.x1 - x) * z + d, (m.y1 - y) * z + d, (m.x2 - m.x1) * z, (m.y2 - m.y1) * z, [0, 120, 255]);
-      const name = `crops/${it.id}-${it.crops.length + 1}.png`;
-      writeFileSync(join(outDir, name), encodePng(big.width, big.height, big.data));
-      it.crops.push({ path: name, zoom: z, at: pass.label, region: [x, y, w, h], ...(pass.engine ? { engine: pass.engine } : {}) });
-      cropCount++;
-    }
-  };
-
-  // The page measured may not be the page people see: a request failed, the
-  // network never went quiet, the --wait-for selector never appeared, the
-  // page never went still, or elements appeared after it had gone still.
-  const pageLoadFindings = async (page, watched) => {
-    // page: a function giving a page loaded at a width.
-    const at = [widths[0]];
-    const sec = (ms) => (ms / 1000).toFixed(1);
-    const req = [...failed.values()];
-    if (req.length) {
-      const list = req.slice(0, 8).map((r) => `${r.method} ${r.url} (${r.type}, ${r.why})`).join('; ');
-      await addFinding(page, { check: 'page-load', severity: 'error', key: 'requests', mode: 'load', widths: at, count: req.length, elements: [], resources: req.map((r) => r.url),
-        message: `${plural(req.length, 'request')} failed while the page was measured: ${list}${req.length > 8 ? `; and ${req.length - 8} more` : ''}. What was measured may be the page's error state. Fix the requests, then inspect again.` });
-    }
-    if (!watched.networkIdle) {
-      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'busy', mode: 'load', widths: at, count: 1, elements: [],
-        message: 'The network did not go quiet within 10 s of the load event, so the page was measured while requests were still running. If it draws from them, pass --wait-for with a selector for what appears last, or --settle with a wait in ms.' });
-    }
-    if (watched.waited === false) {
-      await addFinding(page, { check: 'page-load', severity: 'error', key: 'wait-for', mode: 'load', widths: at, count: 1, elements: [],
-        message: `--wait-for ${o.waitFor}: no element matched within 30 s of the load event, so the page was measured without it.` });
-    }
-    if (watched.still === false) {
-      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'never-still', mode: 'load', widths: at, count: 1, elements: [],
-        message: `The page kept adding elements for ${sec(watched.watched)} s after the load event and never went ${T.window} ms without one, so it was measured while still drawing. Content that changes on purpose, such as a carousel or a live feed, can be marked data-itten-ignore="page-load".` });
-    }
-    const els = watched.late;
-    if (els.length) {
-      const ts = els.map((e) => e.t).sort((a, b) => a - b);
-      const when = ts[0] === ts.at(-1) ? `${sec(ts[0])} s` : `${sec(ts[0])} to ${sec(ts.at(-1))} s`;
-      const them = els.length === 1 ? 'it' : 'them';
-      await addFinding(page, { check: 'page-load', severity: 'warning', key: 'late', widths: at, count: els.length, elements: els.map(({ sel, label }) => ({ sel, label })),
-        message: `${plural(els.length, 'element')} appeared ${when} after the load event, after the page had gone still at ${sec(watched.quietAt)} s (nothing added for ${T.window} ms). A screenshot, a test or a reader that takes the page as finished once it goes still sees the page without ${them}; the inspector waited for ${them} before measuring. The page was still drawing: a timer, an animation-frame chain or a slow request. If it is meant to, pass --wait-for with a selector for what appears last. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore="page-load".` });
-    }
-  };
-
-  // The resize pass: for each pair, a fresh load at the first width,
-  // resized to the second, measured with the given checks. A finding the
-  // fresh load at the second width also had adds nothing; any other is
-  // reported as seen after that resize, and says so.
-  // context(): the context to open pages in; reset() closes it and opens a
-  // fresh one, after a step times out.
-  const resizePass = async (context, reset, pairs, checks, engine, freshMode) => {
-    const mode = engine ? `${ENGINE_NAMES[engine]} resize` : 'resize';
-    let n = 0;
-    for (const [a, b] of pairs) {
-      const pass = { w: b, mode, engine: engine ?? undefined, resize: [a, b], label: `${b} px after resize from ${a} px${engine ? `, ${ENGINE_NAMES[engine]}` : ''}`, dpr: 1, checks: checks.filter((ch) => ch !== 'hairline-subpixel') };
-      await guarded(mode, b, pass.label, reset, async () => {
-        const page = await within(TO.load, 'loading the page', async () => {
-          const pg = await context().newPage();
-          await slow(pg);
-          await pg.setViewportSize({ width: a, height: VIEW_H });
-          await load(pg, url, o, T, watched.until);
-          return pg;
-        });
-        const res = await within(TO.check, 'the layout checks', () => runPass(page, pass));
-        await within(TO.check, 'recording and cropping the findings', async () => {
-          for (const raw of res.issues) {
-            if ((issues.get(raw.check + '|' + raw.key)?.seen[freshMode] ?? []).includes(b)) continue;
-            await merge(page, raw, pass);
-            n++;
-          }
-        });
-        await page.close().catch(() => {});
-      });
-    }
-    log(`  ${engine ? ENGINE_NAMES[engine] : 'Chromium'}, resize pass: ${plural(pairs.length, 'resize')}, ${plural(n, 'finding')} not seen on a fresh load`);
-  };
-
-  const runPass = async (page, pass, extra = {}) => {
-    if (page.viewportSize()?.width !== pass.w) await page.setViewportSize({ width: pass.w, height: VIEW_H });
-    await page.evaluate(() => scrollTo(0, 0));
-    await settle(page);
-    await waitStill(page, T, watched.until);
-    return measured(page, () => page.evaluate(collect, { checks: pass.checks, system, dpr: pass.dpr, identifier: IDENTIFIER, ...extra }));
-  };
-
-  try {
-    // Pass set 1: light, 100% text, every width; contrast and fonts at key widths, light and dark.
-    // Requests that fail or answer 400 or more, on every Chromium load. A
-    // page that catches the failure and shows a message raises no page error,
-    // so without this the report would measure the error state as the page.
-    const fail = (url, method, type, why) => { if (watching && !failed.has(url)) failed.set(url, { url, method, type, why }); };
-    const lightContext = async () => {
-      const c = await browser.newContext({ viewport: { width: widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
-      await c.addInitScript(lateInit, T.window);
-      c.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
-      c.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (!/ERR_ABORTED/.test(why)) fail(r.url(), r.method(), r.resourceType(), why); });
-      return c;
-    };
-    let ctx = await within(TO.close, 'opening a browser context', lightContext);
-    let lightAt = null, bigAt = null;
-    // After a timeout: close the light context, open a fresh one, and forget
-    // the pages held for the next use.
-    const resetLight = async () => {
-      await closeQuietly(ctx);
-      ctx = await within(TO.close, 'opening a browser context', lightContext);
-      lightAt?.reset(); bigAt?.reset();
-    };
-    // The watch load: when the page goes still, and what it adds after.
-    log(`Loading ${url}`);
-    try {
-      watched = await within(TO.load + T.horizon + T.ceiling, 'the watch load', async () => {
-        const wpage = await ctx.newPage();
-        await slow(wpage);
-        const r = await watchLoad(wpage, url, o, T);
-        await wpage.close();
-        return r;
-      });
-    } catch (e) {
-      if (!(e instanceof StepTimeout)) throw e;
-      timedOut('load', widths[0], e, `${widths[0]} px, the watch load`);
-      await resetLight();
-      watched = { networkIdle: null, waited: null, still: null, quietAt: null, watched: 0, late: [], until: 0 };
-    }
-    log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${(watched.quietAt / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
-    const consoleErrors = [];
-    // A fresh page for every width: loaded at that width, so each is the
-    // layout a reader who opens the page at that size gets. A page already
-    // at the width asked for is kept for the next use (findings judged
-    // across the sweep crop from it).
-    const pages = (context, prep, errors = false) => {
-      let cur = null;
-      const at = async (w) => {
-        if (cur && cur.w === w) return cur.page;
-        await cur?.page.close().catch(() => {});
-        cur = null;
-        const page = await context().newPage();
-        await slow(page);
-        await page.setViewportSize({ width: w, height: VIEW_H });
-        if (errors) page.on('pageerror', (e) => consoleErrors.push(String(e.message || e)));
-        if (prep) await prep(page);
-        await load(page, url, o, T, watched.until);
-        cur = { w, page };
-        return page;
-      };
-      at.close = async () => { await cur?.page.close().catch(() => {}); cur = null; };
-      // After its context is closed: nothing is held.
-      at.reset = () => { cur = null; };
-      return at;
-    };
-    lightAt = pages(() => ctx, null, true);
-    const sigs = new Map();
-
-    for (const w of widths) await guarded('light', w, `${w} px, light`, resetLight, async () => {
-      const page = await within(TO.load, 'loading the page', () => lightAt(w));
-      const pass = { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT };
-      const t0 = Date.now();
-      sigs.set(w, await within(TO.check, 'reading the breakpoints', () => page.evaluate(breakpointState)));
-      const res = await within(TO.check, 'the layout checks', () => runPass(page, pass, { recordSizes: w === keyWidths.at(-1) }));
-      if (w === keyWidths.at(-1)) sizes.base = res.data.textSizes;
-      for (const k of ['graphics', 'elements', 'text', 'relativeSpacing']) coverage[k] = Math.max(coverage[k], res.counts[k]);
-      coverage.ignored = Math.max(coverage.ignored, res.counts.ignored);
-      for (const [k, v] of Object.entries(res.data.fontSizes)) distinct.fontSizes[k] = Math.max(distinct.fontSizes[k] ?? 0, v);
-      for (const [k, v] of Object.entries(res.data.spacing)) distinct.spacing[k] = Math.max(distinct.spacing[k] ?? 0, v);
-      for (const [k, v] of Object.entries(res.data.radii)) distinct.radii[k] = Math.max(distinct.radii[k] ?? 0, v);
-      for (const [k, v] of Object.entries(res.data.graphicFontSizes)) distinct.insideGraphics[k] = Math.max(distinct.insideGraphics[k] ?? 0, v);
-      distinct.perWidth.push({ w, fontSizes: Object.keys(res.data.fontSizes).length, spacing: Object.keys(res.data.spacing).length });
-      for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing.has(k)) obs.spacing.set(k, new Map()); obs.spacing.get(k).set(w, v); }
-      for (const [sel, ...v] of res.data.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
-      for (const [k, v] of Object.entries(res.data.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
-      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page, raw, pass); });
-      const ty = await within(TO.check, 'the line checks', () => measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER })));
-      await within(TO.check, 'recording and cropping the line findings', async () => { for (const raw of ty.issues) await merge(page, raw, pass); });
+  // What each kind of job does once its page is loaded. r collects the
+  // findings (r.events) and the values judged across the sweep (r.data).
+  const BODY = {
+    async light(page, pass, r) {
+      const w = pass.w, last = w === keyWidths.at(-1);
+      const res = await within(TO.check, 'the layout checks', () => runPass(page, pass, { recordSizes: last }, r));
+      const d = res.data;
+      r.data = { textSizes: last ? d.textSizes : null, counts: res.counts, fontSizes: d.fontSizes, spacing: d.spacing, radii: d.radii, graphicFontSizes: d.graphicFontSizes, spacingObs: d.spacingObs, typeObs: d.typeObs, labels: d.labels, texts: d.texts };
+      await within(TO.check, 'keeping the findings', () => keep(page, r, res.issues, pass));
+      const ty = await within(TO.check, 'the line checks', () => measured(page, () => page.evaluate(typography, { checks: TYPO, system, identifier: IDENTIFIER }), r));
+      await within(TO.check, 'keeping the line findings', () => keep(page, r, ty.issues, pass));
+      let n = res.issues.length + ty.issues.length;
       // Contrast and fonts at the key widths, light and then dark, on the
       // same load: a reader switching the scheme does not reload.
       if (keyWidths.includes(w)) {
@@ -806,44 +711,297 @@ export async function inspect(url, o = {}) {
         await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
         for (const scheme of ['light', 'dark']) await within(TO.check, `contrast and fonts in ${scheme}`, async () => {
           await page.emulateMedia({ colorScheme: scheme });
-          const sp = { w, mode: scheme, label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
-          const cr = await runPass(page, sp, { contrast: true, fonts: true });
-          for (const raw of cr.issues) await merge(page, raw, sp);
-          for (const raw of await fontIssues(cdp, page, cr, system, renderedFonts)) await merge(page, raw, sp);
-          coverage.fontGroups = Math.max(coverage.fontGroups, new Set(cr.data.fontReps.map((r) => r.group)).size);
-          for (const raw of await contrastIssues(page, cr, coverage)) await merge(page, raw, sp);
+          const sp = { w, mode: scheme, ...(scheme === 'dark' ? { scheme } : {}), label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
+          const cr = await runPass(page, sp, { contrast: true, fonts: true }, r);
+          await keep(page, r, cr.issues, sp);
+          await keep(page, r, await fontIssues(cdp, page, cr, system, r.fonts), sp);
+          r.fontGroups = Math.max(r.fontGroups, new Set(cr.data.fontReps.map((x) => x.group)).size);
+          const ci = await contrastIssues(page, cr, r.coverage);
+          if (ci.drawing?.length) (r.drawing ??= []).push({ at: sp.label, regions: ci.drawing });
+          await keep(page, r, ci, sp);
           if (scheme === 'light') {
             const oy = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
-            for (const raw of await opticalIssues(page, oy.optical)) await merge(page, raw, sp);
+            await keep(page, r, await opticalIssues(page, oy.optical), sp);
           }
         });
         await page.emulateMedia({ colorScheme: 'light' });
         await cdp.detach().catch(() => {});
       }
-      log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings${keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-    });
-    // A finding judged across the sweep loads a page to crop it; held to the
-    // limits like a width.
-    const findingAt = (at, f) => guarded(f.mode || 'light', f.widths[0], `${f.widths[0]} px, ${f.mode || 'light'}`, resetLight,
-      () => within(TO.load + TO.check, 'loading the page to crop a finding', () => addFinding(at, f)));
-    for (const f of scaleFindings(obs, system, widths, distinct)) await findingAt(lightAt, f);
+      r.log = `  ${pass.label}: ${plural(n, 'finding')}${keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}`;
+    },
+    async text200(page, pass, r) {
+      const last = pass.w === keyWidths.at(-1);
+      const res = await within(TO.check, 'the layout checks', () => runPass(page, pass, { recordSizes: last, spacingObs: true }, r));
+      r.data = { textSizes: last ? res.data.textSizes : null, spacingObs: res.data.spacingObs };
+      await within(TO.check, 'keeping the findings', () => keep(page, r, res.issues, pass));
+      r.log = `  ${pass.label}: ${plural(res.issues.length, 'finding')}`;
+    },
+    async layout(page, pass, r) {
+      const res = await within(TO.check, pass.dpr === 2 ? 'the hairline check' : 'the layout checks', () => runPass(page, pass, {}, r));
+      await within(TO.check, 'keeping the findings', () => keep(page, r, res.issues, pass));
+      let n = res.issues.length;
+      // Of the line checks, line-start runs in every engine: each breaks
+      // lines its own way, and a separator that begins a line in one may
+      // not in another.
+      if (pass.engine && !pass.resize) {
+        const ty = await within(TO.check, 'the line checks', () => measured(page, () => page.evaluate(typography, { checks: ['line-start'], system, identifier: IDENTIFIER }), r));
+        await within(TO.check, 'keeping the line findings', () => keep(page, r, ty.issues, pass));
+        n += ty.issues.length;
+      }
+      if (!pass.resize) r.log = `  ${pass.label}: ${plural(n, 'finding')}`;
+    },
+  };
+
+  // One job: a context of its own, a fresh load, the checks, the context
+  // closed. A step that times out ends the job; what it found before that
+  // is kept, and the timeout is recorded with the job's width and step.
+  const runJob = async (job) => {
+    const { pass } = job;
+    const r = { events: [], data: null, timedOut: null, errors: [], failed: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: new Map(), fontGroups: 0, log: null, s: 0 };
+    let b = browser;
+    if (pass.engine) {
+      const e = await engineBrowser(pass.engine);
+      if (e.error) return { ...r, skipped: e.error, fonts: [] };
+      b = e.b;
+    }
+    const failed = job.chromiumText ? new Map() : null;
+    let ctx = null;
+    const start = Date.now();
+    try {
+      await within(TO.width, 'the width as a whole', async () => {
+        ctx = await within(TO.close, 'opening a browser context', () => newContext(b, { dpr: pass.dpr, width: pass.resize ? pass.resize[0] : pass.w, failed }));
+        const page = await within(TO.load, 'loading the page', () => openPass(ctx, pass, job.kind.startsWith('light') ? r.errors : null));
+        await BODY[job.body](page, pass, r);
+      });
+    } catch (e) {
+      if (e instanceof StepTimeout) {
+        r.timedOut = { step: e.step, ms: e.ms };
+        log(`  ${pass.label}: timed out in ${e.step} after ${Math.round(e.ms / 1000)} s; the context is closed and the sweep goes on`);
+      } else if (pass.engine) r.failedEngine = String(e.message || e).split('\n')[0];
+      else throw e;
+    } finally { await closeQuietly(ctx); }
+    r.s = (Date.now() - start) / 1000;
+    if (r.log) log(`${r.log}, ${r.s.toFixed(1)} s`);
+    r.failed = failed ? [...failed.values()] : [];
+    r.fonts = [...r.fonts.entries()];
+    return r;
+  };
+
+  try {
+    // ------------------------------------------- phases 1 and 2: measure
+    let plan, results, shards = null;
+    if (merging) {
+      ({ plan, results, shards, watched } = readShards(o.mergeFrom, url));
+      widths = plan.widths;
+      log(`Merging ${plural(shards.length, 'shard')}: ${plural(plan.jobs.length, 'job')}`);
+    } else {
+      // The watch load: when the page goes still, and what it adds after.
+      log(`Loading ${url}`);
+      t0 = Date.now();
+      const watchDone = phase('watch load');
+      let wctx = null;
+      const watchFailed = new Map();
+      try {
+        watched = await within(TO.load + T.horizon + T.ceiling, 'the watch load', async () => {
+          wctx = await newContext(browser, { width: widths[0], failed: watchFailed });
+          const wpage = await wctx.newPage();
+          await slow(wpage);
+          return watchLoad(wpage, url, o, T);
+        });
+      } catch (e) {
+        if (!(e instanceof StepTimeout)) throw e;
+        watched.timedOut = { step: e.step, ms: e.ms };
+        log(`  ${widths[0]} px, the watch load: timed out after ${Math.round(e.ms / 1000)} s; the sweep goes on`);
+      } finally { await closeQuietly(wctx); }
+      watched.failed = [...watchFailed.values()];
+      watchDone();
+      took.push(['watch', (Date.now() - t0) / 1000]);
+      log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${((watched.quietAt ?? 0) / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
+
+      // The breakpoint scan, for the resize pairs and, in quick mode, the
+      // widths around each breakpoint.
+      t0 = Date.now();
+      const scanDone = phase('breakpoint scan');
+      let scan = { sigs: new Map(), breakpoints: [], timedOut: null };
+      const engineWidths0 = o.engineWidths ?? (o.full ? widths : DEFAULT_WIDTHS);
+      let sctx = null;
+      try {
+        scan = await within(TO.load + TO.check, 'the breakpoint scan', async () => {
+          sctx = await newContext(browser, { width: widths[0] });
+          const page = await openPass(sctx, { w: widths[0] });
+          const ask = [...new Set([...widths, ...engineWidths0])].sort((a, b) => a - b);
+          const s = await scanBreakpoints(page, widths[0], widths.at(-1), ask);
+          if (quick) for (const w of aroundBreakpoints(widths, s.breakpoints)) if (!s.sigs.has(w)) { await page.setViewportSize({ width: w, height: VIEW_H }); s.sigs.set(w, await page.evaluate(breakpointState)); }
+          return s;
+        });
+      } catch (e) {
+        if (!(e instanceof StepTimeout)) throw e;
+        scan.timedOut = { step: e.step, ms: e.ms };
+        log(`  the breakpoint scan timed out after ${Math.round(e.ms / 1000)} s; no resize pass, and no widths added around breakpoints`);
+      } finally { await closeQuietly(sctx); }
+      scanDone();
+      took.push(['scan', (Date.now() - t0) / 1000]);
+      const added = quick ? aroundBreakpoints(widths, scan.breakpoints).filter((w) => !widths.includes(w)) : [];
+      widths = [...widths, ...added].sort((a, b) => a - b);
+      const engineWidths = [...new Set([...engineWidths0, ...added])].sort((a, b) => a - b);
+      log(`  breakpoints: ${scan.breakpoints.length ? scan.breakpoints.map((b) => b + ' px').join(', ') : 'none'}${added.length ? `; widths added: ${added.join(', ')} px` : ''}`);
+      plan = makePlan(widths, keyWidths, engineWidths, o.engines ?? ['webkit', 'firefox'], scan, added);
+
+      // The plan line: what will run, on how many workers, and how long it
+      // should take, from the times recorded on earlier runs.
+      const mine = shard ? plan.jobs.filter((j) => j.i % shard.n === shard.i - 1) : plan.jobs;
+      const est = new Map(mine.map((j) => [j.i, estimate(timings, pageKey, j.kind)]));
+      const order = [...mine].sort((a, b) => est.get(b.i).s - est.get(a.i).s || a.i - b.i).map((j) => j.i);
+      const span = makespan(order.map((i) => est.get(i).s), workers);
+      const crops = estimate(timings, pageKey, 'crop').s * 6;
+      const motionEst = estimate(timings, pageKey, 'motion');
+      const from = [...est.values()].every((e) => e.from === 'guess') ? 'guesses (no run recorded yet)' : `times recorded on earlier runs${[...est.values()].some((e) => e.from === 'page') ? ' of this page' : ''}`;
+      log(`Plan: ${shard ? `shard ${shard.i}/${shard.n}, ${mine.length} of ${plan.jobs.length} jobs` : plural(plan.jobs.length, 'job')} on ${plural(Math.min(workers, mine.length), 'worker')}, about ${duration(span)}${shard ? '' : `; then crops, about ${duration(crops / Math.min(workers, 6))}, and motion and frame timing alone, about ${duration(motionEst.s)}`}. Estimates from ${from}.`);
+      log(`  jobs: ${countKinds(mine)}`);
+      t0 = Date.now();
+      const jobsDone = phase('jobs');
+      results = await pool(plan.jobs, order, workers, runJob);
+      jobsDone();
+      clock.jobs = (Date.now() - t0) / 1000;
+      for (const j of mine) if (results[j.i] && !results[j.i].skipped) took.push([j.kind, results[j.i].s]);
+      log(`  jobs done in ${duration(clock.jobs)} (estimated ${duration(span)})`);
+      if (shard) {
+        const file = join(outDir ?? resolve('.'), 'shard.json');
+        mkdirSync(dirname(file), { recursive: true });
+        const browsers = {};
+        for (const [n, p] of others) { const e = await p; if (e.b) browsers[n] = e.b.version(); }
+        writeFileSync(file, JSON.stringify({ tool: 'itten-inspector', version: VERSION, url, shard, plan, watched, T, browsers, results: Object.fromEntries(mine.map((j) => [j.i, results[j.i]])) }));
+        log(`Shard ${shard.i}/${shard.n} written to ${file}. Merge the shards with --merge.`);
+        return { shard, file, jobs: mine.length };
+      }
+    }
+
+    // --------------------------------------- phase 3: record, in order
+    const issues = new Map();
+    const distinct = { fontSizes: {}, spacing: {}, radii: {}, insideGraphics: {}, perWidth: [] };
+    const coverage = { graphics: 0, ignored: 0, elements: 0, text: 0, relativeSpacing: 0, contrastSamples: 0, contrastSkipped: 0, fontGroups: 0 };
+    const renderedFonts = new Map();
+    const drawing = [];
+    const sizes = {};
+    const obs = { spacing: new Map(), spacing2: new Map(), type: new Map(), labels: new Map(), texts: new Map() };
+    const failed = new Map();
+    const consoleErrors = [];
+    const cropQueue = [];
+    let idCount = 0, remeasured = 0;
+    const W = shards ? shards[0].T.window : T.window;
+    const nextId = () => `i${String(++idCount).padStart(3, '0')}`;
+
+    // A finding a job kept, added to the report: a new one, or a sighting of
+    // one already there. Asks for a crop where it is new, more severe than
+    // before, or first seen in another engine.
+    const record = (raw, pass) => {
+      const k = raw.check + '|' + raw.key;
+      let it = issues.get(k);
+      const isNew = !it;
+      if (!it) {
+        it = { id: nextId(), fingerprint: k, check: raw.check, severity: raw.severity, message: raw.message, count: raw.count, elements: [], seen: {}, crops: [], first: pass.label };
+        const m = measuredFields(it); if (m) it.measured = m;
+        issues.set(k, it);
+      }
+      if (raw.movingBackground) it.movingBackground = true;
+      const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
+      // The words broken at this pass, for the message (brokenWordMessage).
+      if (raw.broken) {
+        const at = pass.label.replace(/, light$/, '').replace(/, 200% text$/, ' at 200% text').replace(/, (WebKit|Firefox)$/, ' in $1');
+        (it.broken ??= []).push({ at, ...raw.broken });
+      }
+      if (upgrade) { it.severity = raw.severity; it.message = raw.message; it.first = pass.label; }
+      if (raw.render) {
+        it.render ??= {};
+        const rr = (it.render[raw.render.engine] ??= { crisp: 0, blurred: 0 });
+        rr.crisp += raw.render.crisp; rr.blurred += raw.render.blurred;
+      }
+      it.count = Math.max(it.count, raw.count);
+      for (const el of raw.elements) if (it.elements.length < 8 && !it.elements.some((x) => x.sel === el.sel)) it.elements.push(el);
+      (it.seen[pass.mode] ??= []).push(pass.resize ? `${pass.resize[0]}→${pass.resize[1]}` : pass.w);
+      if (pass.resize) {
+        if (isNew) it.message = `After resize from ${pass.resize[0]} to ${pass.resize[1]} px: ${raw.message}`;
+        (it.resize ??= []).push({ from: pass.resize[0], to: pass.resize[1], engine: pass.engine || 'chromium' });
+      }
+      const wantCrop = (isNew || upgrade || (pass.engine && pass.engine !== 'chromium' && !it.crops.some((c) => c.engine === pass.engine) && !cropQueue.some((q) => q.it === it && q.pass.engine === pass.engine))) && raw.severity !== 'info';
+      if (wantCrop) { const q = { it, pass, raw }; cropQueue.push(q); return q; }
+      return null;
+    };
+    // A finding judged across the sweep: seen at a list of widths. Its
+    // elements are found, and it is cropped, on a page loaded as `at` says.
+    const addFinding = (f, at) => {
+      const w = f.widths[0], mode = f.mode || 'light';
+      const it = { id: nextId(), fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: f.elements.slice(0, 8).map((e) => ({ ...e, rect: [0, 0, 0, 0] })), seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
+      const m = measuredFields(it); if (m) it.measured = m;
+      if (f.movingBackground) it.movingBackground = true;
+      issues.set(it.fingerprint, it);
+      cropQueue.push({ it, pass: { ...at, w, label: it.first }, find: true });
+    };
+    // A step that timed out: an error finding naming the width, the pass and
+    // the step. Nothing after that step was measured at that width in that pass.
+    // A resize is seen as its pair of widths ("768→320"), as its findings are.
+    const timedOut = (mode, w, e, label, resize = null) => {
+      const at = resize ? `${resize[0]}→${resize[1]}` : w;
+      const fingerprint = `timed-out|${mode}|${at}|${e.step}`;
+      if (!issues.has(fingerprint)) {
+        issues.set(fingerprint, { id: nextId(), fingerprint, check: 'timed-out', severity: 'error', count: 1, elements: [], seen: { [mode]: [at] }, crops: [], first: label,
+          message: `${e.step[0].toUpperCase() + e.step.slice(1)} did not finish within ${Math.round(e.ms / 1000)} s (${label}). The inspector closed the browser context and went on to the next width, so nothing after that step was measured there. A page that blocks its main thread does this, and so does a renderer or a browser that stops answering. Inspect again: if the same step times out at the same width, the page is the cause.` });
+      }
+    };
+    const jobsOf = (kind) => plan.jobs.filter((j) => j.kind === kind || (kind === 'light' && j.kind === 'light-key'));
+    // Each job's findings in order; skip(raw, pass) leaves out a sighting.
+    const take = (job, skip = null) => {
+      const r = results[job.i];
+      if (!r) return 0;
+      remeasured += r.remeasured;
+      let n = 0;
+      for (const [raw, pass] of r.events) { if (skip?.(raw, pass)) continue; record(raw, pass); n++; }
+      if (r.timedOut) timedOut(job.pass.mode, job.pass.w, r.timedOut, job.pass.label, job.pass.resize);
+      return n;
+    };
+
+    if (watched.timedOut) timedOut('load', widths[0], watched.timedOut, `${widths[0]} px, the watch load`);
+    if (plan.scanTimedOut) timedOut('load', widths[0], plan.scanTimedOut, `${widths[0]} px, the breakpoint scan`);
+    // Pass set 1: light, 100% text, every width; contrast and fonts at the
+    // key widths, light and dark.
+    for (const job of jobsOf('light')) {
+      const r = results[job.i];
+      const w = job.pass.w, d = r?.data;
+      if (d) {
+        if (d.textSizes) sizes.base = d.textSizes;
+        for (const k of ['graphics', 'elements', 'text', 'relativeSpacing', 'ignored']) coverage[k] = Math.max(coverage[k], d.counts[k]);
+        for (const [k, v] of Object.entries(d.fontSizes)) distinct.fontSizes[k] = Math.max(distinct.fontSizes[k] ?? 0, v);
+        for (const [k, v] of Object.entries(d.spacing)) distinct.spacing[k] = Math.max(distinct.spacing[k] ?? 0, v);
+        for (const [k, v] of Object.entries(d.radii)) distinct.radii[k] = Math.max(distinct.radii[k] ?? 0, v);
+        for (const [k, v] of Object.entries(d.graphicFontSizes)) distinct.insideGraphics[k] = Math.max(distinct.insideGraphics[k] ?? 0, v);
+        distinct.perWidth.push({ w, fontSizes: Object.keys(d.fontSizes).length, spacing: Object.keys(d.spacing).length });
+        for (const [sel, prop, v] of d.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing.has(k)) obs.spacing.set(k, new Map()); obs.spacing.get(k).set(w, v); }
+        for (const [sel, ...v] of d.typeObs) { if (!obs.type.has(sel)) obs.type.set(sel, new Map()); obs.type.get(sel).set(w, v); }
+        for (const [k, v] of Object.entries(d.labels)) if (!obs.labels.has(k)) obs.labels.set(k, v);
+        for (const [k, v] of Object.entries(d.texts ?? {})) if (v && !obs.texts.has(k)) obs.texts.set(k, v);
+      }
+      if (r) {
+        coverage.contrastSamples += r.coverage.contrastSamples; coverage.contrastSkipped += r.coverage.contrastSkipped;
+        coverage.fontGroups = Math.max(coverage.fontGroups, r.fontGroups);
+        for (const [k, v] of r.fonts) renderedFonts.set(k, v);
+        if (r.drawing) drawing.push(...r.drawing);
+        consoleErrors.push(...r.errors);
+      }
+      take(job);
+    }
+    for (const f of [...(watched.failed ?? []), ...plan.jobs.flatMap((job) => results[job.i]?.failed ?? [])]) if (!failed.has(f.url)) failed.set(f.url, f);
+    const LIGHT = { mode: 'light' }, BIG = { mode: '200% text', text: 200 };
+    for (const f of scaleFindings(obs, system, widths, distinct)) addFinding(f, LIGHT);
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
-    bigAt = pages(() => ctx, async (page) => {
-      const c = await page.context().newCDPSession(page);
-      await c.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 26 } });
-    });
-    for (const w of widths) await guarded('200% text', w, `${w} px, 200% text`, resetLight, async () => {
-      const page2 = await within(TO.load, 'loading the page', () => bigAt(w));
-      const pass = { w, mode: '200% text', label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 };
-      const res = await within(TO.check, 'the layout checks', () => runPass(page2, pass, { recordSizes: w === keyWidths.at(-1), spacingObs: true }));
-      if (w === keyWidths.at(-1)) sizes.doubled = res.data.textSizes;
-      for (const [sel, prop, v] of res.data.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing2.has(k)) obs.spacing2.set(k, new Map()); obs.spacing2.get(k).set(w, v); }
-      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page2, raw, pass); });
-      log(`  ${pass.label}: ${res.issues.length} findings`);
-    });
-    log(`  200% text: done`);
-
+    for (const job of jobsOf('200')) {
+      const d = results[job.i]?.data;
+      if (d) {
+        if (d.textSizes) sizes.doubled = d.textSizes;
+        for (const [sel, prop, v] of d.spacingObs) { const k = sel + '|' + prop; if (!obs.spacing2.has(k)) obs.spacing2.set(k, new Map()); obs.spacing2.get(k).set(job.pass.w, v); }
+      }
+      take(job);
+    }
     // Text whose size does not follow the browser's text size: set in px or
     // vw only. Measured at the last key width, default against doubled.
     let textScaling = null;
@@ -855,101 +1013,144 @@ export async function inspect(url, o = {}) {
         const bySize = new Map();
         for (const k of fixed) bySize.set(sizes.base[k], (bySize.get(sizes.base[k]) || 0) + 1);
         const sizesText = [...bySize].sort((a, b) => a[0] - b[0]).map(([v, n]) => `${v} px (${n})`).join(', ');
-        await findingAt(bigAt, { check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
+        addFinding({ check: 'text-resize', severity: 'warning', key: 'all', mode: '200% text', widths: [keyWidths.at(-1)], count: fixed.length,
           message: `${fixed.length} of ${keys.length} text elements keep their size when the browser's default text size is doubled, so they are set in px or vw alone and ignore the reader's setting. Sizes affected: ${sizesText}. Set font sizes in rem, or give clamp() rem limits.`,
-          elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k })) });
+          elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k, ...(obs.texts.get(k) ? { text: obs.texts.get(k) } : {}) })) }, BIG);
       }
     }
-    for (const f of spacingUnitFindings(obs)) await findingAt(bigAt, f);
-    await bigAt.close();
+    for (const f of spacingUnitFindings(obs)) addFinding(f, BIG);
 
     // The resize pass, in Chromium: load at one width, resize to another,
-    // measure. Pairs cross every media and container query breakpoint the
-    // sweep found, both ways, and go from the narrowest width to the widest
-    // key width and back.
-    const pairs = resizePairs(widths, sigs, keyWidths.at(-1));
-    resize.pairs = pairs.map(([a, b]) => `${a}→${b}`);
-    resize.breakpoints = pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2;
-    await resizePass(() => ctx, resetLight, pairs, LAYOUT, null, 'light');
-    await guarded('light', widths[0], `${widths[0]} px, light`, resetLight,
-      () => within(TO.load + TO.check, 'loading the page to crop the page-load findings', () => pageLoadFindings(lightAt, watched)));
-    await lightAt.close();
-    watching = false;
-    await closeQuietly(ctx);
+    // measure. A finding the fresh load at the second width also had adds
+    // nothing; any other is reported as seen after that resize.
+    const resizeTake = (kind, freshMode, name) => {
+      const jobs = jobsOf(kind);
+      let n = 0;
+      for (const job of jobs) n += take(job, (raw) => (issues.get(raw.check + '|' + raw.key)?.seen[freshMode] ?? []).includes(job.pass.w));
+      log(`  ${name}, resize pass: ${plural(jobs.length, 'resize')}, ${plural(n, 'finding')} not seen on a fresh load`);
+    };
+    resizeTake('resize', 'light', 'Chromium');
+    // The page may not be the page people see: a request failed, the
+    // network never went quiet, the --wait-for selector never appeared, the
+    // page never went still, or elements appeared after it had gone still.
+    pageLoadFindings(addFinding, LIGHT, widths, failed, watched, o, W);
 
     // Pass set 3: device pixel ratio 2, hairlines only.
-    const hiContext = async () => {
-      const c = await browser.newContext({ viewport: { width: keyWidths[0], height: VIEW_H }, deviceScaleFactor: 2, colorScheme: 'light' });
-      await c.addInitScript(lateInit, T.window);
-      return c;
-    };
-    let ctx2 = await within(TO.close, 'opening a browser context', hiContext);
-    const hiAt = pages(() => ctx2);
-    const resetHi = async () => { await closeQuietly(ctx2); ctx2 = await within(TO.close, 'opening a browser context', hiContext); hiAt.reset(); };
-    for (const w of [keyWidths[0], keyWidths.at(-1)]) await guarded('2x', w, `${w} px, 2×`, resetHi, async () => {
-      const page3 = await within(TO.load, 'loading the page', () => hiAt(w));
-      const pass = { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] };
-      const res = await within(TO.check, 'the hairline check', () => runPass(page3, pass));
-      await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(page3, raw, pass); });
-    });
-    await closeQuietly(ctx2);
+    for (const job of jobsOf('2x')) take(job);
 
-    // Pass set 4: motion, in Chromium at the last key width, with motion
-    // allowed and again with prefers-reduced-motion: reduce.
-    // Held to one limit as a whole; on a timeout every context it opened is
-    // closed, and the report has no motion section.
+    // Pass set 4: WebKit and Firefox, light, layout checks only, each a
+    // fresh load; then their resize pass.
+    const engines = { widths: plan.engineWidths, checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
+    for (const name of plan.engines) {
+      const mine = plan.jobs.filter((j) => j.pass.engine === name);
+      const skipped = mine.map((j) => results[j.i]).find((r) => r?.skipped);
+      if (skipped) { engines.notRun[name] = skipped.skipped; log(`  ${ENGINE_NAMES[name]}: not run, ${skipped.skipped}`); continue; }
+      const broke = mine.find((j) => results[j.i]?.failedEngine);
+      if (broke) { engines.notRun[name] = `failed at ${broke.pass.w} px: ${results[broke.i].failedEngine}`; log(`  ${ENGINE_NAMES[name]}: ${engines.notRun[name]}`); }
+      const v = merging ? shards.find((s) => s.browsers?.[name])?.browsers[name] : (await others.get(name))?.b?.version();
+      if (v) engines.browsers[name] = v;
+      for (const job of jobsOf('engine:' + name)) take(job);
+      resizeTake('engine-resize:' + name, name, ENGINE_NAMES[name]);
+    }
+
+    // ------------------------------------------------ phase 4: crops
+    t0 = Date.now();
+    const cropsDone = phase('crops');
+    let cropCount = 0;
+    const cropJobs = groupCrops(cropQueue);
+    const cropResults = await pool(cropJobs, cropJobs.map((_, i) => i), workers, async (cj) => {
+      const pass = cj.pass;
+      let b = browser;
+      if (pass.engine) { const e = await engineBrowser(pass.engine); if (e.error) return { shots: [] }; b = e.b; }
+      let ctx = null;
+      const shots = [];
+      try {
+        await within(TO.load + TO.check, 'loading the page to crop the findings', async () => {
+          ctx = await newContext(b, { dpr: pass.dpr ?? 1, width: pass.resize ? pass.resize[0] : pass.w });
+          const page = await openPass(ctx, pass);
+          if (pass.scheme === 'dark') await page.emulateMedia({ colorScheme: 'dark' });
+          if (page.viewportSize()?.width !== pass.w) await page.setViewportSize({ width: pass.w, height: VIEW_H });
+          await page.evaluate(() => scrollTo(0, 0));
+          await settle(page);
+          await waitStill(page, T, watched.until);
+          for (const q of cj.items) {
+            if (q.find) {
+              const rects = await page.evaluate((sels) => sels.map((s) => {
+                let el = null; try { el = document.querySelector(s); } catch { /* bad selector */ }
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return [r.left + scrollX, r.top + scrollY, r.width, r.height].map((v) => Math.round(v * 100) / 100);
+              }), q.it.elements.map((e) => e.sel));
+              q.it.elements.forEach((e, i) => { e.rect = rects[i] || [0, 0, 0, 0]; });
+              const els = q.it.elements.filter((e) => e.rect[2] > 0);
+              if (outDir && els.length) shots.push([q, await crop(page, { elements: els, marks: [], crop: 'each' }, q.n)]);
+            } else if (outDir) shots.push([q, await crop(page, q.raw, q.n)]);
+          }
+        });
+      } catch (e) {
+        if (!(e instanceof StepTimeout)) throw e;
+        return { shots, timedOut: { step: e.step, ms: e.ms } };
+      } finally { await closeQuietly(ctx); }
+      return { shots };
+    });
+    // Named in the order the findings asked for them, up to o.maxCrops.
+    const byQ = new Map();
+    cropResults.forEach((cr, i) => {
+      for (const [q, imgs] of cr.shots) byQ.set(q, imgs);
+      if (cr.timedOut) timedOut(cropJobs[i].pass.mode, cropJobs[i].pass.w, cr.timedOut, cropJobs[i].pass.label, cropJobs[i].pass.resize);
+    });
+    for (const q of cropQueue) {
+      const imgs = byQ.get(q) ?? [];
+      if (cropCount >= (o.maxCrops ?? 400)) { for (const im of imgs) rmSync(im.tmp, { force: true }); continue; }
+      for (const im of imgs) {
+        const name = `crops/${q.it.id}-${q.it.crops.length + 1}.png`;
+        renameSync(im.tmp, join(outDir, name));
+        q.it.crops.push({ path: name, zoom: im.zoom, at: q.pass.label, region: im.region, ...(im.composited ? { composited: true } : {}), ...(q.pass.engine ? { engine: q.pass.engine } : {}) });
+        cropCount++;
+      }
+    }
+    cropsDone();
+    clock.crops = (Date.now() - t0) / 1000;
+    if (cropJobs.length) took.push(['crop', clock.crops * Math.min(workers, cropJobs.length) / cropJobs.length]);
+    log(`  crops: ${plural(cropCount, 'image')} from ${plural(cropJobs.length, 'page')}, ${duration(clock.crops)}`);
+
+    // ------------------------------------- phase 5: motion, alone
+    // In Chromium at the last key width, with motion allowed and again with
+    // prefers-reduced-motion: reduce. Held to one limit as a whole; on a
+    // timeout every context it opened is closed, and the report has no
+    // motion section. Its findings are cropped as they are recorded.
+    let motion = null;
+    // Nothing else may be open: a context a timed-out step left behind is
+    // closed first.
+    for (const c of browser.contexts()) await closeQuietly(c);
+    t0 = Date.now();
+    const motionDone = phase('motion');
+    const othersAtMotion = browser.contexts().length;
+    const motionMerge = async (page, raw, pass) => {
+      const r = { events: [] };
+      await keep(page, r, [raw], pass);
+      const q = record(raw, pass);
+      if (q && outDir && cropCount < (o.maxCrops ?? 400)) {
+        for (const im of await crop(page, raw, `m${cropQueue.length}`)) {
+          const name = `crops/${q.it.id}-${q.it.crops.length + 1}.png`;
+          renameSync(im.tmp, join(outDir, name));
+          q.it.crops.push({ path: name, zoom: im.zoom, at: pass.label, region: im.region });
+          cropCount++;
+        }
+      }
+    };
     try {
-      motion = await within(TO.motion, 'the motion passes', () => motionPasses(browser, url, o, system, keyWidths.at(-1), merge, log, T, watched.until));
+      motion = await within(TO.motion, 'the motion passes', () => motionPasses(browser, url, o, system, keyWidths.at(-1), motionMerge, log, T, watched.until));
     } catch (e) {
       if (!(e instanceof StepTimeout)) throw e;
       timedOut('motion', keyWidths.at(-1), e, `${keyWidths.at(-1)} px, motion`);
+      log(`  ${keyWidths.at(-1)} px, motion: timed out after ${Math.round(e.ms / 1000)} s`);
       for (const c of browser.contexts()) await closeQuietly(c);
       motion = null;
     }
-
-    // Pass set 5: WebKit and Firefox, light, layout checks only: four widths,
-    // or with --full the whole sweep, each a fresh load; then the resize pass.
-    const engines = { widths: o.engineWidths ?? (o.full ? widths : DEFAULT_WIDTHS), checks: ENGINE_CHECKS, browsers: { chromium: browser.version() }, notRun: {} };
-    const pw = await import('playwright');
-    for (const name of o.engines ?? ['webkit', 'firefox']) {
-      let eb;
-      try { eb = await pw[name].launch(); } catch (e) {
-        const m = String(e.message || e);
-        const err = (m.match(/\[err\] (?!\*\*\*)(.+)/) || [])[1];
-        engines.notRun[name] = /Executable doesn't exist/.test(m) ? `not installed (npx playwright install ${name})` : `the browser failed to start${err ? ` ("${err.trim()}")` : ''}`;
-        log(`  ${ENGINE_NAMES[name]}: not run, ${engines.notRun[name]}`);
-        continue;
-      }
-      try {
-        engines.browsers[name] = eb.version();
-        const engineContext = async () => {
-          const c = await eb.newContext({ viewport: { width: engines.widths[0], height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light' });
-          await c.addInitScript(lateInit, T.window);
-          return c;
-        };
-        let ectx = await within(TO.close, 'opening a browser context', engineContext);
-        const engAt = pages(() => ectx);
-        const resetE = async () => { await closeQuietly(ectx); ectx = await within(TO.close, 'opening a browser context', engineContext); engAt.reset(); };
-        for (const w of engines.widths) await guarded(name, w, `${w} px, ${ENGINE_NAMES[name]}`, resetE, async () => {
-          const ep = await within(TO.load, 'loading the page', () => engAt(w));
-          const pass = { w, mode: name, engine: name, label: `${w} px, ${ENGINE_NAMES[name]}`, dpr: 1, checks: ENGINE_CHECKS };
-          const res = await within(TO.check, 'the layout checks', () => runPass(ep, pass));
-          await within(TO.check, 'recording and cropping the findings', async () => { for (const raw of res.issues) await merge(ep, raw, pass); });
-          // Of the line checks, line-start runs in every engine: each breaks
-          // lines its own way, and a separator that begins a line in one
-          // may not in another.
-          const ty = await within(TO.check, 'the line checks', () => measured(ep, () => ep.evaluate(typography, { checks: ['line-start'], system, identifier: IDENTIFIER })));
-          await within(TO.check, 'recording and cropping the line findings', async () => { for (const raw of ty.issues) await merge(ep, raw, pass); });
-          log(`  ${pass.label}: ${res.issues.length + ty.issues.length} findings`);
-        });
-        await engAt.close();
-        await resizePass(() => ectx, resetE, resizePairs(engines.widths, sigs, keyWidths.at(-1)), ENGINE_CHECKS, name, name);
-        await closeQuietly(ectx);
-      } catch (e) {
-        engines.notRun[name] = `failed: ${String(e.message || e).split('\n')[0]}`;
-        log(`  ${ENGINE_NAMES[name]}: ${engines.notRun[name]}`);
-      } finally { await eb.close(); }
-    }
+    motionDone({ others: othersAtMotion });
+    clock.motion = (Date.now() - t0) / 1000;
+    took.push(['motion', clock.motion]);
 
     // Where the engines disagree, at the widths all three ran.
     const ran = ['chromium', ...Object.keys(engines.browsers).filter((n) => n !== 'chromium')];
@@ -992,12 +1193,14 @@ export async function inspect(url, o = {}) {
     for (const c of Object.keys(CHECKS)) byCheck[c] = { error: 0, warning: 0, info: 0 };
     for (const it of list) byCheck[it.check][it.severity]++;
     // Arrays of [value, count]: objects with numeric keys do not keep their order.
-    const sortNum = (o) => Object.entries(o).map(([k, v]) => [parseFloat(k), v]).sort((a, b) => a[0] - b[0]);
+    const sortNum = (x) => Object.entries(x).map(([k, v]) => [parseFloat(k), v]).sort((a, b) => a[0] - b[0]);
+    const resize = { pairs: plan.pairs.map(([a, b]) => `${a}→${b}`), breakpoints: plan.pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2 };
     const report = {
       tool: 'itten-inspector', version: VERSION, url, date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
-      sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize },
+      sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
+      schedule: { workers, jobs: plan.jobs.length, shards: shards ? shards.length : null, phases, seconds: { total: Math.round((Date.now() - clock.start) / 100) / 10, jobs: clock.jobs ?? null, crops: clock.crops, motion: clock.motion } },
       coverage,
       notJudged: [
         `Insides of drawn content: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and role="img" (mark a diagram drawn with HTML elements role="img"). Their outer boxes are measured. A figure's tables, text and caption are measured like the rest of the page. Skipped on this page: ${coverage.graphics} graphics.`,
@@ -1009,6 +1212,7 @@ export async function inspect(url, o = {}) {
         'Layout checks run in the light scheme only; the dark scheme is checked for contrast and fonts.',
         'Motion is recorded in Chromium at the last key width: animations running after load, and what hovering each element that declares a transition, tabbing through up to 40 focus stops, and clicking up to 15 buttons and toggles (twice, then Escape) start; frames while doing so and while scrolling the page and each scroll container by wheel, at full speed and again with the CPU slowed to a reference device (a benchmark index of 400 by default, set with --reference-index); frames are judged by the long animation frames Chromium reports, those over 50 ms. Links and submit buttons are not clicked, navigations are aborted, and motion that only scripts or timers start later is seen only if it runs while recording.',
         'Typographic checks judge the lines Chromium draws; WebKit and Firefox break lines a little differently. Printed pages are not paginated, so orphans and widows across pages are not judged.',
+        'Breakpoints are read on one page resized across the sweep in 16 px steps; two breakpoints less than 16 px apart can be found as one.',
       ],
       summary: {
         error: list.filter((i) => i.severity === 'error').length,
@@ -1018,11 +1222,12 @@ export async function inspect(url, o = {}) {
       },
       distinct: { fontSizes: sortNum(distinct.fontSizes), spacing: sortNum(distinct.spacing), radii: sortNum(distinct.radii), fixed: distinct.fixed, fluid: distinct.fluid, sweep: distinct.sweep, svgTextSizes: sortNum(distinct.insideGraphics), perWidth: distinct.perWidth },
       renderedFonts: [...renderedFonts.values()],
+      drawing,
       textScaling,
       engines,
       pageErrors: [...new Set(consoleErrors)].slice(0, 20),
       motion,
-      load: { networkIdle: watched.networkIdle, waitFor: o.waitFor ?? null, waited: watched.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()],
+      load: { networkIdle: watched.networkIdle, waitFor: o.waitFor ?? null, waited: watched.waited, settle: o.settle ?? 0, failedRequests: [...failed.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0)),
         timing: { benchmarkIndex: T.index, scale: T.scale, window: T.window, horizon: T.horizon, ceiling: T.ceiling, ...(slowed ? { slowed: { from: slowed.index, rate: slowed.rate } } : {}) },
         watched: { for: watched.watched, still: watched.still, stillAt: watched.quietAt, late: watched.late.length, lastLate: watched.until }, remeasured },
       issues: list,
@@ -1034,10 +1239,159 @@ export async function inspect(url, o = {}) {
       writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 2));
       writeFileSync(join(outDir, 'report.html'), renderHtml(report));
     }
+    if (o.timings !== false) { for (const [k, s] of took) recordTime(timings, pageKey, k, s); writeTimings(timings, o.timings); }
+    log(`Done in ${duration((Date.now() - clock.start) / 1000)}: alone ${duration(took.filter(([k]) => ['bench', 'watch', 'scan'].includes(k)).reduce((n, [, s]) => n + s, 0))}, jobs ${clock.jobs != null ? duration(clock.jobs) : 'merged'}, crops ${duration(clock.crops)}, motion ${duration(clock.motion)}.`);
     return report;
   } finally {
     dog?.stop();
+    for (const p of others.values()) { const e = await p; await e.b?.close().catch(() => {}); }
     await browser.close();
+  }
+
+  // Crops for one finding at one pass, written to temporary files; the
+  // caller names them once every crop is in. raw.crop says how: 'each'
+  // element on its own, 'marks' around each mark, or else the elements
+  // together with their marks.
+  async function crop(page, raw, tag) {
+    const groups = raw.crop === 'each'
+      ? raw.elements.slice(0, 3).map((e) => ({ boxes: [e.rect], marks: [] }))
+      : raw.crop === 'marks'
+        ? raw.marks.slice(0, 3).map((m) => ({ boxes: [], marks: [m], region: [Math.min(m.x1, m.x2) - 40, m.y1 - 48, Math.min(Math.abs(m.x2 - m.x1), 640) + 80, Math.abs(m.y2 - m.y1) + 96] }))
+        : [{ boxes: raw.elements.slice(0, 4).map((e) => e.rect), marks: raw.marks }];
+    const dims = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]);
+    const out = [];
+    for (const g of groups) {
+      let x, y, w, h, img;
+      if (raw.frame) {
+        // A finding over a moving background brings the frame it was
+        // measured in (contrastIssues): a page loaded again shows another.
+        [x, y, w, h] = raw.frame.region;
+        img = decodePng(Buffer.from(raw.frame.png, 'base64'));
+      } else {
+        [x, y, w, h] = cropRegion(g.boxes, dims, g.region);
+        try { img = decodePng(await page.screenshot({ clip: { x, y, width: w, height: h }, fullPage: true })); } catch { continue; }
+      }
+      const z = img.width * 4 <= 1440 ? 4 : img.width * 3 <= 1440 ? 3 : 2;
+      const big = upscale(img, z);
+      for (const b of g.boxes) outline(big, (b[0] - x) * z - 1, (b[1] - y) * z - 1, b[2] * z + 1, b[3] * z + 1, [230, 0, 150]);
+      for (const m of g.marks || []) for (const d of [0, 1]) outline(big, (m.x1 - x) * z + d, (m.y1 - y) * z + d, (m.x2 - m.x1) * z, (m.y2 - m.y1) * z, [0, 120, 255]);
+      const tmp = join(outDir, 'crops', `.${tag}-${out.length + 1}.png`);
+      writeFileSync(tmp, encodePng(big.width, big.height, big.data));
+      out.push({ tmp, zoom: z, region: [x, y, w, h], ...(raw.frame ? { composited: true } : {}) });
+    }
+    return out;
+  }
+}
+
+// The phases that time things (the benchmark, the watch load, motion) must
+// run alone: no other phase overlaps them and no other browser context is
+// open when they start. Returns what broke that, as sentences.
+export const TIMING_PHASES = ['benchmark', 'watch load', 'motion'];
+export function phaseOverlaps(phases) {
+  const out = [];
+  for (const p of phases.filter((x) => TIMING_PHASES.includes(x.name))) {
+    if (p.others) out.push(`${p.name} began with ${plural(p.others, 'other browser context')} open`);
+    for (const q of phases) if (q !== p && q.end !== null && p.end !== null && q.start < p.end && p.start < q.end) out.push(`${p.name} (${p.start}–${p.end} ms) overlapped ${q.name} (${q.start}–${q.end} ms)`);
+  }
+  return out;
+}
+
+// Every job of a run, in the order a serial run takes them and their
+// findings are recorded in: each width at 100% text in Chromium (contrast
+// and fonts at the key widths), each at 200% text, the Chromium resizes,
+// the two widths at 2x, then per engine its widths and its resizes.
+function makePlan(widths, keyWidths, engineWidths, engineNames, scan, added) {
+  const jobs = [];
+  const J = (kind, body, pass, extra = {}) => jobs.push({ i: jobs.length, kind, body, pass, ...extra });
+  for (const w of widths) J(keyWidths.includes(w) ? 'light-key' : 'light', 'light', { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT }, { chromiumText: true });
+  for (const w of widths) J('200', 'text200', { w, mode: '200% text', text: 200, label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 }, { chromiumText: true });
+  const pairs = resizePairs(widths, scan.sigs, keyWidths.at(-1));
+  const noHair = LAYOUT.filter((c) => c !== 'hairline-subpixel');
+  for (const [a, b] of pairs) J('resize', 'layout', { w: b, mode: 'resize', resize: [a, b], label: `${b} px after resize from ${a} px`, dpr: 1, checks: noHair }, { chromiumText: true });
+  for (const w of [...new Set([keyWidths[0], keyWidths.at(-1)])]) J('2x', 'layout', { w, mode: '2x', label: `${w} px, 2×`, dpr: 2, checks: ['hairline-subpixel'] });
+  for (const name of engineNames) {
+    const N = ENGINE_NAMES[name];
+    for (const w of engineWidths) J('engine:' + name, 'layout', { w, mode: name, engine: name, label: `${w} px, ${N}`, dpr: 1, checks: ENGINE_CHECKS });
+    for (const [a, b] of resizePairs(engineWidths, scan.sigs, keyWidths.at(-1))) J('engine-resize:' + name, 'layout', { w: b, mode: `${N} resize`, engine: name, resize: [a, b], label: `${b} px after resize from ${a} px, ${N}`, dpr: 1, checks: ENGINE_CHECKS.filter((c) => c !== 'hairline-subpixel') });
+  }
+  return { widths, keyWidths, engineWidths, engines: engineNames, pairs, breakpoints: scan.breakpoints, added, scanTimedOut: scan.timedOut ?? null, jobs };
+}
+
+const countKinds = (jobs) => {
+  const n = new Map();
+  for (const j of jobs) { const k = j.kind.replace(/^light-key$/, 'light').replace(/:(\w+)$/, (_, e) => ' ' + ENGINE_NAMES[e]); n.set(k, (n.get(k) || 0) + 1); }
+  return [...n].map(([k, v]) => `${v} ${k}`).join(', ');
+};
+
+// Crops asked for at the same pass share one page.
+function groupCrops(queue) {
+  const groups = new Map();
+  queue.forEach((q, n) => {
+    q.n = 'c' + n;
+    const p = q.pass;
+    const k = [p.mode, p.w, p.resize?.join('-'), p.engine, p.dpr ?? 1, p.text, p.scheme].join('|');
+    if (!groups.has(k)) groups.set(k, { pass: p, items: [] });
+    groups.get(k).items.push(q);
+  });
+  return [...groups.values()];
+}
+
+// The shards a run was split into, read back for --merge: the same plan in
+// each, and every job measured by exactly one of them.
+function readShards(dirs, url) {
+  const shards = dirs.map((d) => {
+    const f = /\.json$/.test(d) ? d : join(d, 'shard.json');
+    try { return JSON.parse(readFileSync(f, 'utf8')); } catch (e) { throw new Error(`cannot read the shard ${f}: ${e.message}`); }
+  }).sort((a, b) => a.shard.i - b.shard.i);
+  const plan = shards[0].plan;
+  const results = new Array(plan.jobs.length);
+  for (const s of shards) {
+    if (s.version !== VERSION) throw new Error(`shard ${s.shard.i}/${s.shard.n} was written by ITTEN ${s.version}, not ${VERSION}`);
+    if (JSON.stringify(s.plan.jobs) !== JSON.stringify(plan.jobs)) throw new Error(`shard ${s.shard.i}/${s.shard.n} planned other jobs than shard ${shards[0].shard.i}/${shards[0].shard.n}: run every shard with the same options on the same page`);
+    if (timingKey(s.url) !== timingKey(url)) throw new Error(`shard ${s.shard.i}/${s.shard.n} inspected ${s.url}, not ${url}`);
+    for (const [i, r] of Object.entries(s.results)) {
+      if (results[i]) throw new Error(`job ${i} is in more than one shard`);
+      results[i] = r;
+    }
+  }
+  const missing = plan.jobs.filter((j) => !results[j.i]).map((j) => j.i);
+  if (missing.length) throw new Error(`${plural(missing.length, 'job')} measured by no shard (${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}): a shard is missing; there should be ${shards[0].shard.n}`);
+  return { plan, results, shards, watched: shards[0].watched };
+}
+
+// The page may not be the page people see: a request failed, the network
+// never went quiet, the --wait-for selector never appeared, the page never
+// went still, or elements appeared after it had gone still.
+function pageLoadFindings(addFinding, at, widths, failed, watched, o, W) {
+  const w = [widths[0]];
+  const sec = (ms) => (ms / 1000).toFixed(1);
+  // By URL: requests fail in the order the network answers, which changes
+  // from run to run.
+  const req = [...failed.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
+  if (req.length) {
+    const list = req.slice(0, 8).map((r) => `${r.method} ${r.url} (${r.type}, ${r.why})`).join('; ');
+    addFinding({ check: 'page-load', severity: 'error', key: 'requests', mode: 'load', widths: w, count: req.length, elements: [], resources: req.map((r) => r.url),
+      message: `${plural(req.length, 'request')} failed while the page was measured: ${list}${req.length > 8 ? `; and ${req.length - 8} more` : ''}. What was measured may be the page's error state. Fix the requests, then inspect again.` }, at);
+  }
+  if (watched.networkIdle === false) {
+    addFinding({ check: 'page-load', severity: 'warning', key: 'busy', mode: 'load', widths: w, count: 1, elements: [],
+      message: 'The network did not go quiet within 10 s of the load event, so the page was measured while requests were still running. If it draws from them, pass --wait-for with a selector for what appears last, or --settle with a wait in ms.' }, at);
+  }
+  if (watched.waited === false) {
+    addFinding({ check: 'page-load', severity: 'error', key: 'wait-for', mode: 'load', widths: w, count: 1, elements: [],
+      message: `--wait-for ${o.waitFor}: no element matched within 30 s of the load event, so the page was measured without it.` }, at);
+  }
+  if (watched.still === false) {
+    addFinding({ check: 'page-load', severity: 'warning', key: 'never-still', mode: 'load', widths: w, count: 1, elements: [],
+      message: `The page kept adding elements for ${sec(watched.watched)} s after the load event and never went ${W} ms without one, so it was measured while still drawing. Content that changes on purpose, such as a carousel or a live feed, can be marked data-itten-ignore="page-load" data-itten-ignore-subtree.` }, at);
+  }
+  const els = watched.late;
+  if (els.length) {
+    const ts = els.map((e) => e.t).sort((a, b) => a - b);
+    const when = ts[0] === ts.at(-1) ? `${sec(ts[0])} s` : `${sec(ts[0])} to ${sec(ts.at(-1))} s`;
+    const them = els.length === 1 ? 'it' : 'them';
+    addFinding({ check: 'page-load', severity: 'warning', key: 'late', widths: w, count: els.length, elements: els.map(({ sel, label }) => ({ sel, label })),
+      message: `${plural(els.length, 'element')} appeared ${when} after the load event, after the page had gone still at ${sec(watched.quietAt)} s (nothing added for ${W} ms). A screenshot, a test or a reader that takes the page as finished once it goes still sees the page without ${them}; the inspector waited for ${them} before measuring. The page was still drawing: a timer, an animation-frame chain or a slow request. If it is meant to, pass --wait-for with a selector for what appears last. Content that changes on purpose, such as a carousel, can be marked data-itten-ignore="page-load" data-itten-ignore-subtree.` }, at);
   }
 }
 
@@ -1076,7 +1430,7 @@ function spacingUnitFindings(obs) {
   }
   return [...groups].sort((a, b) => a[0] - b[0]).map(([v, g]) => ({
     check: 'spacing-unit', severity: 'warning', key: 'px|' + v, mode: '200% text', count: g.n, widths: [...g.ws].sort((a, b) => a - b),
-    elements: g.sels.map((s) => ({ sel: s, label: obs.labels.get(s) || s })),
+    elements: g.sels.map((s) => ({ sel: s, label: obs.labels.get(s) || s, ...(obs.texts.get(s) ? { text: obs.texts.get(s) } : {}) })),
     message: `${v} px of ${[...g.props].join(', ')} stays ${v} px when the browser's text size is doubled, on ${plural(g.n, 'element')}: it is set in px, so the text grows and the gap does not. Set spacing in rem, the unit of the type (${Math.round((v / 16) * 10000) / 10000}rem at the default 16 px).`,
   }));
 }
@@ -1266,6 +1620,12 @@ async function fontIssues(cdp, page, res, system, renderedFonts) {
   const reps = res.data.fontReps;
   if (!reps.length) return [];
   const groups = new Map();
+  // A variable web font is named by the platform after whichever of its
+  // instances it met first ("Inter Tight Light" for a 300–500 face), which
+  // changes with the order a run loads things in. A web font is named by the
+  // @font-face family its platform name begins with.
+  const faces = await page.evaluate(() => [...new Set([...document.fonts].map((f) => f.family.replace(/^["']|["']$/g, '')))]).catch(() => []);
+  const faceName = (f) => (f.isCustomFont && faces.filter((n) => f.familyName === n || f.familyName.startsWith(n + ' ')).sort((x, y) => y.length - x.length)[0]) || f.familyName;
   try {
     const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
     for (const rep of reps) {
@@ -1277,8 +1637,9 @@ async function fontIssues(cdp, page, res, system, renderedFonts) {
       let g = groups.get(rep.group);
       if (!g) groups.set(rep.group, (g = { rep, stray: [], fonts: new Map() }));
       for (const f of fonts) {
-        const cur = g.fonts.get(f.familyName) || { name: f.familyName, ps: f.postScriptName, custom: f.isCustomFont, glyphs: 0 };
-        cur.glyphs += f.glyphCount; g.fonts.set(f.familyName, cur);
+        const name = faceName(f);
+        const cur = g.fonts.get(name) || { name, ps: f.postScriptName, custom: f.isCustomFont, glyphs: 0 };
+        cur.glyphs += f.glyphCount; g.fonts.set(name, cur);
       }
       const odd = fonts.filter((f) => !f.isCustomFont && !/emoji/i.test(f.familyName));
       if (odd.length && fonts.some((f) => f.isCustomFont)) g.stray.push({ rep, odd });
@@ -1779,6 +2140,23 @@ async function opticalIssues(page, cands) {
   return out;
 }
 
+// The region a crop shows: the boxes with 24 px around them, at most 720 ×
+// 540 px (else the first box alone), inside the page.
+function cropRegion(boxes, dims, given = null) {
+  const pad = 24;
+  const region = (bs) => {
+    const x1 = Math.min(...bs.map((b) => b[0])) - pad, y1 = Math.min(...bs.map((b) => b[1])) - pad;
+    const x2 = Math.max(...bs.map((b) => b[0] + b[2])) + pad, y2 = Math.max(...bs.map((b) => b[1] + b[3])) + pad;
+    return [x1, y1, x2 - x1, y2 - y1];
+  };
+  let [x, y, w, h] = given || region(boxes);
+  if (!given && (w > 720 || h > 540)) [x, y, w, h] = region([boxes[0]]);
+  w = Math.min(w, 720); h = Math.min(h, 540);
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.max(8, Math.min(Math.ceil(w), dims[0] - x)); h = Math.max(8, Math.min(Math.ceil(h), dims[1] - y));
+  return [x, y, w, h];
+}
+
 // ---------------------------------------------------------------- contrast
 async function contrastIssues(page, res, coverage) {
   const texts = res.data.text;
@@ -1801,7 +2179,38 @@ async function contrastIssues(page, res, coverage) {
     await page.evaluate(() => document.getElementById('itten-hide-text')?.remove());
     await settle(page);
   }
+  // Where something keeps drawing (a canvas, a video, an animation), the
+  // pixels behind the text change between the two frames, 400 ms apart.
+  // The page is cut into 16 px tiles; a tile moves when any of 16 points in
+  // it changes at all. A still page gives identical pixels in two
+  // screenshots, and a slow scene drifts by one step of a channel in 400 ms
+  // (HundredLives' clouds: #E8EBE5 to #E9EBE5). A finding
+  // over a moving tile is marked movingBackground: its value depends on the
+  // frame, so parity reports it and does not fail on it (0.4 judges it
+  // across fixed frames). Moving tiles are reported as rectangles.
+  const TILE = 16, [f0, f1] = frames;
+  const cols = Math.ceil(f0.width / TILE), rows = Math.ceil(Math.min(f0.height, f1.height) / TILE);
+  const moving = new Uint8Array(cols * rows);
+  if (f0.width === f1.width) for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
+    tile: for (let y = ty * TILE + 2; y < Math.min((ty + 1) * TILE, f0.height, f1.height); y += 4) for (let x = tx * TILE + 2; x < Math.min((tx + 1) * TILE, f0.width); x += 4) {
+      const o0 = (y * f0.width + x) * f0.channels, o1 = (y * f1.width + x) * f1.channels;
+      if (Math.abs(f0.data[o0] - f1.data[o1]) + Math.abs(f0.data[o0 + 1] - f1.data[o1 + 1]) + Math.abs(f0.data[o0 + 2] - f1.data[o1 + 2]) > 0) { moving[ty * cols + tx] = 1; break tile; }
+    }
+  }
+  const over = ([x, y, w, h]) => {
+    for (let ty = Math.max(0, Math.floor(y / TILE)); ty <= Math.min(rows - 1, Math.floor((y + h - 1) / TILE)); ty++)
+      for (let tx = Math.max(0, Math.floor(x / TILE)); tx <= Math.min(cols - 1, Math.floor((x + w - 1) / TILE)); tx++) if (moving[ty * cols + tx]) return true;
+    return false;
+  };
+  const drawing = [];
+  for (let ty = 0, open = new Map(); ty <= rows; ty++) {
+    const runs = new Map();
+    for (let tx = 0; ty < rows && tx < cols; tx++) if (moving[ty * cols + tx]) { let e = tx; while (e + 1 < cols && moving[ty * cols + e + 1]) e++; runs.set(`${tx}-${e}`, [tx, e]); tx = e; }
+    for (const [k, reg] of open) if (runs.has(k)) { reg[3] += TILE; runs.delete(k); } else { drawing.push(reg); open.delete(k); }
+    for (const [k, [s, e]] of runs) open.set(k, [s * TILE, ty * TILE, (e - s + 1) * TILE, TILE]);
+  }
   const out = [];
+  out.drawing = drawing.slice(0, 40);
   for (const t of texts) {
     const a = t.color[3] * t.opacity;
     if (t.clipText || a < 0.1) { coverage.contrastSkipped++; continue; }
@@ -1812,12 +2221,12 @@ async function contrastIssues(page, res, coverage) {
       const nx = Math.min(40, Math.max(2, Math.ceil(w / 4))), ny = Math.min(8, Math.max(2, Math.ceil(h / 4)));
       for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
         const px = Math.round(x + 1 + ((w - 2) * (i + 0.5)) / nx), py = Math.round(y + 1 + ((h - 2) * (j + 0.5)) / ny);
-        for (const f of frames) {
-          if (px < 0 || py < 0 || px >= f.width || py >= f.height) continue;
+        frames.forEach((f, fi) => {
+          if (px < 0 || py < 0 || px >= f.width || py >= f.height) return;
           const o = (py * f.width + px) * f.channels;
           const bg = [f.data[o], f.data[o + 1], f.data[o + 2]];
-          samples.push({ r: ratio(blend(t.color, a, bg), bg), bg });
-        }
+          samples.push({ r: ratio(blend(t.color, a, bg), bg), bg, fi });
+        });
       }
     }
     if (!samples.length) continue;
@@ -1827,11 +2236,47 @@ async function contrastIssues(page, res, coverage) {
     const fg = blend(t.color, a, med.bg);
     const f2 = (v) => v.r.toFixed(2);
     if (med.r < min) {
-      out.push({ check: 'contrast', severity: 'error', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union',
+      out.push({ check: 'contrast', severity: 'error', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', ...(t.lines.some(over) ? { movingBackground: true, frameOf: med.fi } : {}),
         message: `Text measures ${f2(med)}:1 against the pixels behind it (needs ${min}:1${large ? ', large text' : ''}). Text ${hex(fg)} over about ${hex(med.bg)}; worst sample ${f2(samples[0])}:1.` });
     } else if (p10.r < min) {
-      out.push({ check: 'contrast', severity: 'warning', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union',
+      out.push({ check: 'contrast', severity: 'warning', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', ...(t.lines.some(over) ? { movingBackground: true, frameOf: p10.fi } : {}),
         message: `Text drops to ${f2(p10)}:1 over a tenth of the background behind it (median ${f2(med)}:1, needs ${min}:1). Text ${hex(fg)}, darkest-contrast background ${hex(p10.bg)}.` });
+    }
+  }
+  // The crop of a finding over a moving background is made here, from the
+  // frame its message was measured in: the background of that frame, with
+  // the text laid over it from a screenshot of the text alone (everything
+  // else transparent). The text does not move, so when that screenshot is
+  // taken does not matter.
+  const moved = out.filter((f) => f.movingBackground);
+  if (moved.length) {
+    let text = null;
+    await page.evaluate(() => {
+      const s = document.createElement('style');
+      s.id = 'itten-text-only';
+      s.textContent = 'html, body, *, *::before, *::after { background: transparent !important; border-color: transparent !important; box-shadow: none !important; outline-color: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } img, svg, canvas, video, picture, iframe, object, embed { visibility: hidden !important; }';
+      document.head.append(s);
+    });
+    try {
+      await settle(page);
+      text = decodePng(await page.screenshot({ fullPage: true, omitBackground: true, clip: { x: 0, y: 0, width: res.vw, height: H } }));
+    } catch { /* no text layer: the crop is taken on a page loaded again */ } finally {
+      await page.evaluate(() => document.getElementById('itten-text-only')?.remove());
+      await settle(page);
+    }
+    for (const f of moved) {
+      const fr = frames[f.frameOf];
+      delete f.frameOf;
+      if (!text || !fr || text.width !== fr.width || text.channels !== 4) continue;
+      const [x, y, w, h] = cropRegion(f.elements.map((e) => e.rect), [fr.width, Math.min(fr.height, text.height)]);
+      const rgba = Buffer.alloc(w * h * 4);
+      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+        const o = ((y + yy) * fr.width + x + xx) * fr.channels, ot = ((y + yy) * text.width + x + xx) * 4, oi = (yy * w + xx) * 4;
+        const al = text.data[ot + 3] / 255;
+        for (let k = 0; k < 3; k++) rgba[oi + k] = Math.round(text.data[ot + k] * al + fr.data[o + k] * (1 - al));
+        rgba[oi + 3] = 255;
+      }
+      f.frame = { region: [x, y, w, h], png: encodePng(w, h, rgba).toString('base64') };
     }
   }
   return out;
@@ -1869,7 +2314,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     system = r.system;
   }
   const out = args.out || 'itten-report';
+  let shard;
+  if (args.shard) {
+    const m = String(args.shard).match(/^(\d+)\/(\d+)$/);
+    if (!m || +m[1] < 1 || +m[1] > +m[2]) { console.error(`--shard takes i/n, as 2/3, not "${args.shard}"`); process.exit(2); }
+    shard = { i: +m[1], n: +m[2] };
+  }
+  if (args.workers !== undefined && !(Number(args.workers) >= 1)) { console.error(`--workers takes a number of 1 or more, not "${args.workers}"`); process.exit(2); }
   const report = await inspect(url, {
+    workers: args.workers !== undefined ? Number(args.workers) : undefined, shard,
+    mergeFrom: typeof args.merge === 'string' ? args.merge.split(',').filter(Boolean) : undefined,
+    aroundBreakpoints: args['no-breakpoint-widths'] ? false : undefined,
     system, systemPath: args.system || null, out, full: !!args.full,
     widths: args.widths ? parseWidths(args.widths) : undefined,
     keyWidths: args['key-widths'] ? parseWidths(args['key-widths']) : undefined,
@@ -1883,6 +2338,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
   });
+  if (report.shard) process.exit(0);
   const s = report.summary;
   console.log(`\n${s.error} errors, ${s.warning} warnings, ${s.info} info. Report: ${join(out, 'report.html')}`);
   const b = report.baseline;

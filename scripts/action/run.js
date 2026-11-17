@@ -17,9 +17,12 @@
 // ITTEN_SERVE_TIMEOUT   seconds to wait for the serve command's URL (default 120)
 // ITTEN_OVERRIDES       overrides file (default itten.overrides.json); when it exists it must
 //                       validate, and docs/itten-overrides.md must match it
+// ITTEN_WORKERS         jobs at once (default: the CPU cores less two, capped by memory)
+// ITTEN_SHARD           "i/n": measure every n-th job of each page and write shard.json only
+// ITTEN_MERGE           a directory of shard artifacts, one folder each, to merge into reports
 // ITTEN_OUT             report directory
 
-import { existsSync, mkdirSync, writeFileSync, copyFileSync, appendFileSync, openSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, copyFileSync, appendFileSync, openSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { start } from '../serve.js';
@@ -59,6 +62,14 @@ async function main(out) {
   if (command && !given) problems.push('serve-command needs url: the address it serves');
   if (!staticDir && !command && !given) problems.push('give static-dir, serve-command with url, or url');
   if (staticDir && !existsSync(staticDir)) problems.push(`static-dir ${staticDir} does not exist; build the site before this step`);
+  const workers = env('ITTEN_WORKERS') ? Number(env('ITTEN_WORKERS')) : undefined;
+  if (workers !== undefined && !(workers >= 1)) problems.push(`workers must be a number of 1 or more, not "${env('ITTEN_WORKERS')}"`);
+  const shardText = env('ITTEN_SHARD'), mergeDir = env('ITTEN_MERGE');
+  const sm = shardText.match(/^(\d+)\/(\d+)$/);
+  const shard = sm && +sm[1] >= 1 && +sm[1] <= +sm[2] ? { i: +sm[1], n: +sm[2] } : null;
+  if (shardText && !shard) problems.push(`shard must be i/n, as 2/3, not "${shardText}"`);
+  if (shardText && mergeDir) problems.push('give shard or merge, not both');
+  if (mergeDir && !existsSync(mergeDir)) problems.push(`merge directory ${mergeDir} does not exist; download the shard artifacts into it first`);
 
   let systemPath = env('ITTEN_SYSTEM');
   if (!systemPath) systemPath = existsSync('itten.system.json') ? 'itten.system.json' : 'none';
@@ -87,7 +98,7 @@ async function main(out) {
   const summary = {
     tool: 'itten-action', version: VERSION, name: env('ITTEN_NAME', 'itten-report'), mode, failOn,
     system: systemPath === 'none' ? null : systemPath, baseline: hasBaseline ? baselineFile : null, wroteBaseline: writeBaseline ? 'itten-baseline.json' : null,
-    engines, overrides, pages: [], problems,
+    engines, overrides, pages: [], problems, ...(shard ? { shard } : {}), ...(mergeDir ? { merged: true } : {}),
   };
   if (problems.length) return summary;
   // A bad overrides file fails the run, but the pages are still inspected.
@@ -112,13 +123,22 @@ async function main(out) {
       used.add(dir);
       const url = pageUrl(base, p);
       process.stderr.write(`\nInspecting ${url}\n`);
+      if (shard) {
+        const s = await inspect(url, { system, systemPath: system ? systemPath : null, out: join(out, dir), full: mode === 'full', engines, workers, shard });
+        summary.pages.push({ page: pageName(p), url, dir, shard, jobs: s.jobs });
+        continue;
+      }
+      // The shard artifacts each hold this page's shard.json in the same folder.
+      const mergeFrom = mergeDir ? readdirSync(mergeDir).map((d) => join(mergeDir, d, dir, 'shard.json')).filter((f) => existsSync(f) && statSync(f).isFile()) : undefined;
+      if (mergeDir && !mergeFrom.length) throw new Error(`no shard of ${pageName(p)} in ${mergeDir}: expected ${join(mergeDir, '<artifact>', dir, 'shard.json')}`);
       const report = await inspect(url, {
+        workers, mergeFrom,
         system, systemPath: system ? systemPath : null, out: join(out, dir), full: mode === 'full', engines,
         page: pageName(p), baseline: hasBaseline ? baselineFile : undefined, writeBaseline: writeBaseline ? newBaseline : undefined,
       });
       const fail = failing(report, failOn);
       const byId = new Map(report.issues.map((i) => [i.id, i]));
-      const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, order: i.elements[0]?.order ?? null, rule: i.rule });
+      const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, text: i.elements[0]?.text ?? null, order: i.elements[0]?.order ?? null, rule: i.rule });
       const b = report.baseline;
       summary.pages.push({
         page: pageName(p), url, dir, summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
@@ -146,9 +166,9 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
   mkdirSync(dir, { recursive: true });
   let summary;
   try { summary = await main(dir); } catch (e) { summary = { tool: 'itten-action', version: VERSION, pages: [], problems: [...problems, String(e.message || e)] }; }
-  const sum = (k) => summary.pages.reduce((n, p) => n + p.summary[k], 0);
+  const sum = (k) => summary.pages.reduce((n, p) => n + (p.summary?.[k] ?? 0), 0);
   const count = (k) => summary.pages.reduce((n, p) => n + (p.baseline?.[k]?.length ?? 0), 0);
-  summary.totals = { error: sum('error'), warning: sum('warning'), info: sum('info'), new: count('new'), fixed: count('fixed'), failing: summary.pages.reduce((n, p) => n + p.failing, 0) };
+  summary.totals = { error: sum('error'), warning: sum('warning'), info: sum('info'), new: count('new'), fixed: count('fixed'), failing: summary.pages.reduce((n, p) => n + (p.failing ?? 0), 0) };
   writeFileSync(join(dir, 'summary.json'), JSON.stringify(summary, null, 2));
   const outputs = { 'report-dir': dir, errors: summary.totals.error, warnings: summary.totals.warning, info: summary.totals.info, new: summary.totals.new, fixed: summary.totals.fixed, failing: summary.totals.failing, problems: summary.problems.length };
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(outputs).map(([k, v]) => `${k}=${v}\n`).join(''));

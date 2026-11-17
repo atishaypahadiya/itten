@@ -54,6 +54,13 @@ export async function main() {
   const out = resolve(env('ITTEN_OUT', 'itten-report'));
   const file = join(out, 'summary.json');
   const s = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { name: env('ITTEN_NAME', 'itten-report'), pages: [], problems: ['the inspection step did not write summary.json'] };
+  // A shard measures and uploads; the merge job writes the report and the comment.
+  if (s.shard) {
+    const text = `### ITTEN inspection, shard ${s.shard.i}/${s.shard.n}\n\n${s.problems?.length ? s.problems.map((p) => `- ${p}`).join('\n') : `Measured ${s.pages.map((p) => `${p.jobs} jobs of \`${p.page}\``).join(', ')}. The merge job combines the shards into the report and the pull request comment.`}\n`;
+    if (env('GITHUB_STEP_SUMMARY')) appendFileSync(env('GITHUB_STEP_SUMMARY'), text);
+    else console.log(text);
+    return { action: 'skipped', why: 'a shard' };
+  }
   const runUrl = env('GITHUB_RUN_ID') ? `${env('GITHUB_SERVER_URL', 'https://github.com')}/${env('GITHUB_REPOSITORY')}/actions/runs/${env('GITHUB_RUN_ID')}` : '';
   const artifactUrl = env('ITTEN_ARTIFACT_URL');
   let note = '';
