@@ -28,6 +28,7 @@ import { spawn } from 'node:child_process';
 import { start } from '../serve.js';
 import { inspect, loadSystem, VERSION, CHECKS } from '../../inspector/inspect.js';
 import { failing } from '../../inspector/baseline.js';
+import { view, findingsOf } from '../../inspector/finding.js';
 import { movingTiles } from '../../inspector/report-html.js';
 import { checkFiles } from '../overrides.js';
 
@@ -137,17 +138,21 @@ async function main(out) {
         system, systemPath: system ? systemPath : null, out: join(out, dir), full: mode === 'full', engines,
         page: pageName(p), baseline: hasBaseline ? baselineFile : undefined, writeBaseline: writeBaseline ? newBaseline : undefined,
       });
+      // report/1: the status first. A refused run judged nothing, so its empty
+      // findings are not a pass; it is a problem, which fails the check.
+      if (report.status === 'refused') { problems.push(`${pageName(p)}: the inspection was refused: ${report.reason}`); continue; }
       const fail = failing(report, failOn);
-      const byId = new Map(report.issues.map((i) => [i.id, i]));
+      const issues = findingsOf(report);
+      const byId = new Map(issues.map((i) => [i.id, i]));
       const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, text: i.elements[0]?.text ?? null, order: i.elements[0]?.order ?? null, rule: i.rule });
       const b = report.baseline;
       summary.pages.push({
-        page: pageName(p), url, dir, summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
+        page: pageName(p), url, dir, status: report.status ?? 'complete', ...(report.reason ? { reason: report.reason } : {}), summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
         failing: fail.length,
         moving: (({ tiles, unexplained }) => ({ tiles, unexplained }))(movingTiles(report)),
         baseline: b ? { found: b.found, new: b.new.map((id) => brief(byId.get(id))), worse: b.worse.map((w) => ({ ...brief(byId.get(w.id)), was: w.was })),
           fixed: b.fixed.map((f) => ({ check: f.check, title: CHECKS[f.check]?.title, severity: f.severity, message: f.message, element: f.elements[0] ?? null })), sameWidths: b.sameWidths } : null,
-        top: report.issues.filter((i) => i.severity !== 'info').slice(0, 10).map(brief),
+        top: issues.filter((i) => i.severity !== 'info').slice(0, 10).map(brief),
         engines: report.engines ? { ran: Object.keys(report.engines.browsers), notRun: report.engines.notRun, differences: report.engines.differences.length } : null,
         cpu: report.motion?.cpu ?? null,
       });

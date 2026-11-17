@@ -142,7 +142,7 @@ The typographic checks (`widow` to `optical-margin` above) judge the lines Chrom
 
 A finding is listed once however many widths it appears at. Its message comes from the first width where it was seen.
 
-In `report.json`, a finding from a timing-sensitive check names its measured fields in `measured`: `["count", "message"]` for `frame-timing` (frames over budget, their durations, the CPU slow-down), `["message"]` for the `never-still` and `late` page-load findings and for flashing driven by script, and `"elements.rect"` for every motion check, whose element boxes are taken while the page moves. These values differ between any two runs of the same page, as do the glyph counts in `renderedFonts`.
+In `report.json`, a finding from a timing-sensitive check names its measured fields in `measured`, as paths (see the finding format, below): `itten.count`, `message` and `where.elements[].rect` for `frame-timing` (frames over budget, their durations, the CPU slow-down, and the boxes taken while the page moved); `message` for the `never-still` and `late` page-load findings and for flashing driven by script; `where.elements[].rect` for the other motion checks. These values differ between any two runs of the same page, as do the glyph counts in `renderedFonts`.
 
 Where the page keeps drawing (a canvas, a video, an animation), the contrast pass sees the pixels behind the text change between its two frames, 400 ms apart. It reports those areas in `drawing`, per width and scheme: the count of moving 16 px tiles, how many of them are over nothing that should move (no running animation, canvas, video, iframe or image: `unexplained`), and the areas as rectangles. report.html and the pull-request comment give each page's count, so an exemption nothing accounts for is visible. It marks a contrast finding whose text lies over moving tiles `movingBackground`: its value depends on the frame it was measured in, so it can pass in one run and fail in the next. Its crop is made from that frame, with the text laid over it from a screenshot of the text alone, so the crop shows the background the message names. Such a crop is marked `composited` in `report.json`, and report.html captions it "composited: text over the measured frame".
 
@@ -155,6 +155,49 @@ Below the findings, "Values in use" counts the distinct font sizes and spacing v
 "Engines" lists the findings that differ between Chromium, WebKit and Firefox at the widths all of them ran, and how each engine drew any hairline found. Spacing and type values are computed styles, the same in every engine, so they are compared in Chromium only. Engine differences come mostly from font rendering (text widths and line breaks), form controls, and how each engine rounds positions.
 
 `report.json` has the same content for scripts. Crops are in `crops/`.
+
+## The finding format: finding/1 and report/1
+
+Every `report.json` is a report/1, and every finding in it a finding/1. They are the contract between the specialists of the set (ITTEN, KERCKHOFFS, ERLANG; see the README): each writes its runs and findings in them, so one gate can read all of them the same way. The core is defined in [`schema/report.schema.json`](../schema/report.schema.json) and [`schema/finding.schema.json`](../schema/finding.schema.json); ITTEN's own finding fields in [`schema/finding-itten.schema.json`](../schema/finding-itten.schema.json).
+
+**No field holds secret material.** No field of a report or a finding, fingerprints and extensions included, holds a credential, token, key, password or session, or a hash of one: a hash of a guessable secret can be confirmed by hashing guesses. A secret is named by what it is (issuer, kind, prefix, length), never by its value.
+
+### The report: report/1
+
+| Field | What it holds |
+|---|---|
+| `schema` | `"report/1"`. |
+| `specialist`, `version` | Who wrote it (`itten`) and its version. |
+| `status` | `complete`: every check ran. `partial`: some did not; ITTEN's runs are partial when a step timed out or `--wait-for` never matched. `refused`: nothing was judged, because the subject could not be reached, the run failed or was stopped before judging, or a guard declined to run it. |
+| `reason` | Why, when `partial` or `refused`. |
+| `subject`, `started` | What was inspected (for ITTEN, the page's URL) and when the run began. |
+| `findings` | The finding/1 list. Empty when refused. |
+
+A gate reads `status` before `findings`. Only a complete run's findings say what is and is not wrong; a partial run's findings are real but do not cover everything; a refused run's empty list never means clean. The ITTEN action fails a refused page as a problem, whatever `fail-on` says, and states a partial one under its table. ITTEN writes a refused `report.json` as soon as a run starts and replaces it when the run ends, so a run that crashes, is stopped by the watchdog or is killed never leaves an earlier report, or none, to be read as its own. The core fields are reserved; a specialist keeps its own run data beside them (ITTEN's sweep, coverage, motion and the rest).
+
+### The finding: finding/1
+
+| Field | What it holds |
+|---|---|
+| `schema` | `"finding/1"`. |
+| `specialist` | Who wrote it, in lower case: `itten`. |
+| `check` | The check, as the specialist names it. |
+| `severity` | `error`, `warning` or `info`. |
+| `fingerprint` | The same for the same finding in every run, and different for different findings: runs are compared by fingerprint. By convention the check, then the parts of `where` that identify the finding, joined by `\|`. Built only from what stays the same between runs: never a measured value, a report id, a host or port, a record id or an element's text. |
+| `message` | The finding, in a sentence or two, with its measured values. |
+| `measured` | Paths of the fields whose values differ between any two runs: dotted from the finding's root, `[]` for each item of a list, `message` for the numbers in the message. Empty when none. Every field not listed is compared exactly. |
+| `floor` | `"security"`, `"accessibility"` or `null`. ITTEN's accessibility floors are `contrast` (WCAG 1.4.3), `overflow` (1.4.10), `clipping` and `text-resize` (1.4.4), `target-size` (2.5.8) and `flash` (2.3.1). Every other check is craft (`null`), `spacing-unit` included: it cites 1.4.4 as context, but spacing that keeps its size when text doubles does not by itself lose content. Where specialists conflict, security floors come first, then accessibility floors, then craft. |
+| `detection` | How it was detected, one or more of: `render` (measured in a browser on a rendered page), `static` (read from source, history or build output), `config` (read from configuration), `trace` (read from telemetry of a run at low rate), `live` (observed by sending requests to a running deployment of the owner's app), `load` (measured under generated load). Every ITTEN finding is `["render"]`. Not part of the fingerprint: a defect found statically and then confirmed live is one finding. |
+| `rules` | Optional. The rule IDs it comes from, from the specialist's reference (`CRF-16`, `LAY-03`). Citations of outside standards stay in the extension: ITTEN's `itten.rule` keeps the full line shown to the reader, WCAG criteria included. |
+| `where` | Any of four lists, at least one non-empty: `elements` (of a rendered page: `{ sel, label, text, rect }`), `locations` (in code: `{ file, line, column, symbol }`, only `file` required), `endpoints` (of a service: `{ method, route, service, protocol }`, `route` a template such as `/orders/:id`, never a concrete path) and `resources` (named things: `{ kind, name }`, such as a table or a whole service). A finding that shows in one place and is fixed in another lists both. ITTEN writes `elements`, or for a finding on the page as a whole (a failed request, a step that timed out) `resources: [{ "kind": "page", "name": "/path" }]`. |
+
+Each specialist keeps its own fields in an object named after itself. The core schema accepts any such object and never looks inside it; each specialist validates its own. ITTEN's, `itten`, holds the finding's `id` in this report (not stable between runs), `count`, `seen`, `first`, `title`, `rule`, `crops` (each marked `composited` where made from the measured frame), `elements` (per element of `where.elements`, in the same order: its document `order` and, from the motion checks, `pseudo`), and where they apply `movingBackground`, `resize`, `resources` and `render`.
+
+### Versions
+
+Adding an optional field, to the core or to an extension, keeps the formats at finding/1 and report/1. Renaming or removing a field, or adding a required one, makes finding/2 or report/2. A reader that knows version 1 refuses a version 2.
+
+Reports written before 0.3.5 have no envelope and keep flat findings in `issues` (`elements`, `crops`, `count` and the rest at the top level, no `schema`). ITTEN's tools read both (`findingsOf()` and `view()` in `inspector/finding.js`), so `scripts/parity-test.js --saved` and a committed baseline keep working. Every finding saved from 0.3.0 to 0.3.4 (6,173 of them, kept from HundredLives, neptune-fork and the fixtures) passes both schemas once written as finding/1 and reads back unchanged.
 
 ## Fix in this order
 

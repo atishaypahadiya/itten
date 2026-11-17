@@ -33,12 +33,14 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validate } from './lib/schema.js';
+import { validate, register } from './lib/schema.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
 const warnings = [];
 const fail = (area, msg) => failures.push(`${area}: ${msg}`);
+const STARTED = Date.now();
+let findingLine = null;
 
 // ------------------------------------------------------- Public hygiene
 // The terms live in .itten-private-terms, a local file kept out of the repo,
@@ -182,6 +184,10 @@ try {
   const box = (rect, label = 'h1.line') => ({ elements: [{ sel: 'h1', label, rect }] });
   const n3 = [];
   if (compare(rep(f({ id: 'i001' })), rep(f({ id: 'i007' })), 't', n3).length || n3.length) fail('Parity', 'compare() compares report ids; findings are matched by fingerprint');
+  const { toFinding: tf } = await import('../inspector/finding.js');
+  const n0 = [];
+  if (compare(rep(f(), r()), rep(tf(f()), tf(r())), 't', n0).length || n0.length) fail('Parity', 'compare() finds a difference between a report saved before finding/1 and the same findings written as finding/1');
+  if (compare(rep(f(), r()), { findings: [tf(f()), tf(r())], summary: null, sweep: {} }, 't').length) fail('Parity', 'compare() does not read the findings of a report/1');
   const n9 = [];
   if (compare(rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 52 of 100' }] })), rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 53 of 100' }] })), 't', n9).length || n9.length) fail('Parity', "compare() compares an element's opening text, which is for the reader only");
   const n4 = [];
@@ -314,10 +320,94 @@ try {
   fail('Action', `the action tests could not run: ${e.message.split('\n')[0]}`);
 }
 
+// ---------------------------------------------------------- Finding format
+// finding/1 (schema/finding.schema.json), the contract every specialist
+// writes, and ITTEN's extension (schema/finding-itten.schema.json). The
+// schemas must reject what they should; every finding in every fixture
+// report written by this run must pass both; and the flat view the
+// inspector reads (inspector/finding.js) must give back what was written.
+try {
+  const core = register(JSON.parse(readFileSync(join(ROOT, 'schema', 'finding.schema.json'), 'utf8')));
+  const ext = JSON.parse(readFileSync(join(ROOT, 'schema', 'finding-itten.schema.json'), 'utf8'));
+  const envelope = JSON.parse(readFileSync(join(ROOT, 'schema', 'report.schema.json'), 'utf8'));
+  const { toFinding, view } = await import('../inspector/finding.js');
+  const { refusedReport } = await import('../inspector/inspect.js');
+  const flat = { id: 'i001', fingerprint: 'contrast|p', check: 'contrast', severity: 'error', message: 'Text measures 2.1:1.', count: 1,
+    elements: [{ sel: 'p', label: 'p', text: 'Week 52', rect: [0, 0, 10, 10], order: 4 }], seen: { light: '320' }, first: '320 px, light', title: 'Text contrast', rule: 'WCAG 1.4.3', crops: [], measured: ['elements.rect'] };
+  const good = toFinding(flat);
+  const errs = (f) => [...validate(core, f), ...(f.specialist === 'itten' && f.itten ? validate(ext, f.itten).map((e) => `itten${e}`) : [])];
+  if (errs(good).length) fail('Finding format', `a finding written by toFinding() does not validate: ${errs(good).join('; ')}`);
+  if (good.floor !== 'accessibility' || toFinding({ ...flat, check: 'spacing-unit' }).floor !== null) fail('Finding format', 'the floor of contrast is not accessibility, or spacing-unit is not craft (null)');
+  if (JSON.stringify(good.measured) !== '["where.elements[].rect"]' || JSON.stringify(toFinding({ ...flat, measured: ['count', 'message'] }).measured) !== '["itten.count","message"]') fail('Finding format', 'measured fields are not written as paths');
+  const sorted = (o) => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
+  if (sorted(view(good)) !== sorted(flat)) fail('Finding format', 'view() does not give back the finding toFinding() wrote');
+  if (view(flat) !== flat) fail('Finding format', 'view() changes a finding from a report saved before finding/1');
+  const reject = [
+    ['an unknown field that is not an object', { ...good, note: 'x' }],
+    ['an extension named in capitals', { ...good, Kerckhoffs: {} }],
+    ['a floor other than security, accessibility or none', { ...good, floor: 'craft' }],
+    ['a where with every list empty', { ...good, where: { elements: [], locations: [] } }],
+    ['a where with a shape outside the four', { ...good, where: { url: [{ href: '/' }] } }],
+    ['a location without a file', { ...good, where: { locations: [{ line: 3 }] } }],
+    ['an endpoint without a method', { ...good, where: { endpoints: [{ route: '/orders' }] } }],
+    ['a resource kind in capitals', { ...good, where: { resources: [{ kind: 'Table', name: 'orders' }] } }],
+    ['no detection', Object.fromEntries(Object.entries(good).filter(([k]) => k !== 'detection'))],
+    ['an empty detection', { ...good, detection: [] }],
+    ['a detection outside the six', { ...good, detection: ['probe'] }],
+    ['a detection given twice', { ...good, detection: ['render', 'render'] }],
+    ['a rule that is not an ID', { ...good, rules: ['WCAG 1.4.3'] }],
+    ['an element with a field outside the core', { ...good, where: { elements: [{ sel: 'p', label: 'p', order: 1 }] } }],
+    ['a measured path that is not a path', { ...good, measured: ['where..rect'] }],
+    ['a missing schema', Object.fromEntries(Object.entries(good).filter(([k]) => k !== 'schema'))],
+    ['an unknown field in the itten extension', { ...good, itten: { ...good.itten, colour: 'red' } }],
+  ];
+  for (const [what, f] of reject) if (!errs(f).length) fail('Finding format', `the schemas accept ${what}`);
+  const accept = [
+    ["another specialist's extension, unvalidated", { ...good, specialist: 'kerckhoffs', kerckhoffs: { anything: [1, { deep: true }] }, itten: undefined }],
+    ['a finding on code, by file and column', { ...good, specialist: 'kerckhoffs', floor: 'security', detection: ['static'], rules: ['SEC-01'], where: { locations: [{ file: 'build/assets/app.js', line: 1, column: 48213 }] }, itten: undefined }],
+    ['a finding on a file as a whole', { ...good, specialist: 'kerckhoffs', detection: ['config'], where: { locations: [{ file: '.env' }] }, itten: undefined }],
+    ['a finding on an endpoint and in code at once', { ...good, specialist: 'erlang', floor: null, detection: ['load', 'static', 'trace'], rules: ['DAT-01', 'DAT-07'], where: { endpoints: [{ service: 'api', method: 'GET', route: '/orders/:id' }], locations: [{ file: 'src/routes/orders.js', line: 42, symbol: 'listOrders' }] }, itten: undefined }],
+    ['a finding on a queue', { ...good, specialist: 'erlang', floor: null, detection: ['trace'], where: { endpoints: [{ protocol: 'queue', method: 'CONSUME', route: 'orders.created' }] }, itten: undefined }],
+    ['a finding on a resource', { ...good, specialist: 'kerckhoffs', detection: ['live'], where: { resources: [{ kind: 'table', name: 'public.orders' }] }, itten: undefined }],
+  ];
+  for (const [what, f] of accept) { const g = JSON.parse(JSON.stringify(f)); if (errs(g).length) fail('Finding format', `the schemas reject ${what}: ${errs(g).join('; ')}`); }
+  // Every finding in every fixture report this run wrote.
+  const reports = [];
+  const walk = (d) => { for (const n of readdirSync(d, { withFileTypes: true })) { const p = join(d, n.name); if (n.isDirectory()) walk(p); else if (n.name === 'report.json' && statSync(p).mtimeMs >= STARTED) reports.push(p); } };
+  if (existsSync(join(ROOT, 'dist', 'fixtures'))) walk(join(ROOT, 'dist', 'fixtures'));
+  // The report envelope, report/1: a refused report must give a reason, and so
+  // must a partial one; ITTEN's own refused report must pass.
+  const rerr = (r) => validate(envelope, r);
+  if (rerr(refusedReport('http://127.0.0.1/', 'the page could not be reached')).length) fail('Finding format', `ITTEN's refused report does not pass report/1: ${rerr(refusedReport('http://127.0.0.1/', 'x')).join('; ')}`);
+  const bare = { schema: 'report/1', specialist: 'itten', version: '0', findings: [] };
+  for (const [what, r] of [['a refused report without a reason', { ...bare, status: 'refused' }], ['a partial report without a reason', { ...bare, status: 'partial' }], ['a status outside the three', { ...bare, status: 'clean' }], ['a report whose finding is not a finding/1', { ...bare, status: 'complete', findings: [{ check: 'x' }] }]]) {
+    if (!rerr(r).length) fail('Finding format', `report/1 accepts ${what}`);
+  }
+  if (rerr({ ...bare, status: 'complete', findings: [good] }).length) fail('Finding format', `report/1 rejects a complete report: ${rerr({ ...bare, status: 'complete', findings: [good] }).join('; ')}`);
+  let n = 0;
+  for (const p of reports) {
+    const rep = JSON.parse(readFileSync(p, 'utf8'));
+    for (const e of rerr(rep).slice(0, 3)) fail('Finding format', `${p.slice(ROOT.length + 1)}: ${e}`);
+    // complete exactly when no step timed out (no fixture uses --wait-for)
+    const stopped = (rep.findings ?? []).some((f) => f.check === 'timed-out');
+    if (rep.status !== (stopped ? 'partial' : 'complete')) fail('Finding format', `${p.slice(ROOT.length + 1)}: status ${rep.status}, but ${stopped ? 'a step timed out' : 'nothing timed out'}`);
+  }
+  for (const p of reports) for (const f of JSON.parse(readFileSync(p, 'utf8')).findings ?? []) {
+    n++;
+    for (const e of errs(f).slice(0, 3)) fail('Finding format', `${p.slice(ROOT.length + 1)}: ${f.fingerprint}: ${e}`);
+    if (f.schema !== 'finding/1' || f.specialist !== 'itten' || !f.itten) fail('Finding format', `${p.slice(ROOT.length + 1)}: ${f.fingerprint} is not a finding/1 written by itten`);
+  }
+  if (!n) fail('Finding format', 'no fixture report was written by this run to check');
+  else findingLine = `Finding format: ${reports.length} fixture reports pass report/1, with the status their timeouts call for; their ${n} findings pass finding/1 and the itten extension.`;
+} catch (e) {
+  fail('Finding format', `the finding format could not be checked: ${e.message.split('\n')[0]}`);
+}
+
 // ---------------------------------------------------------------- Report
 console.log(hygieneNote || `Checked ${files.length} files.`);
 if (fixtureLine) console.log(fixtureLine);
 if (parityLine) console.log(parityLine);
+if (findingLine) console.log(findingLine);
 for (const w of warnings) console.log(`warn  ${w}`);
 for (const f of failures) console.log(`FAIL  ${f}`);
 if (failures.length) {

@@ -13,7 +13,7 @@ If you are using ITTEN in a project, read [ITTEN.md](ITTEN.md).
 | `ITTEN.md` | The entry file for projects: the loop, precedence, install, the GitHub Action, overrides. |
 | `action.yml` | The GitHub Action: the inspector on every pull request, with one comment, a baseline and the report as an artifact. |
 | `protocol/` | The four steps: `01-teardown.md` (read inspiration as measurements), `02-system.md` (turn them into `itten.system.json`), `03-craft.md` (20 up-close rules, each with how it is verified), `04-inspect.md` (run the inspector and fix in order). |
-| `schema/` | The schemas for a project's `itten.system.json` and `itten.overrides.json`. |
+| `schema/` | The schemas for a project's `itten.system.json` and `itten.overrides.json`, and for what a run writes: `report.schema.json` (report/1) and `finding.schema.json` (finding/1), shared by every specialist in the set, and `finding-itten.schema.json` (ITTEN's own finding fields). |
 | `inspector/` | `inspect.js` and its parts. Opens a page in Chromium and measures it across widths, doubled text size, light and dark, and two pixel ratios, then checks the layout again in WebKit and Firefox. Writes `report.json`, `report.html` and zoomed crops. |
 | `fixtures/` | A test print with one planted defect per inspector check, and its clean twin. |
 | `reference/` | The rules corpus: 131 rules with IDs, strengths and evidence levels. The protocol cites it. |

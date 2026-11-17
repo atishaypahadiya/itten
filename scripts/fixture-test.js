@@ -15,6 +15,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
+import { view, findingsOf } from '../inspector/finding.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fixtures');
@@ -75,6 +76,8 @@ export function stillGuard({ page, twin, dPage, dTwin }) {
 }
 
 export function score(spec, { page, twin, dPage, dTwin }) {
+  // finding/1 (or a report from before it), read flat.
+  [page, twin, dPage, dTwin] = [page, twin, dPage, dTwin].map((r) => ({ ...r, findings: undefined, issues: findingsOf(r) }));
   const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity)
     && (!d.resizeOnly || Object.keys(i.seen).every((m) => /resize/.test(m)));
   const rows = [

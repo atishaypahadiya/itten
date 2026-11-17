@@ -54,6 +54,7 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
       const b = p.baseline;
       out.push(`| ${code(p.page)} | ${p.summary.error} | ${p.summary.warning} | ${p.summary.info} | ${p.moving ? `${p.moving.tiles}${p.moving.unexplained ? ` (${p.moving.unexplained} unexplained)` : ''}` : '·'}${s.baseline ? ` | ${b?.found ? b.new.length + b.worse.length : 'no entry'} | ${b?.found ? b.fixed.length : ''}` : ''} |`);
     }
+    for (const p of pages.filter((p) => p.status === 'partial')) out.push('', `Partial run on ${code(p.page)}: ${clean(p.reason)} Its findings are real but do not cover the whole page.`);
     if (pages.some((p) => p.moving?.tiles)) out.push('', `Moving tiles: 16 px tiles behind text that changed between two frames 400 ms apart. Contrast findings over them depend on the frame and are exempt from parity${pages.some((p) => p.moving?.unexplained) ? '; unexplained tiles are over no animation, canvas, video, iframe or image, so check what changed there' : ''}.`);
     out.push('');
 

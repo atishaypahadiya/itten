@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { compare } from './parity-test.js';
+import { view, findingsOf } from '../inspector/finding.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -36,7 +37,10 @@ export async function run({ quiet = true } = {}) {
       system, systemPath: 'fixtures/itten.system.json', quiet, out: join(ROOT, 'dist', 'fixtures', `canvas-${workers}`),
       widths: [1024], keyWidths: [1024], engines: [], engineWidths: [], workers, timings: false, aroundBreakpoints: false,
     });
-    const a = await go(1), b = await go(2);
+    // As written (finding/1) for the parity compare; read flat for the rest.
+    const A = await go(1), B = await go(2);
+    const flat = (r) => ({ ...r, findings: undefined, issues: findingsOf(r) });
+    const a = flat(A), b = flat(B);
     const find = (r, check, cls) => r.issues.find((i) => i.check === check && i.elements.some((e) => e.label === cls));
     const moving = find(a, 'contrast', 'p.over'), still = find(a, 'contrast', 'p.over-still'), spill = a.issues.find((i) => i.fingerprint.startsWith('overflow|spill|') && i.elements.some((e) => e.label === 'p.narrow'));
     if (!moving) fails.push('no contrast finding on the text over the canvas');
@@ -76,7 +80,7 @@ export async function run({ quiet = true } = {}) {
     else if (regions.filter(([x, y, w, h]) => x + w <= 32 || x >= 608 || y + h <= 32 || y >= 224).some(([x, , w]) => x < 32 || x + w > 128)) fails.push(`a moving region lies off the canvas and off the recoloured box: ${JSON.stringify(regions)}`);
     // The two runs: anything over the canvas is a note; the rest must match.
     const notes = [];
-    const d = compare(a, b, 'canvas', notes);
+    const d = compare(A, B, 'canvas', notes);
     if (d.length) fails.push(`one worker against two: ${d.length} difference(s): ${d.join('; ')}`);
     if (moving && spill && still) {
       const without = (r, it) => ({ ...r, issues: r.issues.filter((i) => i.fingerprint !== it.fingerprint) });
