@@ -2,7 +2,7 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
-## 0.3.5 · 16 November 2026
+## 0.3.5 · 17 November 2026
 
 The inspector runs its widths in parallel, finds the same things on one worker as on many, and measures around every breakpoint in quick mode.
 

@@ -2,8 +2,10 @@
 # Run once after cloning. Links .itten-private-terms, the patterns the public
 # hygiene check in scripts/check.js reads, to the list every specialist on this
 # machine shares: ~/.config/specialists/private-terms. The patterns match
-# claims of authorship only. Neither file is ever committed: the link is
-# ignored by git and the shared list lives outside every repository.
+# claims of authorship, and the few names the list marks "subject ", which a
+# repository that uses them may allow in .private-terms-allow. Neither file is
+# ever committed: the link is ignored by git and the shared list lives outside
+# every repository.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"

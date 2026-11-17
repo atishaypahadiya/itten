@@ -8,11 +8,11 @@ If you are using ITTEN in a project, read [ITTEN.md](ITTEN.md).
 
 ## Part of a set
 
-| Name | Checks | State |
+| Name | Role | State |
 |---|---|---|
-| ITTEN | Design detail | v0.3 |
-| KERCKHOFFS | Security | Planned |
-| ERLANG | Load and resilience | Planned |
+| ITTEN | Design detail: checks the rendered page up close against a system measured from the owner's inspiration. | v0.3 |
+| KERCKHOFFS | Security: checks the owner's own code and deployments, never third-party sites. | In development |
+| ERLANG | Load and resilience: tests the owner's own services, never third-party or production systems without the owner's say-so. | In development |
 
 Each one stands alone, and all of them write the same formats: findings in finding/1, defined in `schema/finding.schema.json`, inside reports in report/1, defined in `schema/report.schema.json`.
 
