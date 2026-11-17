@@ -10,8 +10,11 @@
 //   broken file;
 // - the inspector misses a planted defect in fixtures/index.html or reports
 //   anything on fixtures/clean.html, and the same for the distinct-value
-//   pair fixtures/distinct.html and distinct-clean.html (four widths;
-//   --full sweeps 41);
+//   pair fixtures/distinct.html and distinct-clean.html (four widths and
+//   the widths around each breakpoint; --full sweeps 41);
+// - those four pages, inspected on one worker and again on six, differ in
+//   any finding (scripts/parity-test.js), or the benchmark, the watch load
+//   or motion ran beside anything else;
 // - a library asset has no licence beside it;
 // - the overrides schema, its example (fixtures/overrides) or the page
 //   rendered from it is wrong, or the validator accepts a broken overrides
@@ -152,11 +155,77 @@ try {
   fail('Overrides', `the overrides and telemetry checks could not run: ${e.message.split('\n')[0]}`);
 }
 
+// ---------------------------------------------------------- Parity compare
+// Findings are matched by fingerprint, not id. Only a finding's measured
+// fields (its `measured` marker), the glyph counts in renderedFonts, and
+// findings over a moving background may differ between two runs, as notes;
+// everything else must match.
+try {
+  const { compare } = await import('./parity-test.js');
+  const f = (o) => ({ id: 'F1', fingerprint: 'frame-timing|html', check: 'frame-timing', severity: 'warning', count: 1, message: '12 of 120 frames over 16.7 ms at 1440 px (4x CPU slow-down)', elements: [{ sel: 'html', label: 'html' }], seen: { motion: '1440' }, first: 'motion 1440', crops: [], ...o });
+  const rep = (...issues) => ({ issues, summary: null, sweep: {} });
+  const notes = [];
+  if (compare(rep(f()), rep(f({ message: '15 of 118 frames over 16.7 ms at 1440 px (3.5x CPU slow-down)' })), 't', notes).length || notes.length !== 1) fail('Parity', 'compare() does not take a frame-timing message that differs only in its measured numbers as a note');
+  if (compare(rep(f()), rep(f({ severity: 'error' })), 't').length !== 1) fail('Parity', "compare() does not report a frame-timing finding's severity changing");
+  if (compare(rep(f()), rep(), 't').length !== 1 || compare(rep(), rep(f()), 't').length !== 1) fail('Parity', 'compare() does not report a frame-timing finding present in one run only');
+  const n2 = [];
+  if (compare(rep(f()), rep(f({ count: 2 })), 't', n2).length || n2.length !== 1 || !/1 against 2/.test(n2[0])) fail('Parity', "compare() does not take a frame-timing finding's count, a measured field, as a note with both values");
+  if (compare(rep(f()), rep(f({ elements: [{ sel: 'main', label: 'main' }] })), 't').length !== 1) fail('Parity', "compare() does not report a frame-timing finding's elements changing");
+  if (compare(rep(f({ check: 'radius', fingerprint: 'radius|x' })), rep(f({ check: 'radius', fingerprint: 'radius|x', count: 2 })), 't').length !== 1) fail('Parity', "compare() does not report a count changing in a check with no measured fields");
+  if (compare(rep(f({ measured: ['count', 'message'] })), rep(f({ measured: ['message'] })), 't').length !== 1) fail('Parity', 'compare() does not report a change in which fields are marked measured');
+  const { measuredFields } = await import('../inspector/inspect.js');
+  const mf = (check, fingerprint) => JSON.stringify(measuredFields({ check, fingerprint }));
+  if (mf('frame-timing', 'frame-timing|html|scroll|full') !== '["count","message","elements.rect"]' || mf('page-load', 'page-load|late') !== '["message"]' || mf('page-load', 'page-load|never-still') !== '["message"]'
+    || mf('flash', 'flash|#a|script') !== '["message","elements.rect"]' || mf('flash', 'flash|#a') !== '["elements.rect"]' || mf('motion-timing', 'motion-timing|h1') !== '["elements.rect"]'
+    || mf('page-load', 'page-load|requests') !== 'null' || mf('contrast', 'contrast|x') !== 'null' || mf('radius', 'radius|x') !== 'null') fail('Parity', 'measuredFields() does not mark the measured fields of timing and motion findings, and only those');
+  const r = (o) => f({ check: 'radius', fingerprint: 'radius|x', ...o });
+  const box = (rect, label = 'h1.line') => ({ elements: [{ sel: 'h1', label, rect }] });
+  const n3 = [];
+  if (compare(rep(f({ id: 'i001' })), rep(f({ id: 'i007' })), 't', n3).length || n3.length) fail('Parity', 'compare() compares report ids; findings are matched by fingerprint');
+  const n9 = [];
+  if (compare(rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 52 of 100' }] })), rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 53 of 100' }] })), 't', n9).length || n9.length) fail('Parity', "compare() compares an element's opening text, which is for the reader only");
+  const n4 = [];
+  if (compare(rep(f({ check: 'motion-timing', fingerprint: 'motion-timing|h1', ...box([0, -291.93, 1440, 120.8]) })), rep(f({ check: 'motion-timing', fingerprint: 'motion-timing|h1', ...box([0, -291.51, 1440, 120.8]) })), 't', n4).length || n4.length !== 1) fail('Parity', "compare() does not take a motion finding's element box, taken while the page moves, as a note");
+  if (compare(rep(r(box([0, 0, 10, 10]))), rep(r(box([0, 1, 10, 10]))), 't').length !== 1) fail('Parity', "compare() does not report an element's box changing in a layout finding");
+  if (compare(rep(f({ check: 'motion-timing', fingerprint: 'motion-timing|h1', ...box([0, 0, 1, 1]) })), rep(f({ check: 'motion-timing', fingerprint: 'motion-timing|h1', ...box([0, 0, 1, 1], 'h1.title') })), 't').length !== 1) fail('Parity', "compare() does not report a motion finding's element label changing");
+  const mv = (o) => f({ check: 'contrast', fingerprint: 'contrast|p', movingBackground: true, ...o });
+  const n5 = [];
+  if (compare(rep(mv(), r()), rep(r()), 't', n5).length || n5.length !== 1) fail('Parity', 'compare() does not take a finding over a moving background, present in one run only, as a note');
+  const n6 = [];
+  if (compare(rep(mv(), r()), rep(mv({ severity: 'error', message: 'other' }), r()), 't', n6).length || n6.length !== 2) fail('Parity', 'compare() does not take a change in a finding over a moving background as a note');
+  if (compare(rep(mv(), r()), rep(mv()), 't').length !== 1) fail('Parity', 'compare() lets a finding that is not over a moving background go missing from a page that has one');
+  const sum = (...issues) => ({ ...rep(...issues), summary: { error: issues.filter((i) => i.severity === 'error').length } });
+  const n7 = [];
+  if (compare(sum(mv({ severity: 'error' }), r()), sum(r()), 't', n7).length) fail('Parity', 'compare() fails on a summary that differs only by a finding over a moving background');
+  if (compare(sum(mv(), r({ severity: 'error' })), sum(mv(), r({ severity: 'error' }), r({ fingerprint: 'radius|y', severity: 'error' })), 't').filter((d) => d.includes('report.summary')).length !== 1) fail('Parity', 'compare() lets a summary differ by a finding that is not over a moving background');
+  const fonts = (name, n) => ({ ...rep(), renderedFonts: [{ requested: 'Inter Tight', rendered: [`${name} (web font): ${n} glyphs`] }] });
+  const n8 = [];
+  if (compare(fonts('Inter Tight', 459), fonts('Inter Tight', 460), 't', n8).length || n8.length !== 1) fail('Parity', 'compare() does not take renderedFonts glyph counts as measured');
+  if (compare(fonts('Inter Tight', 459), fonts('Inter Tight Light', 459), 't').length !== 1) fail('Parity', 'compare() does not report a rendered font changing');
+  if (compare(rep(f({ check: 'page-load', fingerprint: 'page-load|x' })), rep(f({ check: 'page-load', fingerprint: 'page-load|x', message: '12 of 120 frames over 16.7 ms at 1440 px (5x CPU slow-down)' })), 't').length !== 1) fail('Parity', 'compare() ignores numbers in the message of a check that is not measured');
+} catch (e) {
+  fail('Parity', `the compare checks could not run: ${e.message.split('\n')[0]}`);
+}
+
 // --------------------------------------------------------------- Fixtures
-let fixtureLine = '';
+// Run on one worker and on six; scored on the six, and the two compared.
+let fixtureLine = '', parityLine = '';
 try {
   const { run } = await import('./fixture-test.js');
-  const r = await run({ full: process.argv.includes('--full') });
+  const { compare } = await import('./parity-test.js');
+  const full = process.argv.includes('--full');
+  let t = Date.now();
+  const one = await run({ full, workers: 1, out: join(ROOT, 'dist', 'fixtures', 'serial') });
+  const s1 = (Date.now() - t) / 1000;
+  t = Date.now();
+  const r = await run({ full, workers: 6 });
+  const s6 = (Date.now() - t) / 1000;
+  const diffs = Object.keys(one.reports).flatMap((k) => compare(one.reports[k], r.reports[k], k));
+  for (const d of diffs) fail('Parity', d);
+  // The phases that time things ran alone (inspect.js, phaseOverlaps).
+  const { phaseOverlaps } = await import('../inspector/inspect.js');
+  for (const [k, rep] of [...Object.entries(one.reports), ...Object.entries(r.reports)]) for (const p of phaseOverlaps(rep.schedule.phases)) fail('Schedule', `${k}: ${p}`);
+  parityLine = `Parity: one worker ${Math.round(s1)} s, six workers ${Math.round(s6)} s, ${diffs.length ? `${diffs.length} difference(s)` : 'identical findings'}.`;
   fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twins ${r.findingsOnTwin} findings.`;
   for (const id of r.missed) fail('Fixtures', `planted defect ${id} was not caught`);
   for (const f of r.falsePositives) fail('Fixtures', `false positive: ${f.check} ${f.message} [${f.elements.join(', ')}]`);
@@ -174,6 +243,27 @@ try {
   for (const f of await settleTest()) fail('Settle', f);
 } catch (e) {
   fail('Settle', `the settle test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------ Ignore scope
+// data-itten-ignore by check name, on the element itself, and on what is
+// inside it only with data-itten-ignore-subtree (scripts/ignore-test.js).
+try {
+  const { run: ignoreTest } = await import('./ignore-test.js');
+  for (const f of await ignoreTest()) fail('Ignore', f);
+} catch (e) {
+  fail('Ignore', `the ignore test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// -------------------------------------------------------- Moving background
+// A contrast finding over a canvas that keeps drawing is marked, and parity
+// takes its differences as notes; the page's other findings still gate
+// (fixtures/canvas.html, scripts/canvas-test.js).
+try {
+  const { run: canvasTest } = await import('./canvas-test.js');
+  for (const f of await canvasTest()) fail('Moving background', f);
+} catch (e) {
+  fail('Moving background', `the canvas test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ---------------------------------------------------------------- Timeouts
@@ -218,6 +308,7 @@ try {
 // ---------------------------------------------------------------- Report
 console.log(hygieneNote || `Checked ${files.length} files.`);
 if (fixtureLine) console.log(fixtureLine);
+if (parityLine) console.log(parityLine);
 for (const w of warnings) console.log(`warn  ${w}`);
 for (const f of failures) console.log(`FAIL  ${f}`);
 if (failures.length) {

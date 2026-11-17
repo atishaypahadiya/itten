@@ -43,22 +43,35 @@ export function typography(opts) {
     selCache.set(el, s);
     return s;
   };
-  const label = (el) => {
-    let t = (el.innerText || '').replace(/\s+/g, ' ').trim();
-    if (t.length > 40) t = t.slice(0, 39) + '…';
-    const cls = el.classList && el.classList[0] ? '.' + el.classList[0] : '';
-    return el.localName + cls + (t ? ` "${t}"` : '');
+  // Tag and first class, never the text (see collect.js).
+  const label = (el) => el.localName + (el.classList && el.classList[0] ? '.' + el.classList[0] : '');
+  // As in collect.js: the opening text of an element, about 60 characters, for a reader of
+  // the report only: it is never compared between runs (the text can change
+  // while the page runs) and never part of a fingerprint or a label.
+  const opening = (el) => {
+    let t = (el.getAttribute?.('aria-label') || el.getAttribute?.('alt') || '').trim();
+    if (!t) {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (/^(script|style|noscript|template)$/i.test(n.parentNode?.localName ?? '') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      for (let n; (n = w.nextNode()) && t.length < 80;) t += ' ' + n.data;
+    }
+    t = t.replace(/\s+/g, ' ').trim();
+    return t.length > 60 ? t.slice(0, 59) + '…' : t;
   };
+  const El = (el, r) => ({ sel: sel(el), label: label(el), ...(opening(el) ? { text: opening(el) } : {}), rect: r });
   const P = (q) => [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)];
+  // data-itten-ignore="check ..." skips those checks on the element itself;
+  // with data-itten-ignore-subtree, on everything inside it too.
   const live = (el, check) => {
-    const h = el.closest('[data-itten-ignore]');
-    if (!h) return true;
-    const v = h.getAttribute('data-itten-ignore').split(/\s+/);
-    return !v.includes(check) && !v.includes('all');
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      if (!e.hasAttribute('data-itten-ignore') || (e !== el && !e.hasAttribute('data-itten-ignore-subtree'))) continue;
+      const v = e.getAttribute('data-itten-ignore').split(/\s+/);
+      if (v.includes(check) || v.includes('all')) return false;
+    }
+    return true;
   };
   const report = (check, severity, el, message, marks = []) => issues.push({
     check, severity, key: sel(el), message, count: 1,
-    elements: [{ sel: sel(el), label: label(el), rect: P(el.getBoundingClientRect()) }], marks, crop: marks.length ? 'marks' : 'union',
+    elements: [El(el, P(el.getBoundingClientRect()))], marks, crop: marks.length ? 'marks' : 'union',
   });
 
   // ------------------------------------------------------------ text blocks
@@ -335,7 +348,7 @@ export function typography(opts) {
           range.setStart(r0.node, r0.start); range.setEnd(r0.node, r0.start + 1);
           const qr = range.getBoundingClientRect();
           optical.push({
-            el: { sel: sel(el), label: label(el), rect: P(el.getBoundingClientRect()) }, ref: { sel: sel(sib.el), label: label(sib.el) },
+            el: El(el, P(el.getBoundingClientRect())), ref: { sel: sel(sib.el), label: label(sib.el) },
             letter: w0.text[0], refLetter: r0.text[0], fs, edge: r1(box.left + sx),
             glyph: P(q), refGlyph: P(qr),
           });

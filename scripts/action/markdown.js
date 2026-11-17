@@ -22,7 +22,7 @@ const ENGINE = { chromium: 'Chromium', webkit: 'WebKit', firefox: 'Firefox' };
 
 const line = (f, page, many) => f.group
   ? `Info · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${f.items.length} ${/(^| > )table(:nth-of-type\(\d+\))?$/.test(f.container) ? 'cells' : 'items'} in ${code(f.container)} (${f.items.slice(0, 6).map((i) => clean(place(i.element, f.container))).join('; ')}${f.items.length > 6 ? `; and ${f.items.length - 6} more` : ''})`
-  : `${SEV[f.severity]} · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${first(f.message)}${f.element ? ' ' + code(f.element) : ''}`;
+  : `${SEV[f.severity]} · ${clean(f.title ?? f.check)}${many ? ` on ${code(page)}` : ''}: ${first(f.message)}${f.element ? ' ' + code(f.element) : ''}${f.text ? ` “${clean(f.text)}”` : ''}`;
 // Per page, repeated info findings in one table or list become one line.
 const grouped = (pairs) => {
   const out = [];

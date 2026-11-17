@@ -83,7 +83,7 @@
             "motion-layout",
             "frame-timing"
           ],
-          "description": "The inspector check that reports it, when there is one. Pair it with data-itten-ignore on the element."
+          "description": "The inspector check that reports it, when there is one. Pair it with data-itten-ignore on the element (and data-itten-ignore-subtree to cover what is inside it)."
         },
         "selector": {
           "type": "string",

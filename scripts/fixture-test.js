@@ -24,22 +24,22 @@ const inSection = (issue, id) => issue.elements.some((e) => e.sel === '#' + id |
 // or the file the defect requests (failed requests have no element).
 const names = (issue, d) => inSection(issue, d.id) || (!!d.resource && (issue.resources || []).some((u) => new URL(u).pathname.endsWith('/' + d.resource)));
 
-export async function run({ full = false, quiet = true } = {}) {
+export async function run({ full = false, quiet = true, workers, out = OUT } = {}) {
   const spec = JSON.parse(readFileSync(join(ROOT, 'fixtures', 'defects.json'), 'utf8'));
   const { system, errors } = loadSystem(join(ROOT, spec.system));
   if (errors.length) throw new Error('fixtures/itten.system.json is not valid: ' + errors.join('; '));
   const port = 4175 + Math.floor(Math.random() * 500);
   const server = await start(port);
-  const opts = { system, systemPath: spec.system, quiet, full };
+  const opts = { system, systemPath: spec.system, quiet, full, ...(workers ? { workers } : {}) };
   try {
     const url = (p) => `http://127.0.0.1:${port}/${p}`;
-    const page = await inspect(url(spec.page), { ...opts, out: join(OUT, 'test-print') });
-    const twin = await inspect(url(spec.twin), { ...opts, out: join(OUT, 'clean-twin') });
+    const page = await inspect(url(spec.page), { ...opts, out: join(out, 'test-print') });
+    const twin = await inspect(url(spec.twin), { ...opts, out: join(out, 'clean-twin') });
     // Type and spacing are measured in Chromium only, so the other engines are skipped here.
     const dOpts = { ...opts, system: null, systemPath: null, engines: [] };
-    const dPage = await inspect(url(spec.distinct.page), { ...dOpts, out: join(OUT, 'distinct-test-print') });
-    const dTwin = await inspect(url(spec.distinct.twin), { ...dOpts, out: join(OUT, 'distinct-clean-twin') });
-    return score(spec, { page, twin, dPage, dTwin });
+    const dPage = await inspect(url(spec.distinct.page), { ...dOpts, out: join(out, 'distinct-test-print') });
+    const dTwin = await inspect(url(spec.distinct.twin), { ...dOpts, out: join(out, 'distinct-clean-twin') });
+    return { ...score(spec, { page, twin, dPage, dTwin }), reports: { 'test-print': page, 'clean-twin': twin, 'distinct-test-print': dPage, 'distinct-clean-twin': dTwin } };
   } finally {
     server.close();
   }

@@ -88,12 +88,28 @@ export function motionReport() {
     const p = el.parentElement, same = p ? [...p.children].filter((c) => c.localName === el.localName) : [];
     return (p ? sel(p) + ' > ' : '') + el.localName + (same.length > 1 ? `:nth-of-type(${same.indexOf(el) + 1})` : '');
   };
-  const label = (el) => {
-    let t = (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
-    if (t.length > 40) t = t.slice(0, 39) + '…';
-    return el.localName + (el.classList[0] ? '.' + el.classList[0] : '') + (t ? ` "${t}"` : '');
+  // Tag and first class, never the text (see collect.js).
+  const label = (el) => el.localName + (el.classList[0] ? '.' + el.classList[0] : '');
+  // As in collect.js: the opening text of an element, about 60 characters, for a reader of
+  // the report only: it is never compared between runs (the text can change
+  // while the page runs) and never part of a fingerprint or a label.
+  const opening = (el) => {
+    let t = (el.getAttribute?.('aria-label') || el.getAttribute?.('alt') || '').trim();
+    if (!t) {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (/^(script|style|noscript|template)$/i.test(n.parentNode?.localName ?? '') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      for (let n; (n = w.nextNode()) && t.length < 80;) t += ' ' + n.data;
+    }
+    t = t.replace(/\s+/g, ' ').trim();
+    return t.length > 60 ? t.slice(0, 59) + '…' : t;
   };
-  const ignored = (el, check) => { const h = el.closest('[data-itten-ignore]'); return !!h && h.getAttribute('data-itten-ignore').split(/\s+/).some((v) => v === check || v === 'all'); };
+  // On the element itself; on what is inside it only with data-itten-ignore-subtree.
+  const ignored = (el, check) => {
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      if (!e.hasAttribute('data-itten-ignore') || (e !== el && !e.hasAttribute('data-itten-ignore-subtree'))) continue;
+      if (e.getAttribute('data-itten-ignore').split(/\s+/).some((v) => v === check || v === 'all')) return true;
+    }
+    return false;
+  };
   const kebab = (k) => k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
   const anims = [];
   for (const { a, phase } of M.anims) {
@@ -121,7 +137,7 @@ export function motionReport() {
     // opacity where the keyframe sets them, the element's own otherwise.
     const lums = kfs.map((k) => M.lum(k.backgroundColor || s.backgroundColor, k.opacity !== undefined ? parseFloat(k.opacity) : parseFloat(s.opacity)));
     anims.push({
-      sel: sel(el), label: label(el), pseudo: e.pseudoElement || null, rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)],
+      sel: sel(el), label: label(el), ...(opening(el) ? { text: opening(el) } : {}), pseudo: e.pseudoElement || null, rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)],
       kind, name: a.animationName || a.transitionProperty || a.id || '', phase,
       duration, delay: timing.delay, iterations: timing.iterations, direction: timing.direction,
       easing, props, lums,
@@ -132,7 +148,7 @@ export function motionReport() {
   for (const [el, rec] of M.toggles) {
     if (rec.length < 7 || !el.isConnected || ignored(el, 'flash')) continue;
     const q = el.getBoundingClientRect();
-    toggles.push({ sel: sel(el), label: label(el), rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)], rec });
+    toggles.push({ sel: sel(el), label: label(el), ...(opening(el) ? { text: opening(el) } : {}), rect: [r2(q.left + sx), r2(q.top + sy), r2(q.width), r2(q.height)], rec });
   }
   // Long animation frames by the phase current when each frame began.
   if (M.loafObserver) M.addLoafs(M.loafObserver.takeRecords());

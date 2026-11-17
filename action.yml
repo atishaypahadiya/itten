@@ -59,6 +59,18 @@ inputs:
     description: Seconds to wait for url to answer after serve-command starts.
     required: false
     default: '120'
+  workers:
+    description: Jobs to run at once. Empty uses the runner's CPU cores less two, capped by its memory.
+    required: false
+    default: ''
+  shard:
+    description: 'For matrix sharding: "i/n" measures every n-th job of each page, starting with job i, and uploads shard.json for a merge job. No comment and no verdict.'
+    required: false
+    default: ''
+  merge:
+    description: For the merge job after sharding, a directory holding the shard jobs' artifacts, one folder each. The pages are served again, the shards combined into one report per page, cropped, and motion measured; then the comment and the verdict as usual.
+    required: false
+    default: ''
   github-token:
     description: Token for the pull request comment. Needs pull-requests write permission.
     required: false
@@ -169,6 +181,9 @@ runs:
         ITTEN_NAME: ${{ inputs.name }}
         ITTEN_SERVE_TIMEOUT: ${{ inputs.serve-timeout }}
         ITTEN_ENGINES: webkit
+        ITTEN_WORKERS: ${{ inputs.workers }}
+        ITTEN_SHARD: ${{ inputs.shard }}
+        ITTEN_MERGE: ${{ inputs.merge }}
         ITTEN_OUT: ${{ runner.temp }}/itten/${{ inputs.name }}
       run: node "$GITHUB_ACTION_PATH/scripts/action/run.js"
 
