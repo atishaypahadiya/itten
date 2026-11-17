@@ -7,7 +7,9 @@
 // finding over the canvas is a note, and the other findings must match
 // exactly. Then, on the same reports: removing the finding over the canvas,
 // or changing it, is a note; removing the overflow finding, or changing its
-// severity, is a difference.
+// severity, is a difference. A box a script recolours every frame, with no
+// animation, must be counted as unexplained moving tiles; the canvas's tiles
+// are explained.
 // The crop of the finding over the canvas must show the frame it was
 // measured in: the canvas is one colour per frame, so a canvas pixel in the
 // crop must be the background the message names, with the text drawn over it.
@@ -61,10 +63,17 @@ export async function run({ quiet = true } = {}) {
       for (let py = Math.ceil(ey); py < ey + eh; py++) for (let px = Math.ceil(ex); px < ex + ew; px += 2) if (at(px, py).every((v) => v > 245)) white++;
       if (white < 20) fails.push(`the crop of the finding over the canvas shows no text (${white} white pixels in the text box)`);
     }
+    // Tiles over the canvas are explained; the script-recoloured box's are not.
+    // Its box: 96 × 32 at 32, below the narrow line.
+    for (const d of a.drawing) {
+      if (!(d.tiles > 0) || d.unexplained === undefined) { fails.push(`${d.at}: no count of moving tiles`); continue; }
+      if (!(d.unexplained > 0)) fails.push(`${d.at}: the box a script recolours, with no animation, is not counted as unexplained`);
+      if (d.unexplained > 12) fails.push(`${d.at}: ${d.unexplained} unexplained tiles; the recoloured box covers at most 12 (the canvas counts as unexplained?)`);
+    }
     // The canvas sits at 32, 32, 576 × 192 at 1024 px.
     const regions = a.drawing.flatMap((d) => d.regions);
     if (!regions.length) fails.push('no moving regions reported');
-    else if (regions.some(([x, y, w, h]) => x + w <= 32 || x >= 608 || y + h <= 32 || y >= 224)) fails.push(`a moving region lies off the canvas: ${JSON.stringify(regions)}`);
+    else if (regions.filter(([x, y, w, h]) => x + w <= 32 || x >= 608 || y + h <= 32 || y >= 224).some(([x, , w]) => x < 32 || x + w > 128)) fails.push(`a moving region lies off the canvas and off the recoloured box: ${JSON.stringify(regions)}`);
     // The two runs: anything over the canvas is a note; the rest must match.
     const notes = [];
     const d = compare(a, b, 'canvas', notes);

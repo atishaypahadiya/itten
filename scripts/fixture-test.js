@@ -58,6 +58,22 @@ export function fromAction(dirs) {
   return score(spec, { page: get(spec.page), twin: get(spec.twin), dPage: get(spec.distinct.page), dTwin: get(spec.distinct.twin) });
 }
 
+// The moving-background guard. A contrast finding over pixels that changed
+// between two frames is exempt from parity, and any change counts, so a page
+// that holds still must show none. The distinct pair has nothing that moves:
+// no moving tiles at all. The test print and its twin run animations on
+// purpose (d32 pulses, d35 flashes): every moving tile must be over one of
+// them, none unexplained. Returns what broke that, as sentences.
+export function stillGuard({ page, twin, dPage, dTwin }) {
+  const out = [];
+  for (const [name, r] of [['test print', page], ['clean twin', twin]]) for (const d of r.drawing ?? []) {
+    if (d.unexplained === undefined) out.push(`${name}, ${d.at}: moving tiles without a count of the unexplained ones (a report from before the guard)`);
+    else if (d.unexplained) out.push(`${name}, ${d.at}: ${d.unexplained} of ${d.tiles} moving tiles are over nothing that should move`);
+  }
+  for (const [name, r] of [['distinct test print', dPage], ['distinct twin', dTwin]]) for (const d of r.drawing ?? []) out.push(`${name}, ${d.at}: ${d.tiles ?? d.regions.length} moving tiles on a page where nothing moves`);
+  return out;
+}
+
 export function score(spec, { page, twin, dPage, dTwin }) {
   const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity)
     && (!d.resizeOnly || Object.keys(i.seen).every((m) => /resize/.test(m)));
@@ -86,6 +102,7 @@ export function score(spec, { page, twin, dPage, dTwin }) {
     // The resize pass must find the fixtures' breakpoints on both pages.
     breakpoints: { expected: spec.breakpoints, testPrint: page.sweep.resize?.breakpoints, twin: twin.sweep.resize?.breakpoints,
       equal: spec.breakpoints === undefined || (page.sweep.resize?.breakpoints === spec.breakpoints && twin.sweep.resize?.breakpoints === spec.breakpoints) },
+    still: stillGuard({ page, twin, dPage, dTwin }),
     precision: truePos.length / (truePos.length + falsePos.length || 1),
     recall: caught / rows.length,
     rows,
@@ -104,7 +121,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const ds = r.distinctSweep;
   if (!ds.equal) console.log(`sweep totals differ without a system: test print ${JSON.stringify(ds.testPrint)}, twin ${JSON.stringify(ds.twin)}`);
   const bp = r.breakpoints;
+  for (const s of r.still) console.log(`moving tiles on a still page: ${s}`);
   if (!bp.equal) console.log(`breakpoints found by the resize pass: test print ${bp.testPrint}, twin ${bp.twin}; the fixtures have ${bp.expected}`);
   console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twins: ${r.findingsOnTwin} findings.`);
-  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal ? 0 : 1);
+  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal && !r.still.length ? 0 : 1);
 }

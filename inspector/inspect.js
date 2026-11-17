@@ -717,7 +717,7 @@ export async function inspect(url, o = {}) {
           await keep(page, r, await fontIssues(cdp, page, cr, system, r.fonts), sp);
           r.fontGroups = Math.max(r.fontGroups, new Set(cr.data.fontReps.map((x) => x.group)).size);
           const ci = await contrastIssues(page, cr, r.coverage);
-          if (ci.drawing?.length) (r.drawing ??= []).push({ at: sp.label, regions: ci.drawing });
+          if (ci.drawing?.tiles) (r.drawing ??= []).push({ at: sp.label, ...ci.drawing });
           await keep(page, r, ci, sp);
           if (scheme === 'light') {
             const oy = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
@@ -2209,8 +2209,26 @@ async function contrastIssues(page, res, coverage) {
     for (const [k, reg] of open) if (runs.has(k)) { reg[3] += TILE; runs.delete(k); } else { drawing.push(reg); open.delete(k); }
     for (const [k, [s, e]] of runs) open.set(k, [s * TILE, ty * TILE, (e - s + 1) * TILE, TILE]);
   }
+  // What may draw on its own: an element with a running animation (CSS or
+  // Web Animations), and canvas, video, iframe, img (an animated image),
+  // embed and object. A moving tile within a tile of none of them is
+  // unexplained: something else changed between the two frames. The report
+  // gives both counts, so an exemption nothing accounts for shows; the
+  // fixtures' still pages must have none (scripts/fixture-test.js).
+  const sources = await page.evaluate(() => {
+    const els = new Set(document.querySelectorAll('canvas, video, iframe, img, embed, object'));
+    for (const a of document.getAnimations()) if (a.playState === 'running' && a.effect?.target) els.add(a.effect.target);
+    return [...els].map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height).map((r) => [r.left + scrollX, r.top + scrollY, r.width, r.height]);
+  }).catch(() => []);
+  let tiles = 0, unexplained = 0;
+  for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
+    if (!moving[ty * cols + tx]) continue;
+    tiles++;
+    const x0 = tx * TILE, y0 = ty * TILE;
+    if (!sources.some(([x, y, w, h]) => x0 < x + w + TILE && x0 + TILE > x - TILE && y0 < y + h + TILE && y0 + TILE > y - TILE)) unexplained++;
+  }
   const out = [];
-  out.drawing = drawing.slice(0, 40);
+  out.drawing = { tiles, unexplained, regions: drawing.slice(0, 40) };
   for (const t of texts) {
     const a = t.color[3] * t.opacity;
     if (t.clipText || a < 0.1) { coverage.contrastSkipped++; continue; }

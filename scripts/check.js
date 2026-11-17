@@ -228,6 +228,15 @@ try {
   parityLine = `Parity: one worker ${Math.round(s1)} s, six workers ${Math.round(s6)} s, ${diffs.length ? `${diffs.length} difference(s)` : 'identical findings'}.`;
   fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twins ${r.findingsOnTwin} findings.`;
   for (const id of r.missed) fail('Fixtures', `planted defect ${id} was not caught`);
+  for (const s of [...one.still, ...r.still]) fail('Moving tiles', s);
+  const tiles = (rep) => Math.max(0, ...(rep.drawing ?? []).map((d) => d.tiles));
+  fixtureLine += ` Moving tiles: test print ${tiles(r.reports['test-print'])}, clean twin ${tiles(r.reports['clean-twin'])}, distinct pages ${tiles(r.reports['distinct-test-print'])} and ${tiles(r.reports['distinct-clean-twin'])}; unexplained ${[...one.still, ...r.still].length ? 'on some' : 'none'}.`;
+  // The guard itself: a still page with moving tiles must fail it.
+  const { stillGuard } = await import('./fixture-test.js');
+  const d = (o) => ({ drawing: [{ at: '768 px, light', regions: [[0, 0, 16, 16]], ...o }] }), none = { drawing: [] };
+  if (stillGuard({ page: d({ tiles: 3, unexplained: 0 }), twin: none, dPage: none, dTwin: none }).length) fail('Moving tiles', 'the guard fails the test print for tiles over its animations');
+  if (stillGuard({ page: d({ tiles: 3, unexplained: 1 }), twin: none, dPage: none, dTwin: none }).length !== 1) fail('Moving tiles', 'the guard lets an unexplained moving tile on the test print pass');
+  if (stillGuard({ page: none, twin: none, dPage: none, dTwin: d({ tiles: 1, unexplained: 0 }) }).length !== 1) fail('Moving tiles', 'the guard lets a moving tile on a distinct page pass, explained or not');
   for (const f of r.falsePositives) fail('Fixtures', `false positive: ${f.check} ${f.message} [${f.elements.join(', ')}]`);
   if (!r.breakpoints.equal) fail('Fixtures', `the resize pass found ${r.breakpoints.testPrint} breakpoints on the test print and ${r.breakpoints.twin} on the twin; the fixtures have ${r.breakpoints.expected}`);
   if (!r.distinctSweep.equal) fail('Fixtures', `without a system, the sweep totals of distinct.html and its twin differ: ${JSON.stringify(r.distinctSweep.testPrint)} against ${JSON.stringify(r.distinctSweep.twin)}`);
