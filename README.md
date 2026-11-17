@@ -33,7 +33,7 @@ Where two of them conflict, security floors come first, then accessibility floor
 | `library/` | Earlier research on fashion colourways, typefaces, icons and texture, with the font and icon files. Use any of it only when a project's brief asks for it. |
 | `research/baselines/` | Inspector summaries of real pages, kept for comparison. |
 | `research/telemetry.md` | The latest count of overrides by rule across projects that use ITTEN. |
-| `scripts/` | `check.js`, `setup.sh`, `fixture-test.js`, `serve.js`, `overrides.js`, `telemetry.js`, the action's steps in `action/` and their tests in `action-test.js`, and a small JSON Schema validator in `lib/`. |
+| `scripts/` | `check.js`, `setup.sh`, `fixture-test.js`, `serve.js`, `overrides.js`, `telemetry.js`, `compare-versions.mjs` (what one ITTEN version finds that another does not on the same pages; the `Compare versions` workflow runs both versions on GitHub's machines and then this), the action's steps in `action/` and their tests in `action-test.js`, and a small JSON Schema validator in `lib/`. |
 
 ## Run it
 
