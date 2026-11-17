@@ -9,7 +9,8 @@
 // ITTEN_URL             alone: a deployed page
 // ITTEN_PAGES           paths relative to the URL, one per line or comma-separated (default "/")
 // ITTEN_SYSTEM          system file; empty: itten.system.json if present; "none": distinct-value mode
-// ITTEN_MODE            quick (four widths) or full (41 widths)
+// ITTEN_MODE            quick (320, 768, 1440 and 1920 px, and either side of each breakpoint
+//                       between them) or full (every 40 px from 320 to 1920 px)
 // ITTEN_FAIL_ON         errors, warnings or never
 // ITTEN_BASELINE        baseline file (default itten-baseline.json)
 // ITTEN_WRITE_BASELINE  "true": write a fresh baseline into the report directory
@@ -36,6 +37,9 @@ const env = (k, d = '') => (process.env[k] ?? '').trim() || d;
 const problems = [];
 const out = () => resolve(env('ITTEN_OUT', 'itten-report'));
 
+// The widths a page was measured at, as its report gives them ("320, 431, 432, 768" or
+// "320–1920"): quick mode adds widths around the page's own breakpoints, so pages differ.
+export const measuredWidths = (report) => report?.sweep?.widths ?? null;
 export const parsePages = (s) => s.split(/[\n,]/).map((p) => p.trim()).filter(Boolean);
 // Pages are relative to the URL, so "/" under https://example.org/site/ is the
 // site's root, not the host's. A full URL is used as it is.
@@ -147,7 +151,7 @@ async function main(out) {
       const brief = (i) => ({ id: i.id, check: i.check, title: i.title, severity: i.severity, message: i.message, element: i.elements[0]?.sel ?? null, text: i.elements[0]?.text ?? null, order: i.elements[0]?.order ?? null, rule: i.rule });
       const b = report.baseline;
       summary.pages.push({
-        page: pageName(p), url, dir, status: report.status ?? 'complete', ...(report.reason ? { reason: report.reason } : {}), summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
+        page: pageName(p), url, dir, widths: measuredWidths(report), status: report.status ?? 'complete', ...(report.reason ? { reason: report.reason } : {}), summary: { error: report.summary.error, warning: report.summary.warning, info: report.summary.info },
         failing: fail.length,
         moving: (({ tiles, unexplained }) => ({ tiles, unexplained }))(movingTiles(report)),
         baseline: b ? { found: b.found, new: b.new.map((id) => brief(byId.get(id))), worse: b.worse.map((w) => ({ ...brief(byId.get(w.id)), was: w.was })),
