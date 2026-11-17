@@ -31,15 +31,20 @@ Sources: [S17]
 
 **Strength** follows RFC 2119: **MUST** (violations are defects), **SHOULD** (deviate only with a recorded reason), **MAY** (an option worth considering).
 
-**Evidence** states what kind of authority stands behind a rule:
+**Evidence** states what kind of authority stands behind a rule. The vocabulary is shared by ITTEN, KERCKHOFFS and ERLANG, so a level means the same in every specialist's rules and findings; each specialist uses the levels that apply to it.
 
 | Level | Meaning | Changes when |
 |---|---|---|
-| `standard` | Normative requirement, often with legal force (WCAG 2.2 AA). | A new version of the standard is published. |
-| `platform` | Apple's documented convention for its platforms. | Apple revises the HIG (usually each June). |
-| `research` | Empirical finding from perception or HCI research. | New evidence contradicts it. |
-| `craft` | Expert consensus or geometry, without controlled studies. | Practice changes. |
+| `standard` | A normative requirement from a standards body (an RFC, a W3C recommendation). | A new version of the standard is published. |
+| `platform` | The documented behaviour or convention of a platform, runtime or product, from its maker (Node.js, PostgreSQL, a browser, Apple's HIG). | The maker revises it. |
+| `research` | A peer-reviewed empirical finding. | New evidence contradicts it. |
+| `theory` | A theorem or analytic model. Holds exactly where its assumptions hold, and only approximately elsewhere. | Never, though its fit to a given service can be wrong. |
+| `practice` | An industry write-up by a named organisation or author who ran the systems in question, including worked examples and simulations published with it. | The practice changes. |
+| `craft` | Consensus or this repository's judgment, with no single documented source. | Practice changes. |
 | `taste` | A stated preference of this repository's owner. | The owner changes their mind. |
+| `observed` | Measured by the set's own tools, on its fixtures or the owner's services, with the run cited. | A later run measures otherwise. |
+
+ITTEN's rules use `standard` (WCAG 2.2), `platform` (chiefly Apple's HIG, revised each June), `research` (perception and HCI studies), `craft` and `taste`. A rule's level was set before the vocabulary was shared and is unchanged by it.
 
 Rule identifiers are stable. A retired rule keeps its number and is marked retired.
 
