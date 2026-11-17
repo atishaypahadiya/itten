@@ -41,7 +41,14 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
   const many = pages.length > 1;
   if (pages.length) {
     const t = s.totals;
-    const widths = s.mode === 'full' ? 'every 40 px from 320 to 1920 px' : '320, 768, 1440 and 1920 px';
+    // The widths each page ran at, from its report; one list when the pages share
+    // it, otherwise one line per page below the table. A summary without them
+    // (written before 0.3.5) gets the mode's description.
+    const wl = (w) => `${list(String(w).split(/,\s*/))} px`;
+    const own = [...new Set(pages.map((p) => p.widths ?? ''))];
+    const widths = own.length === 1 && own[0] ? wl(own[0])
+      : own.every(Boolean) ? 'the widths below'
+      : s.mode === 'full' ? 'every 40 px from 320 to 1920 px' : '320, 768, 1440 and 1920 px and either side of each breakpoint';
     const ran = [...new Set(pages.flatMap((p) => p.engines?.ran ?? ['chromium']))].map((e) => ENGINE[e] ?? e);
     out.push(`${plural(pages.length, 'page')} at ${widths}, ${s.system ? `against ${code(s.system)}` : 'without a system file (distinct-value mode)'}, in ${list(ran)}. ${plural(t.error, 'error')}, ${plural(t.warning, 'warning')}, ${t.info} info.`, '');
     const by = s.baseline ? 'new or more severe than in the baseline' : 'in all';
@@ -54,6 +61,7 @@ export function render(s, { artifactUrl = '', runUrl = '', note = '', forComment
       const b = p.baseline;
       out.push(`| ${code(p.page)} | ${p.summary.error} | ${p.summary.warning} | ${p.summary.info} | ${p.moving ? `${p.moving.tiles}${p.moving.unexplained ? ` (${p.moving.unexplained} unexplained)` : ''}` : '·'}${s.baseline ? ` | ${b?.found ? b.new.length + b.worse.length : 'no entry'} | ${b?.found ? b.fixed.length : ''}` : ''} |`);
     }
+    if (widths === 'the widths below') for (const p of pages) out.push('', `Widths on ${code(p.page)}: ${wl(p.widths)}.`);
     for (const p of pages.filter((p) => p.status === 'partial')) out.push('', `Partial run on ${code(p.page)}: ${clean(p.reason)} Its findings are real but do not cover the whole page.`);
     if (pages.some((p) => p.moving?.tiles)) out.push('', `Moving tiles: 16 px tiles behind text that changed between two frames 400 ms apart. Contrast findings over them depend on the frame and are exempt from parity${pages.some((p) => p.moving?.unexplained) ? '; unexplained tiles are over no animation, canvas, video, iframe or image, so check what changed there' : ''}.`);
     out.push('');

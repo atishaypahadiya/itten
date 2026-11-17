@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { compare, failing, writeBaseline, readBaseline } from '../inspector/baseline.js';
 import { render, marker } from './action/markdown.js';
 import { upsertComment, main as report } from './action/report.js';
-import { pageUrl, pageName, slug, parsePages } from './action/run.js';
+import { pageUrl, pageName, slug, parsePages, measuredWidths } from './action/run.js';
 import { start } from './serve.js';
 import { brokenWordMessage } from '../inspector/inspect.js';
 import { renderHtml } from '../inspector/report-html.js';
@@ -81,6 +81,19 @@ export async function run() {
     ok(md.startsWith(marker('itten-report')), 'the comment starts with its marker');
     ok(!md.includes('@someone') && !md.includes('<b>'), 'page text cannot mention people or open HTML');
     ok(/No baseline/.test(md) && /This check fails: 1 error in all/.test(md), 'states the verdict and the missing baseline');
+    // The widths in the comment are the widths each page ran at, from its report.
+    // fixtures/index.html in quick mode: its breakpoints at 432 and 1000 px add
+    // 431, 432, 999 and 1000 (0.3.5's self-test, 17 November 2026).
+    const said = (md) => [...md.matchAll(/at ((?:\d+(?:–\d+)?(?:, | and )?)+) px/g)].map((m) => m[1].split(/, | and /).join(', '));
+    const bp = { sweep: { widths: '320, 431, 432, 768, 999, 1000, 1440, 1920' } };
+    const one = render({ ...s, pages: [{ ...s.pages[0], widths: measuredWidths(bp) }] });
+    ok(said(one)[0] === bp.sweep.widths, `the comment gives the widths the page ran at: ${said(one)[0]} against ${bp.sweep.widths}`);
+    const other = { sweep: { widths: '320, 479, 480, 768, 1440, 1920' } };
+    const two = render({ ...s, pages: [{ ...s.pages[0], widths: measuredWidths(bp) }, { ...s.pages[0], page: '/about/', widths: measuredWidths(other) }] });
+    const per = [...two.matchAll(/Widths on `([^`]+)`: ([^.]+) px\./g)].map((m) => [m[1], m[2].split(/, | and /).join(', ')]);
+    ok(per.length === 2 && per[0][1] === bp.sweep.widths && per[1][0] === '/about/' && per[1][1] === other.sweep.widths && /2 pages at the widths below/.test(two), `pages with their own widths each get theirs: ${JSON.stringify(per)}`);
+    ok(/at 320–1920 px/.test(render({ ...s, mode: 'full', pages: [{ ...s.pages[0], widths: measuredWidths({ sweep: { widths: '320–1920' } }) }] })), 'a full sweep gives its range');
+    ok(/either side of each breakpoint/.test(render(s)), 'a summary without widths describes quick mode as it runs');
     const part = render({ ...s, pages: [{ ...s.pages[0], status: 'partial', reason: '2 steps timed out.' }] });
     ok(/Partial run on `[^`]+`: 2 steps timed out\. Its findings are real but do not cover the whole page\./.test(part) && !/Partial run/.test(render(s)), 'a partial run is stated under the table, and only then');
     ok(render({ ...s, pages: Array(400).fill(s.pages[0]) }, { limit: 5000 }).length <= 5000, 'the comment is cut to the limit');
