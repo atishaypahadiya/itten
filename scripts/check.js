@@ -2,9 +2,9 @@
 // Usage: node scripts/check.js [--full]
 //
 // Fails when:
-// - a tracked or about-to-be-committed file, or a commit message, names an
-//   automated writing tool or assistant, or a private file is tracked
-//   (terms from the local .itten-private-terms; skipped without it);
+// - a tracked or about-to-be-committed file, or a commit message, claims it
+//   was made by an automated tool, or a private file is tracked (patterns
+//   from the local .itten-private-terms; skipped, with a warning, without it);
 // - the system schema, the fixtures' system file or the example in
 //   protocol/02-system.md does not validate, or the validator accepts a
 //   broken file;
@@ -29,7 +29,7 @@
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync, lstatSync, readlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,22 +43,52 @@ const STARTED = Date.now();
 let findingLine = null;
 
 // ------------------------------------------------------- Public hygiene
-// The terms live in .itten-private-terms, a local file kept out of the repo,
-// so the public check does not carry the words it looks for. One regular
-// expression per line; "private <path>" lines name files never to track.
-// Without the file the hygiene check is skipped, with a notice.
+// Authorship only: a file or a commit message that claims this repository or
+// its contents were made by an automated tool (trailers, "generated with"
+// lines, a tool given as author). Writing about such tools as a subject is
+// fine and is not checked. The patterns live in .itten-private-terms, a link
+// to the list every specialist on this machine shares
+// (~/.config/specialists/private-terms; scripts/setup.sh makes the link), kept
+// out of the repository so the public check does not carry what it looks for.
+// One extended regular expression per line, as grep -E reads it, matched
+// without case; "private <path>" lines name paths never to track. Lines
+// starting "subject " are subject-matter bans (a product's name), which a
+// repository may allow in a committed .private-terms-allow (patterns only):
+// text an allowed pattern matches is taken out before they are tested. The
+// authorship patterns are never allowed. Without the file the check is
+// skipped, with a warning.
 const TERMS_FILE = join(ROOT, '.itten-private-terms');
-let BANNED = null;
+let BANNED = [];
+let SUBJECT = [];
+let ALLOWED = [];
 let PRIVATE = [];
 let hygieneNote = '';
+// POSIX bracket classes, which JavaScript does not know, as their ASCII sets.
+const POSIX = { space: ' \\t\\n\\r\\f\\v', punct: '!-\\/:-@\\[-`{-~', alpha: 'A-Za-z', digit: '0-9', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z' };
+const ere = (t) => new RegExp(t.replace(/\[:([a-z]+):\]/g, (m, k) => POSIX[k] ?? m), 'iu');
+let linkState = null;
+try { linkState = lstatSync(TERMS_FILE); } catch { /* missing */ }
 if (existsSync(TERMS_FILE)) {
   const lines = readFileSync(TERMS_FILE, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   PRIVATE = lines.filter((l) => l.startsWith('private ')).map((l) => l.slice(8).trim());
-  const terms = lines.filter((l) => !l.startsWith('private '));
-  if (terms.length) BANNED = new RegExp(terms.join('|'), 'i');
+  for (const t of lines.filter((l) => !l.startsWith('private '))) {
+    try { (t.startsWith('subject ') ? SUBJECT : BANNED).push(ere(t.replace(/^subject /, ''))); } catch (e) { fail('Hygiene', `a pattern in .itten-private-terms is not a regular expression: ${e.message}`); }
+  }
+  const allowFile = join(ROOT, '.private-terms-allow');
+  if (existsSync(allowFile)) for (const t of readFileSync(allowFile, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))) {
+    try { ALLOWED.push(new RegExp(ere(t).source, 'giu')); } catch (e) { fail('Hygiene', `a pattern in .private-terms-allow is not a regular expression: ${e.message}`); }
+  }
+  if (!BANNED.length) warnings.push('Hygiene: .itten-private-terms has no patterns, so nothing is checked for authorship claims.');
+  if (!linkState.isSymbolicLink()) warnings.push('Hygiene: .itten-private-terms is a file of its own, not a link to the shared list; run scripts/setup.sh.');
 } else {
-  hygieneNote = 'Hygiene check skipped: .itten-private-terms not found.';
+  hygieneNote = 'Hygiene check skipped; see the warning at the end.';
+  warnings.push(linkState?.isSymbolicLink()
+    ? `Hygiene check skipped: .itten-private-terms links to ${readlinkSync(TERMS_FILE)}, which does not exist; run scripts/setup.sh.`
+    : 'Hygiene check skipped: .itten-private-terms is missing; run scripts/setup.sh to link it to the shared list.');
 }
+const claims = (text) => BANNED.some((re) => re.test(text));
+const names = (text) => SUBJECT.some((re) => re.test(ALLOWED.reduce((t, a) => t.replace(a, ''), text)));
+if (!ere('^[[:space:][:punct:]]*made by').test(' - made by') || ere('^[[:space:]]*made by').test('x made by')) fail('Hygiene', 'POSIX classes in the patterns are not read as grep -E reads them');
 
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
 let files = [];
@@ -67,7 +97,7 @@ try {
 } catch {
   fail('Hygiene', 'not a git repository; cannot list files');
 }
-for (const f of BANNED || PRIVATE.length ? files : []) {
+for (const f of BANNED.length || SUBJECT.length || PRIVATE.length ? files : []) {
   if (PRIVATE.some((p) => f === p || f.startsWith(p))) fail('Hygiene', `${f} is private and must not be committed`);
   const full = join(ROOT, f);
   if (!existsSync(full) || !statSync(full).isFile() || statSync(full).size > 2_000_000) continue;
@@ -76,14 +106,16 @@ for (const f of BANNED || PRIVATE.length ? files : []) {
   lines.forEach((text, i) => {
     // .gitignore may name the private files it keeps out of the repo.
     if (f === '.gitignore' && PRIVATE.includes(text.trim())) return;
-    if (BANNED && BANNED.test(text)) fail('Hygiene', `${f}:${i + 1} names a tool or assistant: "${text.trim().slice(0, 80)}"`);
+    if (claims(text)) fail('Hygiene', `${f}:${i + 1} claims tool authorship: "${text.trim().slice(0, 80)}"`);
+    else if (names(text)) fail('Hygiene', `${f}:${i + 1} names a subject the shared list bans: "${text.trim().slice(0, 80)}"`);
   });
 }
-if (BANNED) try {
+if (BANNED.length || SUBJECT.length) try {
   const log = git('log', '--format=%H%n%B%n--end--');
   for (const block of log.split('--end--')) {
     const [hash, ...body] = block.trim().split('\n');
-    if (hash && BANNED.test(body.join('\n'))) fail('Hygiene', `commit ${hash.slice(0, 7)} message names a tool or assistant, or carries a trailer`);
+    const hit = body.find((l) => claims(l) || names(l));
+    if (hash && hit !== undefined) fail('Hygiene', `commit ${hash.slice(0, 7)} message claims tool authorship or names a banned subject: "${hit.trim().slice(0, 80)}"`);
   }
 } catch { /* no commits yet */ }
 

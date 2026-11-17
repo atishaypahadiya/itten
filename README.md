@@ -33,7 +33,7 @@ Where two of them conflict, security floors come first, then accessibility floor
 | `library/` | Earlier research on fashion colourways, typefaces, icons and texture, with the font and icon files. Use any of it only when a project's brief asks for it. |
 | `research/baselines/` | Inspector summaries of real pages, kept for comparison. |
 | `research/telemetry.md` | The latest count of overrides by rule across projects that use ITTEN. |
-| `scripts/` | `check.js`, `fixture-test.js`, `serve.js`, `overrides.js`, `telemetry.js`, the action's steps in `action/` and their tests in `action-test.js`, and a small JSON Schema validator in `lib/`. |
+| `scripts/` | `check.js`, `setup.sh`, `fixture-test.js`, `serve.js`, `overrides.js`, `telemetry.js`, the action's steps in `action/` and their tests in `action-test.js`, and a small JSON Schema validator in `lib/`. |
 
 ## Run it
 
@@ -42,6 +42,7 @@ Node 20 or later.
 ```sh
 npm install                      # Playwright, the only dependency
 npx playwright install chromium webkit firefox  # once
+scripts/setup.sh                 # once: links the hygiene patterns (below)
 npm run check                    # everything below; exits 1 on any failure
 npm run check:full               # the same with the 41-width fixture sweep
 npm run fixtures                 # the fixture test alone, with a per-defect table
@@ -51,7 +52,7 @@ npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 
 `npm run check` fails when:
 
-- a file or commit message names an automated writing tool or assistant, or a private file is tracked;
+- a file or commit message claims it was made by an automated tool, names a product the shared list bans as a subject (a repository that uses the product may allow it in a committed `.private-terms-allow`; claims of authorship can never be allowed), or a private file is tracked. The patterns are local, in `.itten-private-terms`, a link to the list the specialists on a machine share (`~/.config/specialists/private-terms`), so the public check does not carry what it looks for; `scripts/setup.sh` makes the link, and the check warns when it is missing;
 - the schema, the fixtures' system file or the example in `protocol/02-system.md` does not validate, or the validator accepts a deliberately broken file;
 - the inspector misses a planted defect on the test print or reports anything on the clean twin;
 - a font or icon folder in `library/` has no licence file;
