@@ -29,7 +29,7 @@
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
-import { readFileSync, existsSync, readdirSync, statSync, lstatSync, readlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, lstatSync, readlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -220,6 +220,53 @@ try {
   const n0 = [];
   if (compare(rep(f(), r()), rep(tf(f()), tf(r())), 't', n0).length || n0.length) fail('Parity', 'compare() finds a difference between a report saved before finding/1 and the same findings written as finding/1');
   if (compare(rep(f(), r()), { findings: [tf(f()), tf(r())], summary: null, sweep: {} }, 't').length) fail('Parity', 'compare() does not read the findings of a report/1');
+  // The action compares a run with the baseline from the default branch (0.3.5's
+  // first pull request run stopped here). Every form a baseline comes in is read,
+  // and findings match by fingerprint across forms, so a project upgrading ITTEN
+  // with nothing changed on its site sees nothing new and nothing fixed.
+  try {
+    const { compare: against, readBaseline: readB, writeBaseline: writeB } = await import('../inspector/baseline.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const same = (c, what) => { if (!c.found || c.new.length || c.fixed.length || c.worse.length || c.better.length) fail('Baseline', `${what}: found ${c.found}, new ${c.new.join() || 0}, fixed ${c.fixed.map((x) => x.fingerprint).join() || 0}, worse ${c.worse.length}, better ${c.better.length}`); };
+    const page = (findings, extra = {}) => ({ schema: 'report/1', specialist: 'itten', version: '0.3.5', status: 'complete', subject: 'http://x/p', url: 'http://x/p', sweep: { widths: '320' }, findings, ...extra });
+    const now = page([tf(f({ id: 'i001' })), tf(r({ id: 'i002' }))]);
+    const dir = mkdtempSync(join(tmpdir(), 'itten-baseline-'));
+    try {
+      // report/1 against a baseline written from report/1, and against the report/1 file itself.
+      writeB(join(dir, 'b.json'), now, '/p');
+      same(against(now, readB(join(dir, 'b.json')), 'b.json', '/p'), 'report/1 against a baseline written from report/1');
+      writeFileSync(join(dir, 'r.json'), JSON.stringify(now));
+      same(against(now, readB(join(dir, 'r.json')), 'r.json', '/p'), 'report/1 against a report/1 used as the baseline');
+      // report/1 against a flat report from before 0.3.5 (findings in "issues") used as the baseline.
+      writeFileSync(join(dir, 'old.json'), JSON.stringify({ version: '0.3.4', url: 'http://x/p', sweep: { widths: '320' }, issues: [f({ id: 'i001' }), r({ id: 'i002' })] }));
+      same(against(now, readB(join(dir, 'old.json')), 'old.json', '/p'), 'report/1 against a 0.3.4 report used as the baseline');
+      // A baseline entry that holds finding/1 findings, or flat ones.
+      same(against(now, { pages: { '/p': { widths: '320', findings: now.findings } } }, 'e', '/p'), 'report/1 against an entry of finding/1 findings');
+      same(against(now, { pages: { '/p': { widths: '320', issues: [f(), r()] } } }, 'e', '/p'), 'report/1 against an entry of flat findings');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+    // Real baselines from before 0.3.5: neptune-fork's, as committed with the 0.3.4
+    // action (both pages clean), and the fixtures' (0.3.3, two findings).
+    const nep = readB(join(ROOT, 'fixtures', 'baselines', 'neptune-fork-0.3.2.json'));
+    for (const key of ['/', '/adams-challis/']) same(against(page([], { subject: `http://x${key}`, url: `http://x${key}` }), nep, 'nep', key), `a clean report/1 against neptune-fork's baseline (${key})`);
+    const fix = readB(join(ROOT, 'fixtures', 'itten-baseline.json'));
+    const held = fix.pages['/fixtures/distinct.html'].findings;
+    const again = page(held.map((h, k) => tf({ id: `i00${k + 1}`, check: h.check, fingerprint: h.fingerprint, severity: h.severity, message: h.message, elements: h.elements.map((sel) => ({ sel, label: sel })), seen: { light: '320' } })));
+    same(against(again, fix, 'fix', '/fixtures/distinct.html'), "report/1 against the fixtures' 0.3.3 baseline, same fingerprints");
+    // A fluid finding's fingerprint holds its value at each width, so 0.3.5's extra
+    // breakpoint widths change it; so do the widths that turn an off-scale size
+    // into a fluid one. Same check, same elements: the same finding.
+    const ts = (fp, sel, o = {}) => tf({ id: o.id ?? 'i001', check: 'type-scale', fingerprint: fp, severity: o.severity ?? 'warning', message: 'm', elements: [{ sel, label: 'p' }], seen: { light: '320' } });
+    const was = { pages: { '/p': { widths: '320, 768, 1440, 1920', findings: [
+      { fingerprint: 'type-scale|fixed|18', check: 'type-scale', severity: 'warning', message: 'm', elements: ['#d16 > p'] },
+      { fingerprint: 'spacing-scale|fluid|16,31,56,56', check: 'spacing-scale', severity: 'info', message: 'm', elements: ['#d22 > div'] }] } } };
+    const moved = page([ts('type-scale|fluid|16,16.69,16.7,18,18,18,18,18', '#d16 > p'), tf({ id: 'i002', check: 'spacing-scale', fingerprint: 'spacing-scale|fluid|16,31,40,40,56,56', severity: 'info', message: 'm', elements: [{ sel: '#d22 > div', label: 'div' }], seen: { light: '320' } })]);
+    same(against(moved, was, 'w', '/p'), 'fluid fingerprints that changed with the sweep, on the same elements');
+    const other = against(page([ts('type-scale|fluid|16,18', '#d99 > p'), tf({ id: 'i002', check: 'spacing-scale', fingerprint: 'spacing-scale|fluid|16,56', severity: 'info', message: 'm', elements: [{ sel: '#d22 > div', label: 'div' }], seen: { light: '320' } })]), was, 'w', '/p');
+    if (other.new.join() !== 'i001' || other.fixed.map((x) => x.fingerprint).join() !== 'type-scale|fixed|18') fail('Baseline', `the same check on another element must count as new and fixed: new ${other.new.join()}, fixed ${other.fixed.map((x) => x.fingerprint).join()}`);
+    const c = against(page([tf(f({ id: 'i001' })), tf(r({ id: 'i002' }))]), { pages: { '/p': { widths: '320', findings: [{ fingerprint: f().fingerprint, check: f().check, severity: f().severity }, { fingerprint: 'radius|gone', check: 'radius', severity: 'warning' }] } } }, 'b', '/p');
+    if (c.new.join() !== 'i002' || c.fixed.map((x) => x.fingerprint).join() !== 'radius|gone') fail('Baseline', `the baseline compare misreads what is new and fixed: new ${c.new.join()}, fixed ${c.fixed.map((x) => x.fingerprint).join()}`);
+  } catch (e) { fail('Baseline', `the baseline compare cannot read a baseline: ${e.message}`); }
   const n9 = [];
   if (compare(rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 52 of 100' }] })), rep(r({ elements: [{ sel: 'p', label: 'p', text: 'Week 53 of 100' }] })), 't', n9).length || n9.length) fail('Parity', "compare() compares an element's opening text, which is for the reader only");
   const n4 = [];
