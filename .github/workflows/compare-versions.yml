@@ -53,7 +53,7 @@ on:
         required: false
         default: 'webkit'
       workers:
-        description: 'Inspector workers per job, for versions with parallel jobs (0.3.5 on); empty: the runner''s CPUs'
+        description: 'Inspector workers per job, for versions with parallel jobs (0.3.5 on); empty: the inspector''s own default'
         required: false
         default: ''
   pull_request:
@@ -182,25 +182,29 @@ jobs:
           flags=(--engines "$(node -p 'JSON.parse(process.env.CONFIG).engines')" --out "$out")
           [ "$MODE" = full ] && flags+=(--full)
           [ -n "$system" ] && flags+=(--system "$GITHUB_WORKSPACE/site/$system")
-          # Parallel jobs from 0.3.5, as many as asked (validated in the plan job) or one per CPU; an older inspector
-          # measures one width at a time. A page that draws WebGL every frame is drawn in software here, so it may
-          # need fewer workers than CPUs.
+          # Parallel jobs from 0.3.5: as many as asked (validated in the plan job), or the inspector's own default
+          # (CPU cores less two, capped by memory). An older inspector measures one width at a time.
           want="$(node -p 'JSON.parse(process.env.CONFIG).workers || ""')"
           case "$want" in ''|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "bad workers: $want"; exit 64 ;; esac
-          workers=1; if grep -q -- '--workers' inspector/inspect.js; then workers="${want:-$(nproc)}"; flags+=(--workers "$workers"); fi
+          if [ -n "$want" ] && grep -q -- '--workers' inspector/inspect.js; then flags+=(--workers "$want"); fi
           started="$(date -u +%FT%TZ)"
           node inspector/inspect.js "http://127.0.0.1:8080$PAGE_PATH" "${flags[@]}" > "$out.log" 2>&1 || true
           tail -3 "$out.log"
           node -e '
-            const fs = require("fs"); const [out, version, mode, page, path, build, workers, started] = process.argv.slice(1);
+            const fs = require("fs"); const [out, version, mode, page, path, build, started] = process.argv.slice(1);
             const r = JSON.parse(fs.readFileSync(out + "/report.json", "utf8"));
             const c = JSON.parse(process.env.CONFIG);
-            fs.writeFileSync(out + "/meta.json", JSON.stringify({ version: r.version, tag: version, mode, page, path, build, workers: Number(workers),
+            fs.writeFileSync(out + "/meta.json", JSON.stringify({ version: r.version, tag: version, mode, page, path, build,
+              workers: (r.schedule && r.schedule.workers) || 1,
               site: { repo: c.siteRepo, ref: c.siteRef }, started, finished: new Date().toISOString() }, null, 2));
-            // Only a whole report is compared: not refused or partial, and every engine ran.
+            // Only a whole report is compared: not refused or partial, every engine ran, and no step timed out.
+            // 0.3.4 has no status: it records a step that timed out as a finding of the check timed-out.
             const notRun = (r.engines && r.engines.notRun) || {};
-            if (["refused", "partial"].includes(r.status) || Object.keys(notRun).length) { console.error("not whole:", r.status, r.reason || "", JSON.stringify(notRun)); process.exit(1); }
-          ' "$out" "$VERSION" "$MODE" "$PAGE" "$PAGE_PATH" "$BUILD" "$workers" "$started"
+            const timedOut = [...(r.issues || []), ...(r.findings || [])].filter((i) => i.check === "timed-out").length;
+            if (["refused", "partial"].includes(r.status) || Object.keys(notRun).length || timedOut) {
+              console.error("not whole:", r.status || "(no status)", r.reason || "", timedOut ? `${timedOut} timed-out` : "", JSON.stringify(notRun)); process.exit(1);
+            }
+          ' "$out" "$VERSION" "$MODE" "$PAGE" "$PAGE_PATH" "$BUILD" "$started"
       - name: Upload the report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
