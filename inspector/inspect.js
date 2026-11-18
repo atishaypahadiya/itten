@@ -10,6 +10,7 @@
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //        [--workers N] [--shard i/n | --merge <shard dir>,<shard dir>,...] [--no-breakpoint-widths]
 //   node itten/inspector/inspect.js --validate itten.system.json
+//   node itten/inspector/inspect.js --version
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -25,6 +26,7 @@ import { container } from './group.js';
 import { toFinding, pagePath, REPORT } from './finding.js';
 import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
 import { validate } from '../scripts/lib/schema.js';
+import { versionLine } from './version.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = JSON.parse(readFileSync(join(HERE, '..', 'schema', 'system.schema.json'), 'utf8'));
@@ -2345,6 +2347,8 @@ const parseWidths = (s) => {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = parseArgs(process.argv.slice(2));
+  // Before anything else, and whatever follows it: --version runs nothing.
+  if (args.version !== undefined) { console.log(versionLine()); process.exit(0); }
   if (args.validate) {
     const { errors } = loadSystem(args.validate);
     if (errors.length) { console.error(`${args.validate} is not valid:\n  ` + errors.join('\n  ')); process.exit(1); }

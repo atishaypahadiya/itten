@@ -17,7 +17,8 @@
     "test:timeout": "node scripts/timeout-test.js",
     "test:parity": "node scripts/parity-test.js",
     "test:ignore": "node scripts/ignore-test.js",
-    "test:canvas": "node scripts/canvas-test.js"
+    "test:canvas": "node scripts/canvas-test.js",
+    "test:version": "node scripts/version-test.js"
   },
   "devDependencies": {
     "playwright": "^1.65.1"
