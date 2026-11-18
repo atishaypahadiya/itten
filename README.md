@@ -47,6 +47,7 @@ npm run check                    # everything below; exits 1 on any failure
 npm run check:full               # the same with the 41-width fixture sweep
 npm run fixtures                 # the fixture test alone, with a per-defect table
 npm run inspect -- <url> [--system itten.system.json] [--out dir] [--full]
+npm run inspect -- --version      # the version and the commit it runs from
 npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 ```
 

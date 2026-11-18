@@ -26,6 +26,8 @@
 // - a page that blocks its main thread at one width holds the run, or is
 //   not reported as timed out at that width in every pass, or the watchdog
 //   does not stop a stalled process (scripts/timeout-test.js);
+// - --version does not print the version and ITTEN's own commit, or names
+//   another repository's commit for a copy of ITTEN (scripts/version-test.js);
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
@@ -368,6 +370,16 @@ try {
   for (const f of await timeoutTest()) fail('Timeouts', f);
 } catch (e) {
   fail('Timeouts', `the timeout test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ---------------------------------------------------------------- Version
+// --version prints the version and ITTEN's own commit, and runs nothing else
+// (scripts/version-test.js).
+try {
+  const { run: versionTest } = await import('./version-test.js');
+  for (const f of await versionTest()) fail('Version', f);
+} catch (e) {
+  fail('Version', `the version test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Licences
