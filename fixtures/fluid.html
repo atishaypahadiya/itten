@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A fluid gutter and a fixed value</title>
+<style>
+  body { margin: 0; font: 1rem/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  .gutter { padding: 2rem clamp(16px, 4vw, 56px); }
+  .card { padding: 13px; background: #eee; }
+</style>
+</head>
+<body>
+  <!-- scripts/fluid-test.js. Planted: the card has 13 px of padding, a fixed value off the spacing scale and in px. The gutter is clamp(16px, 4vw, 56px): fluid, and not a range the system declares. Measured at fewer than three widths, neither can be told from the other. -->
+  <div class="gutter">
+    <div class="card">The card</div>
+  </div>
+</body>
+</html>

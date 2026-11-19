@@ -1,0 +1,3 @@
+/* scripts/health-test.js: the stylesheet the test server drops on chosen requests. */
+body { margin: 0; padding: 32px; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+.band { padding: 16px; background: #eee; }

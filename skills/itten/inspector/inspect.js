@@ -724,11 +724,21 @@ export async function inspect(url, o = {}) {
   // text): a page that catches the failure and shows a message raises no
   // page error, so without this the report would measure the error state as
   // the page.
-  const newContext = async (b, { dpr = 1, width, failed = null, init = [], stop = 0 } = {}) => {
+  // The server's health (0.5). firstOk and firstFailed are what the first
+  // load, the watch load, was sent and was not. A job's request is the
+  // server's failure when the first load did not fail it too and it got no
+  // response, a reset, a 5xx, or a 4xx on something the first load was
+  // sent: the page's own missing file fails on every load and is the page's.
+  const firstOk = new Set(), firstFailed = new Set();
+  const newContext = async (b, { dpr = 1, width, failed = null, init = [], stop = 0, health = null, okUrls = null } = {}) => {
     const c = await b.newContext({ viewport: { width, height: VIEW_H }, deviceScaleFactor: dpr, colorScheme: 'light' });
     for (const s of init) await c.addInitScript(s);
     if (o.freeze !== false) await c.addInitScript(frameInit, stop);
     await c.addInitScript(lateInit, T.window);
+    if (health || okUrls) {
+      c.on('response', (r) => { if (r.status() >= 400) { if (health && !health.has(r.url())) health.set(r.url(), { url: r.url(), method: r.request().method(), type: r.request().resourceType(), why: `HTTP ${r.status()}`, status: r.status() }); } else okUrls?.add(r.url()); });
+      c.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (health && !/ERR_ABORTED/.test(why) && !health.has(r.url())) health.set(r.url(), { url: r.url(), method: r.method(), type: r.resourceType(), why, status: null }); });
+    }
     if (failed) {
       const fail = (u, method, type, why) => { if (!failed.has(u)) failed.set(u, { url: u, method, type, why }); };
       c.on('response', (r) => { if (r.status() >= 400) fail(r.url(), r.request().method(), r.request().resourceType(), `HTTP ${r.status()}`); });
@@ -874,13 +884,21 @@ export async function inspect(url, o = {}) {
       b = e.b;
     }
     const failed = job.chromiumText ? new Map() : null;
+    const health = new Map();
     let ctx = null;
     const start = Date.now();
     try {
       await within(TO.width, 'the width as a whole', async () => {
-        ctx = await within(TO.close, 'opening a browser context', () => newContext(b, { dpr: pass.dpr, width: pass.resize ? pass.resize[0] : pass.w, failed }));
-        const page = await within(TO.load, 'loading the page', () => openPass(ctx, pass, job.kind.startsWith('light') ? r.errors : null));
-        await BODY[job.body](page, pass, r);
+        ctx = await within(TO.close, 'opening a browser context', () => newContext(b, { dpr: pass.dpr, width: pass.resize ? pass.resize[0] : pass.w, failed, health }));
+        // A load that fails or runs out of its limit is the server's failure
+        // too: the job is run again once, then dropped (runHealthy).
+        const page = await within(TO.load, 'loading the page', () => openPass(ctx, pass, job.kind.startsWith('light') ? r.errors : null)).catch((e) => {
+          if (e instanceof StepTimeout) r.loadFailed = `the page load did not finish within ${Math.round(e.ms / 1000)} s`;
+          else if (pass.engine) throw e;
+          else r.loadFailed = String(e.message || e).split('\n')[0];
+          return null;
+        });
+        if (page) await BODY[job.body](page, pass, r);
       });
     } catch (e) {
       if (e instanceof StepTimeout) {
@@ -892,8 +910,28 @@ export async function inspect(url, o = {}) {
     r.s = (Date.now() - start) / 1000;
     if (r.log) log(`${r.log}, ${r.s.toFixed(1)} s`);
     r.failed = failed ? [...failed.values()] : [];
+    r.requests = [...health.values()];
     r.fonts = [...r.fonts.entries()];
     return r;
+  };
+  const serverFaults = (r) => [
+    ...(r.loadFailed ? [{ url, method: 'GET', type: 'document', why: r.loadFailed }] : []),
+    ...(r.requests ?? []).filter((q) => !firstFailed.has(q.url) && (q.status === null || q.status >= 500 || firstOk.has(q.url))).map(({ status, ...q }) => q),
+  ];
+  // A job the server failed is run again once. A second run that the server
+  // serves is used, and the report names the first one's failed requests. A
+  // job that fails again is dropped: nothing it measured is kept.
+  const runHealthy = async (job) => {
+    const first = await runJob(job);
+    if (first.skipped || o.health === false) return first;
+    const bad = serverFaults(first);
+    if (!bad.length) return first;
+    log(`  ${job.pass.label}: ${plural(bad.length, 'request')} failed that the first load was sent (${bad[0].why}); run again`);
+    const again = await runJob(job);
+    const still = serverFaults(again);
+    if (!still.length) return { ...again, s: first.s + again.s, retried: { failed: bad } };
+    log(`  ${job.pass.label}: failed again; the job is dropped`);
+    return { events: [], data: null, timedOut: null, errors: [], failed: [], requests: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: [], fontGroups: 0, log: null, s: first.s + again.s, dropped: { failed: still } };
   };
 
   try {
@@ -918,7 +956,7 @@ export async function inspect(url, o = {}) {
       const watchFailed = new Map();
       try {
         watched = await within(TO.load + T.horizon + T.ceiling, 'the watch load', async () => {
-          wctx = await newContext(browser, { width: widths[0], failed: watchFailed });
+          wctx = await newContext(browser, { width: widths[0], failed: watchFailed, okUrls: firstOk });
           const wpage = await wctx.newPage();
           await slow(wpage);
           return watchLoad(wpage, url, o, T);
@@ -929,6 +967,7 @@ export async function inspect(url, o = {}) {
         log(`  ${widths[0]} px, the watch load: timed out after ${Math.round(e.ms / 1000)} s; the sweep goes on`);
       } finally { await closeQuietly(wctx); }
       watched.failed = [...watchFailed.values()];
+      for (const f of watched.failed) firstFailed.add(f.url);
       // What the watch load timed, per finding it can raise. Where it timed
       // anything and the machine allows a verdict, it is run twice more: a
       // timing finding counts on three measurements (inspector/timing.js).
@@ -998,7 +1037,7 @@ export async function inspect(url, o = {}) {
       log(`  jobs: ${countKinds(mine)}`);
       t0 = Date.now();
       const jobsDone = phase('jobs');
-      results = await pool(plan.jobs, order, workers, runJob);
+      results = await pool(plan.jobs, order, workers, runHealthy);
       jobsDone();
       clock.jobs = (Date.now() - t0) / 1000;
       for (const j of mine) if (results[j.i] && !results[j.i].skipped) took.push([j.kind, results[j.i].s]);
@@ -1129,7 +1168,12 @@ export async function inspect(url, o = {}) {
     }
     for (const f of [...(watched.failed ?? []), ...plan.jobs.flatMap((job) => results[job.i]?.failed ?? [])]) if (!failed.has(f.url)) failed.set(f.url, f);
     const LIGHT = { mode: 'light' }, BIG = { mode: '200% text', text: 200 };
-    for (const f of scaleFindings(obs, system, widths, distinct)) addFinding(f, LIGHT);
+    // Fluidity needs three widths: a value is fluid when it takes three or
+    // more values across the sweep, so below that a clamp() cannot be told
+    // from a fixed value, and nothing that needs a value to be fixed is
+    // reported (a fixed value off a scale, px that should be rem).
+    const fluidity = widths.length >= 3 ? 'judged' : 'unknown';
+    for (const f of scaleFindings(obs, system, widths, distinct)) if (fluidity === 'judged' || !/^fixed\|/.test(f.key)) addFinding(f, LIGHT);
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
     for (const job of jobsOf('200')) {
@@ -1156,7 +1200,7 @@ export async function inspect(url, o = {}) {
           elements: fixed.map((k) => ({ sel: k, label: obs.labels.get(k) || k, ...(obs.texts.get(k) ? { text: obs.texts.get(k) } : {}) })) }, BIG);
       }
     }
-    for (const f of spacingUnitFindings(obs)) addFinding(f, BIG);
+    if (fluidity === 'judged') for (const f of spacingUnitFindings(obs)) addFinding(f, BIG);
 
     // The resize pass, in Chromium: load at one width, resize to another,
     // measure. A finding the fresh load at the second width also had adds
@@ -1228,7 +1272,9 @@ export async function inspect(url, o = {}) {
           }
         });
       } catch (e) {
-        if (!(e instanceof StepTimeout)) throw e;
+        // A crop's page that the server does not send (a failed or stalled
+        // load) leaves its findings without crops; it does not end the run.
+        if (!(e instanceof StepTimeout)) { log(`  ${cj.pass.label}: the page could not be loaded for the crops (${String(e.message || e).split('\n')[0]})`); return { shots, frame }; }
         return { shots, frame, timedOut: { step: e.step, ms: e.ms } };
       } finally { await closeQuietly(ctx); }
       return { shots, frame };
@@ -1370,7 +1416,12 @@ export async function inspect(url, o = {}) {
     // report/1: complete unless a step timed out or the page never showed
     // what --wait-for named; then partial, saying which.
     const nTimedOut = list.filter((i) => i.check === 'timed-out').length;
+    // The server's health: the jobs run again, and the jobs dropped.
+    const health = { retried: [], dropped: [] };
+    for (const job of plan.jobs) for (const k of ['retried', 'dropped']) if (results[job.i]?.[k]) health[k].push({ job: job.pass.label, failed: results[job.i][k].failed });
+    const nameJobs = (js) => js.map((j) => `${j.job} (${j.failed.slice(0, 3).map((q) => `${q.method} ${q.url}, ${q.why}`).join('; ')}${j.failed.length > 3 ? `; and ${j.failed.length - 3} more` : ''})`).join('; ');
     const gaps = [
+      health.dropped.length ? `the server failed ${plural(health.dropped.length, 'job')} twice, and ${health.dropped.length === 1 ? 'it was' : 'they were'} dropped with nothing measured: ${nameJobs(health.dropped)}` : '',
       nTimedOut ? `${nTimedOut} ${nTimedOut === 1 ? 'step' : 'steps'} timed out, and nothing after ${nTimedOut === 1 ? 'it' : 'them'} was measured at ${nTimedOut === 1 ? 'that width' : 'those widths'}` : '',
       watched.waited === false ? `no element matched --wait-for ${o.waitFor}, so the page was measured without it` : '',
     ].filter(Boolean);
@@ -1381,10 +1432,13 @@ export async function inspect(url, o = {}) {
       tool: 'itten-inspector', date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}`, timing: { cpus: tenv.cpus, renderer: tenv.renderer, software: isSoftware(tenv.renderer), load: loads } },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
-      sweep: { tier, ...(passes.size < PASSES.length ? { passes: PASSES.filter((p) => passes.has(p)) } : {}), widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
+      sweep: { tier, fluidity, ...(passes.size < PASSES.length ? { passes: PASSES.filter((p) => passes.has(p)) } : {}), widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
       schedule: { workers, jobs: plan.jobs.length, shards: shards ? shards.length : null, phases, seconds: { total: Math.round((Date.now() - clock.start) / 100) / 10, jobs: clock.jobs ?? null, crops: clock.crops, motion: clock.motion } },
       coverage,
+      health,
       notJudged: [
+        ...(health.retried.length ? [`The server failed ${plural(health.retried.length, 'job')} once; each was run again, and the second run is the one reported: ${nameJobs(health.retried)}.`] : []),
+        ...(fluidity === 'unknown' ? [`Fluidity: ${plural(widths.length, 'width')} measured (${rangeText(widths)} px), and a value is fluid when it takes three or more values across the sweep, so whether a spacing or type value is fixed or follows the viewport is unknown. Not reported from this run: fixed values off the spacing or type scale, and spacing in px. Measure three or more widths (quick mode, --fast or --full) to judge them.`] : []),
         ...([...issues.values()].some((i) => i.timing?.reliable === false) ? [`Timing: ${plural([...issues.values()].filter((i) => i.timing?.reliable === false).length, 'finding')} that rest on a measured time are reported as info, timing unreliable (each says why; the machine is in environment.timing). A timing finding counts only when measured ${RUNS} times within 10%, with the load average below half the CPU count and no software renderer.`] : []),
         ...(fast ? ['The fast tier, after a change: Chromium only, light, 100% text, at ' + rangeText(widths) + ' px, layout and line checks only. Not run: contrast and fonts, 200% text, device pixel ratio 2, the resize pass, WebKit and Firefox, and motion. Run quick mode for those.']
           : passes.size < PASSES.length ? [`Only some passes ran (${[...passes].join(', ')}); not run: ${PASSES.filter((p) => !passes.has(p)).join(', ')}.`] : []),

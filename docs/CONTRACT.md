@@ -25,7 +25,7 @@ Node 20 or later. Playwright is the only dependency.
 | `--system <file>` | none | The project's system file (`schema/system.schema.json`). Without one, values are judged against each other (distinct-value mode), not against a scale. |
 | `--fast` | off | The fast tier, for after each change: 320, 768 and 1440 px, Chromium only, light and 100% text, layout and line checks and the page-load findings. No breakpoint scan, resize pass, 200% text, 2× pass, WebKit, Firefox, contrast, fonts or motion; `sweep.tier` is `fast` and `notJudged` says what was not run. On the test print, under 30 s. Not with `--full`. |
 | `--full` | off | Every 40 px from 320 to 1920 px, and every width quick mode measures. Without it (quick mode): 320, 768, 1440 and 1920 px, and the widths either side of each breakpoint. |
-| `--widths <a,b,c>` or `<from:to:step>` | | The widths to measure, replacing the mode's. |
+| `--widths <a,b,c>` or `<from:to:step>` | | The widths to measure, replacing the mode's. With fewer than three, a value's fluidity is unknown (`sweep.fluidity`): a value is fluid when it takes three or more values across the sweep, so no fixed value off the spacing or type scale and no spacing in px is reported, and `notJudged` says so. |
 | `--engines <list>`, `--no-engines` | `webkit,firefox` | Second-opinion engines for the layout checks. Chromium always runs. |
 | `--fail-on error\|warning\|never` | `never` | The severity at which the exit code becomes 1. |
 | `--workers <n>` | CPU cores less two, at most one per GB of memory beyond 2 GB, at least 1 | Jobs run at once. |
@@ -100,6 +100,17 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
 
+## The server's health
+
+A run that measures a page the server failed to send measures an error state. The first load of a run (the watch load) says what the server sends: the requests it answered, and the ones that failed there too, which are the page's own (a missing file fails on every load, and is reported as `page-load`).
+
+A job's load has a server failure when a request the first load did not fail gets no response, is reset, is answered 5xx, or is answered 4xx though the first load was sent it; or when the page load itself fails or runs out of its limit. Such a job is run again once.
+
+- **The second run is served:** it is the one reported. `health.retried` lists the job and the requests that failed the first time, and `notJudged` says so. The run can still be `complete`.
+- **It fails again:** the job is dropped. Nothing it measured is kept, `health.dropped` lists the job and its failed requests, and the report is `partial` with a `reason` that names them. It is `partial`, never `refused`, also when every job is dropped.
+
+`refused` stays for a run that judged nothing: the page could not be reached for the first load, or a guard declined to run.
+
 ## Timing findings
 
 Some findings rest on a measured time: long animation frames (`frame-timing`), a script's flashes counted over a second (`flash`, fingerprints ending `|script`), and from the watch load `page-load|late`, `page-load|never-still` and `page-load|busy`. The rule for them is shared with KERCKHOFFS and ERLANG.
@@ -162,7 +173,7 @@ node <itten>/inspector/fix.js <url> --root <dir> [--system itten.system.json] [-
 `--root` is the folder the server serves at the URL's root; a URL's path names a file under it. The command inspects the page (quick mode, or the fast tier with `--fast`), plans a fix for each finding, and writes `fixes.json` in `--out`, with the inspection's reports beside it (`before/`, and `recheck/<n>/` for each re-check).
 
 - **Auto fixes** are written to the project's files, one at a time, and only to a file that is the source of truth: the file under `--root` holds exactly the text the server sends, git does not ignore it, it has no source map, and it is not in a build output folder (`dist`, `build`, `out`, `.next`, `.nuxt`, `.svelte-kit`, `_site`, `.output`). Declarations are found through the DevTools protocol, which gives each one's range in the served text. The classes: px spacing and font sizes to rem (`spacing-unit`, `text-resize`); a size compounded from `em` or `%` to the nearest step of the type scale (`type-scale`); a no-break space before a separator that begins a line (`line-start`, in the page's HTML file); `text-wrap: balance` or `pretty` where the check measured an improvement; and a `prefers-reduced-motion: reduce` block that stops an animation or transition, when the system's `reducedMotion` is `instant` or `none-animated`.
-- **Every auto fix is checked again.** The page is inspected with only the passes and at only the widths its finding was seen in, before and after the edit. The fix is kept when the finding is gone from the elements it changed and no finding is there that was not before; otherwise the edit is reverted, and `fixes.json` says what the re-check found (`recheck.cleared`, `recheck.new`). A re-check that is not `complete` reverts the fix too.
+- **Every auto fix is checked again.** The page is inspected with only the passes and at the widths its finding was seen in (three widths at least, so a value's fluidity can be judged), before and after the edit. The fix is kept when the finding is gone from the elements it changed and no finding is there that was not before; otherwise the edit is reverted, and `fixes.json` says what the re-check found (`recheck.cleared`, `recheck.new`). A re-check that is not `complete` reverts the fix too.
 - **Guided fixes** write nothing: the finding's locations (file, line and column where the value comes from a stylesheet, otherwise the element's selector) and a note. A value off a scale and a duration or easing off the system are guided until the owner decides how they are fixed; so is any fix whose source is not the source of truth.
 - **`--apply <file>`** checks fixes written elsewhere the same way, `{ "fixes": [{ "finding": { "check", "fingerprint" }, "note", "edits": [...] }] }`, and reverts any that fail.
 
@@ -174,7 +185,7 @@ An edit is one of:
 | `{ "create": file, "content" }` | Makes a file that must not exist. |
 | `{ "remove": file }` | Deletes a file. |
 
-`file` is relative to `--root` and never outside it. `line` and `column` are 1-based; `column` and `length` count UTF-16 code units, as JavaScript strings do. A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
+**The edit-unit rule, shared with KERCKHOFFS and ERLANG.** `file` is relative to `--root` and never outside it. `line` and `column` are 1-based; `column` and `length` count UTF-16 code units, as JavaScript strings do. A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
 
 Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
 

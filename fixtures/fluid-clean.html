@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A fluid gutter and a fixed value</title>
+<style>
+  body { margin: 0; font: 1rem/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  .gutter { padding: 2rem clamp(1rem, 0.2rem + 4vw, 3rem); }
+  .card { padding: 0.75rem; background: #eee; }
+</style>
+</head>
+<body>
+  <!-- scripts/fluid-test.js. Clean twin: the card has 0.75rem of padding, a step of the scale, and the gutter follows the fluid range the system declares (16 to 48 px between 320 and 1120 px wide). -->
+  <div class="gutter">
+    <div class="card">The card</div>
+  </div>
+</body>
+</html>

@@ -26,6 +26,8 @@
     "test:sweep": "node scripts/sweep-test.js",
     "test:lock": "node scripts/lock-test.js",
     "test:timing": "node scripts/timing-test.js",
+    "test:fluid": "node scripts/fluid-test.js",
+    "test:health": "node scripts/health-test.js",
     "fix": "node inspector/fix.js",
     "skill": "node scripts/skill.js"
   },

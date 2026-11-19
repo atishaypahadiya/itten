@@ -73,8 +73,11 @@ export function scopeOf(f) {
     else if (m === 'motion' || m === 'reduced motion') passes.add('motion');
     else { const e = m.match(/^(webkit|firefox)|^(WebKit|Firefox) resize$/); if (e) { passes.add('engines'); engines.add((e[1] || e[2]).toLowerCase()); if (e[2]) passes.add('scan'); } }
   }
-  const widths = seenWidths(f.seen);
-  if (!widths.length) widths.push(...FAST_WIDTHS);
+  // At least three widths: below that a value's fluidity is unknown, and a
+  // finding that needs a fixed value is not reported, so a re-check there
+  // would see every such finding as cleared.
+  let widths = seenWidths(f.seen);
+  if (widths.length < 3) widths = [...new Set([...widths, ...FAST_WIDTHS])].sort((a, b) => a - b);
   return { passes: [...passes], widths, keyWidths: passes.has('contrast') ? widths : [widths.at(-1)], engines: [...engines] };
 }
 

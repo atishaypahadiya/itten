@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A page whose server fails</title>
+<link rel="stylesheet" href="health.css">
+<!-- The planted finding is set here, so it is there with or without the stylesheet. -->
+<style>.wide { width: 2400px; height: 24px; background: #ccc; }</style>
+</head>
+<body>
+  <!-- scripts/health-test.js. Planted: a box 2400 px wide (overflow) at every width. Decoy: the script
+       asks for health-missing.json, which no load is ever sent: the page's own failure, on the first
+       load too, so it is no fault of the server's and no job is run again for it. -->
+  <div class="band">The band</div>
+  <div class="wide"></div>
+  <script>fetch('health-missing.json').catch(() => {});</script>
+</body>
+</html>
