@@ -34,6 +34,9 @@
 // - itten fix leaves a fixture different from its hand-written twin, or the
 //   fixed page reports anything, or a second run changes something; keeps a
 //   planted failing fix; or edits a page in build output (scripts/fix-test.js);
+// - on a page that draws WebGL every frame, drawn in software, a step runs
+//   out of its limit, a crop names no frame, or two crops held at the same
+//   frame differ (scripts/frozen-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -408,6 +411,15 @@ try {
   for (const f of await fixTest()) fail('Fix', f);
 } catch (e) {
   fail('Fix', `the fix test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ----------------------------------------------------------------- Frozen
+// Frozen captures on fixtures/webgl.html (scripts/frozen-test.js).
+try {
+  const { run: frozenTest } = await import('./frozen-test.js');
+  for (const f of await frozenTest()) fail('Frozen', f);
+} catch (e) {
+  fail('Frozen', `the frozen-capture test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------ Skill

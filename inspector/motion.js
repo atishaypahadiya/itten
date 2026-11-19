@@ -49,9 +49,11 @@ export function motionInit() {
     if (M.last !== null) (M.frames[M.phase] ??= []).push(t - M.last);
     M.last = t;
     poll();
-    requestAnimationFrame(loop);
+    raf(loop);
   };
-  requestAnimationFrame(loop);
+  // The page's own requestAnimationFrame may be held (inspect.js, frameInit).
+  const raf = window.__ittenFrames?.raf ?? requestAnimationFrame;
+  raf(loop);
   // Luminance of what an element paints, over white, after a change.
   const cv = document.createElement('canvas'); cv.width = cv.height = 1;
   const cx = cv.getContext('2d', { willReadFrequently: true });

@@ -245,7 +245,7 @@ export function refusedReport(url, reason, started = new Date()) {
 }
 
 async function settle(page) {
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.evaluate(() => new Promise((r) => { const raf = window.__ittenFrames?.raf ?? requestAnimationFrame; raf(() => raf(r)); }));
   // Let finite transitions and animations (fades, reveals) finish, so every
   // engine is measured at rest. Infinite ones are left running; capped at 2 s.
   await page.evaluate(() => Promise.race([
@@ -299,6 +299,56 @@ async function watchLoad(page, url, o, T) {
 // reader) sees it without them. Times come from the page's own clock, in ms
 // after the load event, so they do not depend on when the inspector looks.
 // Elements the inspector adds (style, data-itten-*) are not counted.
+// Frozen captures. Every page counts its animation frames (the frames in
+// which its own requestAnimationFrame callbacks ran) and can be held: while
+// it is, those callbacks wait, so a canvas or WebGL loop stops drawing and
+// its last frame stays on screen. The crops are taken with the page held
+// once it has settled, and the report records the frame. With stop set
+// (inspect's atFrame), the page holds itself once that many frames have
+// run, so a page whose drawing depends only on its frames is captured again
+// at the same frame. freeze() below also holds CSS and Web Animations. The
+// inspector's own waits for a frame use raf, which is never held.
+function frameInit(stop) {
+  const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window);
+  let frames = 0, last = null, held = [], frozen = false, next = 1e9;
+  const ran = (t) => { if (t !== last) { last = t; frames++; } };
+  window.requestAnimationFrame = (cb) => {
+    if (frozen) { const id = next++; held.push([id, cb]); return id; }
+    const id = raf((t) => {
+      if (stop && frames >= stop && t !== last) { frozen = true; held.push([id, cb]); return; }
+      ran(t); cb(t);
+    });
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => { held = held.filter(([i]) => i !== id); caf(id); };
+  Object.defineProperty(window, '__ittenFrames', { value: {
+    raf,
+    stopAt: () => stop,
+    count: () => frames,
+    held: () => frozen,
+    freeze: () => { frozen = true; },
+    thaw: () => { frozen = false; stop = 0; const h = held; held = []; for (const [, cb] of h) raf((t) => { ran(t); cb(t); }); },
+  } });
+}
+
+// Holds the page for a capture: its animation frames, and every CSS and Web
+// Animation at playback rate 0. Returns the frame captured (the document
+// timeline's time and how many animation frames had run) and thaw().
+export async function freeze(page) {
+  // A page asked to hold at a frame (atFrame) is captured there: wait for it.
+  await page.waitForFunction(() => { const F = window.__ittenFrames; return !F || !F.stopAt() || F.held(); }, null, { polling: 100, timeout: 60000 }).catch(() => {});
+  const cdp = await page.context().newCDPSession(page).catch(() => null);
+  if (cdp) { await cdp.send('Animation.enable').catch(() => {}); await cdp.send('Animation.setPlaybackRate', { playbackRate: 0 }).catch(() => {}); }
+  const frame = await page.evaluate(() => { window.__ittenFrames?.freeze(); return { frames: window.__ittenFrames?.count() ?? null, time: Math.round((document.timeline.currentTime ?? 0) * 10) / 10 }; }).catch(() => ({ frames: null, time: null }));
+  return {
+    frame,
+    thaw: async () => {
+      if (cdp) { await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 }).catch(() => {}); await cdp.detach().catch(() => {}); }
+      await page.evaluate(() => window.__ittenFrames?.thaw()).catch(() => {});
+    },
+  };
+}
+
 function lateInit(W) {
   const L = (window.__ittenLate = { W, loadAt: null, lastAdd: 0, quietAt: null, times: new WeakMap() });
   const sel = (el) => {
@@ -605,7 +655,10 @@ export async function inspect(url, o = {}) {
   // The full Chromium build renders WebGL on the GPU where one is available;
   // the default headless shell falls back to software rendering, which can
   // slow animated pages to a few frames a minute.
-  const browser = await chromium.launch({ channel: 'chromium' }).catch(() => chromium.launch());
+  // launchArgs: Chromium's own switches, for tests (scripts/frozen-test.js
+  // draws WebGL in software with --use-angle=swiftshader).
+  const launchArgs = o.launchArgs ?? [];
+  const browser = await chromium.launch({ channel: 'chromium', args: launchArgs }).catch(() => chromium.launch({ args: launchArgs }));
   // WebKit and Firefox, launched when a job first needs one.
   const others = new Map();
   const engineBrowser = (name) => {
@@ -653,9 +706,10 @@ export async function inspect(url, o = {}) {
   // text): a page that catches the failure and shows a message raises no
   // page error, so without this the report would measure the error state as
   // the page.
-  const newContext = async (b, { dpr = 1, width, failed = null, init = [] } = {}) => {
+  const newContext = async (b, { dpr = 1, width, failed = null, init = [], stop = 0 } = {}) => {
     const c = await b.newContext({ viewport: { width, height: VIEW_H }, deviceScaleFactor: dpr, colorScheme: 'light' });
     for (const s of init) await c.addInitScript(s);
+    if (o.freeze !== false) await c.addInitScript(frameInit, stop);
     await c.addInitScript(lateInit, T.window);
     if (failed) {
       const fail = (u, method, type, why) => { if (!failed.has(u)) failed.set(u, { url: u, method, type, why }); };
@@ -753,7 +807,7 @@ export async function inspect(url, o = {}) {
           await keep(page, r, cr.issues, sp);
           await keep(page, r, await fontIssues(cdp, page, cr, system, r.fonts), sp);
           r.fontGroups = Math.max(r.fontGroups, new Set(cr.data.fontReps.map((x) => x.group)).size);
-          const ci = await contrastIssues(page, cr, r.coverage);
+          const ci = await contrastIssues(page, cr, r.coverage, { freeze: o.freeze });
           if (ci.drawing?.tiles) (r.drawing ??= []).push({ at: sp.label, ...ci.drawing });
           await keep(page, r, ci, sp);
           if (scheme === 'light') {
@@ -1100,17 +1154,19 @@ export async function inspect(url, o = {}) {
       const pass = cj.pass;
       let b = browser;
       if (pass.engine) { const e = await engineBrowser(pass.engine); if (e.error) return { shots: [] }; b = e.b; }
-      let ctx = null;
+      let ctx = null, frame = null;
       const shots = [];
       try {
         await within(TO.load + TO.check, 'loading the page to crop the findings', async () => {
-          ctx = await newContext(b, { dpr: pass.dpr ?? 1, width: pass.resize ? pass.resize[0] : pass.w });
+          ctx = await newContext(b, { dpr: pass.dpr ?? 1, width: pass.resize ? pass.resize[0] : pass.w, stop: o.atFrame ?? 0 });
           const page = await openPass(ctx, pass);
           if (pass.scheme === 'dark') await page.emulateMedia({ colorScheme: 'dark' });
           if (page.viewportSize()?.width !== pass.w) await page.setViewportSize({ width: pass.w, height: VIEW_H });
           await page.evaluate(() => scrollTo(0, 0));
           await settle(page);
           await waitStill(page, T, watched.until);
+          // Held for the captures: the frame is recorded with each crop.
+          if (o.freeze !== false) frame = (await freeze(page)).frame;
           for (const q of cj.items) {
             if (q.find) {
               const rects = await page.evaluate((sels) => sels.map((s) => {
@@ -1127,14 +1183,14 @@ export async function inspect(url, o = {}) {
         });
       } catch (e) {
         if (!(e instanceof StepTimeout)) throw e;
-        return { shots, timedOut: { step: e.step, ms: e.ms } };
+        return { shots, frame, timedOut: { step: e.step, ms: e.ms } };
       } finally { await closeQuietly(ctx); }
-      return { shots };
+      return { shots, frame };
     });
     // Named in the order the findings asked for them, up to o.maxCrops.
     const byQ = new Map();
     cropResults.forEach((cr, i) => {
-      for (const [q, imgs] of cr.shots) byQ.set(q, imgs);
+      for (const [q, imgs] of cr.shots) byQ.set(q, cr.frame ? imgs.map((im) => (im.composited ? im : { ...im, frame: cr.frame })) : imgs);
       if (cr.timedOut) timedOut(cropJobs[i].pass.mode, cropJobs[i].pass.w, cr.timedOut, cropJobs[i].pass.label, cropJobs[i].pass.resize);
     });
     for (const q of cropQueue) {
@@ -1143,7 +1199,7 @@ export async function inspect(url, o = {}) {
       for (const im of imgs) {
         const name = `crops/${q.it.id}-${q.it.crops.length + 1}.png`;
         renameSync(im.tmp, join(outDir, name));
-        q.it.crops.push({ path: name, zoom: im.zoom, at: q.pass.label, region: im.region, ...(im.composited ? { composited: true } : {}), ...(q.pass.engine ? { engine: q.pass.engine } : {}) });
+        q.it.crops.push({ path: name, zoom: im.zoom, at: q.pass.label, region: im.region, ...(im.composited ? { composited: true } : {}), ...(im.frame ? { frame: im.frame } : {}), ...(q.pass.engine ? { engine: q.pass.engine } : {}) });
         cropCount++;
       }
     }
@@ -1328,7 +1384,7 @@ export async function inspect(url, o = {}) {
       for (const m of g.marks || []) for (const d of [0, 1]) outline(big, (m.x1 - x) * z + d, (m.y1 - y) * z + d, (m.x2 - m.x1) * z, (m.y2 - m.y1) * z, [0, 120, 255]);
       const tmp = join(outDir, 'crops', `.${tag}-${out.length + 1}.png`);
       writeFileSync(tmp, encodePng(big.width, big.height, big.data));
-      out.push({ tmp, zoom: z, region: [x, y, w, h], ...(raw.frame ? { composited: true } : {}) });
+      out.push({ tmp, zoom: z, region: [x, y, w, h], ...(raw.frame ? { composited: true, ...(raw.frame.at ? { frame: raw.frame.at } : {}) } : {}) });
     }
     return out;
   }
@@ -2210,7 +2266,8 @@ function cropRegion(boxes, dims, given = null) {
 }
 
 // ---------------------------------------------------------------- contrast
-async function contrastIssues(page, res, coverage) {
+async function contrastIssues(page, res, coverage, opts = {}) {
+  const held = [];
   const texts = res.data.text;
   if (!texts.length) return [];
   const H = Math.min(res.docHeight, 16000);
@@ -2225,7 +2282,11 @@ async function contrastIssues(page, res, coverage) {
     await settle(page);
     for (let i = 0; i < 2; i++) {
       if (i) await page.waitForTimeout(400);
-      frames.push(decodePng(await page.screenshot({ fullPage: true, clip: { x: 0, y: 0, width: res.vw, height: H } })));
+      // Each frame is captured with the page held, so a scene that draws
+      // every frame does not keep the screenshot waiting on the next one.
+      const hold = opts.freeze !== false ? await freeze(page) : null;
+      try { frames.push(decodePng(await page.screenshot({ fullPage: true, clip: { x: 0, y: 0, width: res.vw, height: H } }))); }
+      finally { if (hold) { held.push(hold.frame); await hold.thaw(); } }
     }
   } finally {
     await page.evaluate(() => document.getElementById('itten-hide-text')?.remove());
@@ -2329,14 +2390,15 @@ async function contrastIssues(page, res, coverage) {
     });
     try {
       await settle(page);
-      text = decodePng(await page.screenshot({ fullPage: true, omitBackground: true, clip: { x: 0, y: 0, width: res.vw, height: H } }));
+      const hold = opts.freeze !== false ? await freeze(page) : null;
+      try { text = decodePng(await page.screenshot({ fullPage: true, omitBackground: true, clip: { x: 0, y: 0, width: res.vw, height: H } })); }
+      finally { await hold?.thaw(); }
     } catch { /* no text layer: the crop is taken on a page loaded again */ } finally {
       await page.evaluate(() => document.getElementById('itten-text-only')?.remove());
       await settle(page);
     }
     for (const f of moved) {
       const fr = frames[f.frameOf];
-      delete f.frameOf;
       if (!text || !fr || text.width !== fr.width || text.channels !== 4) continue;
       const [x, y, w, h] = cropRegion(f.elements.map((e) => e.rect), [fr.width, Math.min(fr.height, text.height)]);
       const rgba = Buffer.alloc(w * h * 4);
@@ -2346,8 +2408,9 @@ async function contrastIssues(page, res, coverage) {
         for (let k = 0; k < 3; k++) rgba[oi + k] = Math.round(text.data[ot + k] * al + fr.data[o + k] * (1 - al));
         rgba[oi + 3] = 255;
       }
-      f.frame = { region: [x, y, w, h], png: encodePng(w, h, rgba).toString('base64') };
+      f.frame = { region: [x, y, w, h], png: encodePng(w, h, rgba).toString('base64'), ...(held[f.frameOf] ? { at: held[f.frameOf] } : {}) };
     }
+    for (const f of moved) delete f.frameOf;
   }
   return out;
 }

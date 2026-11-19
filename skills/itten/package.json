@@ -22,6 +22,7 @@
     "test:skill": "node scripts/skill-test.js",
     "test:fast": "node scripts/fast-test.js",
     "test:fix": "node scripts/fix-test.js",
+    "test:frozen": "node scripts/frozen-test.js",
     "fix": "node inspector/fix.js",
     "skill": "node scripts/skill.js"
   },

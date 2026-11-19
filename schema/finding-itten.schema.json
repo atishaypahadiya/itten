@@ -84,6 +84,16 @@
               true
             ],
             "description": "Made from the frame the finding was measured in: the text laid over that frame's background."
+          },
+          "frame": {
+            "type": "object",
+            "description": "The frame the page was held at for this crop: the document timeline's time in ms, and how many animation frames the page had run. Absent where the page could not be held.",
+            "required": ["time"],
+            "additionalProperties": false,
+            "properties": {
+              "time": { "type": ["number", "null"] },
+              "frames": { "type": ["integer", "null"], "minimum": 0 }
+            }
           }
         }
       }
