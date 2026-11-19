@@ -108,6 +108,7 @@ export async function run({ quiet = true } = {}) {
     if (soft.environment.timing?.software !== true) fails.push('software renderer: environment.timing.software is not true');
 
     const twin = await go('timing-clean.html', 'clean', 0);
+    if (twin.status !== 'complete') fails.push(`clean twin: the run is ${twin.status}, so it would not exit 0`);
     if (findingsOf(twin).length) fails.push(`clean twin: ${findingsOf(twin).map((i) => i.fingerprint).join('; ')}`);
 
     // Parity: an unreliable finding's differences are notes; a reliable one's severity is not.

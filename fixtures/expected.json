@@ -1,0 +1,12 @@
+{
+  "page": "fixtures/expected.html",
+  "twin": "fixtures/expected-clean.html",
+  "note": "Inspected without a system file. An expected row is a finding both pages have: it must be reported on the page and on its twin, as info, and it counts as neither a catch nor a false positive. Every clean twin must exit 0.",
+  "defects": [
+    { "id": "d01", "check": "overflow", "title": "A band wider than the page", "planted": "The band is 2400 px wide.", "fixedInTwin": "The band fits." }
+  ],
+  "expected": [
+    { "id": "x01", "check": "spacing-scale", "title": "A fluid inset both pages keep", "why": "Side padding from 24 to 48 px, clamp(1.5rem, 4vw, 3rem). It is meant, and the twin keeps it; without a system every fluid range is listed once, as info.", "severity": "info" }
+  ],
+  "distinct": { "defects": [], "expected": [] }
+}

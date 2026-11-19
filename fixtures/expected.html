@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A finding both pages have</title>
+<style>
+  body { margin: 0; padding: 2rem; font: 1rem/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  section { margin: 0 0 2rem; }
+  .band { padding: 1rem; background: #eee; width: 2400px; }
+  /* x01, on both pages: a fluid inset that is meant. Without a system file every fluid range is listed, as info. */
+  .inset { padding: 1rem clamp(1.5rem, 4vw, 3rem); background: #eee; }
+</style>
+</head>
+<body>
+  <!-- scripts/expected-test.js, inspected without a system file. Planted, in section d01: a band 2400 px wide (overflow).
+       Expected on both pages, in section x01: the fluid inset, listed as info. It is neither a catch nor a false positive. -->
+  <section id="d01"><div class="band">The band</div></section>
+  <section id="x01"><div class="inset">The inset</div></section>
+</body>
+</html>

@@ -352,6 +352,9 @@ try {
   if (stillGuard({ page: d({ tiles: 3, unexplained: 0 }), twin: none, dPage: none, dTwin: none }).length) fail('Moving tiles', 'the guard fails the test print for tiles over its animations');
   if (stillGuard({ page: d({ tiles: 3, unexplained: 1 }), twin: none, dPage: none, dTwin: none }).length !== 1) fail('Moving tiles', 'the guard lets an unexplained moving tile on the test print pass');
   if (stillGuard({ page: none, twin: none, dPage: none, dTwin: d({ tiles: 1, unexplained: 0 }) }).length !== 1) fail('Moving tiles', 'the guard lets a moving tile on a distinct page pass, explained or not');
+  for (const pr of r.problems ?? []) fail('Fixtures', pr);
+  { const { expectedTests } = await import('./fixture-test.js'); for (const f of expectedTests()) fail('Fixtures', `expected rows: ${f}`); }
+  if (r.expected?.length) fixtureLine += ` Expected on both pages, as info: ${r.expected.map((x) => x.id).join(', ')}.`;
   for (const f of r.falsePositives) fail('Fixtures', `false positive: ${f.check} ${f.message} [${f.elements.join(', ')}]`);
   if (!r.breakpoints.equal) fail('Fixtures', `the resize pass found ${r.breakpoints.testPrint} breakpoints on the test print and ${r.breakpoints.twin} on the twin; the fixtures have ${r.breakpoints.expected}`);
   if (!r.distinctSweep.equal) fail('Fixtures', `without a system, the sweep totals of distinct.html and its twin differ: ${JSON.stringify(r.distinctSweep.testPrint)} against ${JSON.stringify(r.distinctSweep.twin)}`);
@@ -444,6 +447,15 @@ try {
   for (const f of await lockTest()) fail('Lock', f);
 } catch (e) {
   fail('Lock', `the lock test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// --------------------------------------------------------------- Expected
+// The fixtures' expected row type on a real pair (scripts/expected-test.js).
+try {
+  const { run: expectedTest } = await import('./expected-test.js');
+  for (const f of await expectedTest()) fail('Expected rows', f);
+} catch (e) {
+  fail('Expected rows', `the expected-row test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------- Exit

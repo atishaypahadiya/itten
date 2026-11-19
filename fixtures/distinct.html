@@ -9,6 +9,9 @@
 /* Shared by both pages. */
 .display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
 .gutter { padding: 0.75rem 1.5rem; }
+/* Expected on both pages. fixtures/defects.json lists them. */
+/* x01 spacing-scale */
+#x01 .inset { padding: 0.75rem clamp(0.5rem, 2vw, 1.5rem); }
 </style>
 <style id="planted">
 /* d21 type-scale */
@@ -28,6 +31,11 @@
     <h2>Fluid spacing without a system</h2>
     <p class="small">Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.</p>
     <div class="tint gutter"><p>Side padding that grows with the window</p></div>
+  </section>
+  <section id="x01">
+    <h2>A fluid inset both pages keep</h2>
+    <p class="small">Both pages: side padding from 8 to 24 px, 2vw. It is meant, and the twin keeps it; without a system it is listed once, as info, on each&nbsp;page.</p>
+    <div class="tint inset"><p>Side padding both pages share</p></div>
   </section>
 </main>
 </body>

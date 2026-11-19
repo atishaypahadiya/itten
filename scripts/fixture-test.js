@@ -17,6 +17,8 @@ import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { view, findingsOf } from '../inspector/finding.js';
 import { readArgs } from '../inspector/usage.js';
+import { exitCode } from '../inspector/usage.js';
+import { failing } from '../inspector/baseline.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fixtures');
@@ -76,9 +78,49 @@ export function stillGuard({ page, twin, dPage, dTwin }) {
   return out;
 }
 
-export function score(spec, { page, twin, dPage, dTwin }) {
+// The expected row type, on made-up reports: the controls for score().
+// A row on both pages as info is set aside; on one page only, or as a
+// warning, it is a problem; and a twin with a warning would not exit 0.
+export function expectedTests() {
+  const fails = [];
+  const spec = { defects: [{ id: 'd01', check: 'overflow' }], expected: [{ id: 'x01', check: 'spacing-scale' }], distinct: { defects: [], expected: [] } };
+  const f = (id, check, sec, severity) => ({ id, check, severity, fingerprint: `${check}|#${sec}`, message: 'm', elements: [{ sel: `#${sec} > p`, label: 'p' }], seen: { light: '320' }, crops: [] });
+  const rep = (...issues) => ({ status: 'complete', issues, sweep: { resize: null }, distinct: { sweep: null } });
+  const none = rep();
+  const run = (page, twin) => score(spec, { page, twin, dPage: none, dTwin: none }, { write: false });
+  const good = run(rep(f('i1', 'overflow', 'd01', 'error'), f('i2', 'spacing-scale', 'x01', 'info')), rep(f('i1', 'spacing-scale', 'x01', 'info')));
+  if (good.problems.length || good.falsePositives.length || good.truePositives !== 1 || good.findingsOnTwin !== 0 || good.recall !== 1 || good.precision !== 1) fails.push(`an expected row on both pages as info is not set aside: ${JSON.stringify({ problems: good.problems, fp: good.falsePositives.length, tp: good.truePositives, twin: good.findingsOnTwin })}`);
+  if (!run(rep(f('i1', 'overflow', 'd01', 'error'), f('i2', 'spacing-scale', 'x01', 'info')), none).problems.some((p) => /page only/.test(p))) fails.push('an expected row missing from the twin is not a problem');
+  if (!run(rep(f('i1', 'overflow', 'd01', 'error')), rep(f('i1', 'spacing-scale', 'x01', 'info'))).problems.some((p) => /twin only/.test(p))) fails.push('an expected row missing from the page is not a problem');
+  const warn = run(rep(f('i1', 'overflow', 'd01', 'error'), f('i2', 'spacing-scale', 'x01', 'warning')), rep(f('i1', 'spacing-scale', 'x01', 'warning')));
+  if (!warn.problems.some((p) => /is info/.test(p)) || !warn.problems.some((p) => /would exit 1/.test(p))) fails.push(`an expected row reported as a warning passes: ${JSON.stringify(warn.problems)}`);
+  if (run(rep(f('i1', 'overflow', 'd01', 'error')), rep(f('i1', 'radius', 'd09', 'info'))).falsePositives.length !== 1) fails.push('an info finding on the twin that no row expects is not a false positive');
+  if (!score(spec, { page: rep(f('i1', 'overflow', 'd01', 'error')), twin: { ...none, status: 'partial' }, dPage: none, dTwin: none }, { write: false }).problems.some((p) => /would exit 3/.test(p))) fails.push('a partial clean twin is taken to exit 0');
+  return fails;
+}
+
+export function score(spec, { page, twin, dPage, dTwin }, { write = true } = {}) {
+  // Every clean twin must exit 0: complete, with nothing that fails a run.
+  const problems = [];
+  for (const [name, r] of [['the clean twin', twin], ['the distinct clean twin', dTwin]]) {
+    const code = exitCode(r.status ?? 'complete', failing(r, 'warning').length);
+    if (code !== 0) problems.push(`${name} would exit ${code}, not 0 (${r.status ?? 'complete'}, ${failing(r, 'warning').length} failing)`);
+  }
   // finding/1 (or a report from before it), read flat.
   [page, twin, dPage, dTwin] = [page, twin, dPage, dTwin].map((r) => ({ ...r, findings: undefined, issues: findingsOf(r) }));
+  // Expected rows: a finding both pages have, as info. Each must be there
+  // on the page and on its twin; its findings are then set aside, counted as
+  // neither a catch nor a false positive.
+  const expected = [];
+  for (const [list, a, b, mode] of [[spec.expected ?? [], page, twin, null], [spec.distinct.expected ?? [], dPage, dTwin, 'distinct']]) for (const x of list) {
+    const is = (i) => i.check === x.check && names(i, x);
+    const onPage = a.issues.filter(is), onTwin = b.issues.filter(is);
+    const row = { ...x, ...(mode ? { mode } : {}), onPage: onPage.map((i) => i.id), onTwin: onTwin.map((i) => i.id), severities: [...new Set([...onPage, ...onTwin].map((i) => i.severity))] };
+    expected.push(row);
+    if (!onPage.length || !onTwin.length) problems.push(`expected row ${x.id} (${x.check}) is reported on ${onPage.length ? 'the page only' : onTwin.length ? 'the twin only' : 'neither page'}; it must be on both`);
+    if (row.severities.some((s) => s !== 'info')) problems.push(`expected row ${x.id} (${x.check}) is reported as ${row.severities.join(' and ')}; an expected row is info`);
+    a.issues = a.issues.filter((i) => !is(i)); b.issues = b.issues.filter((i) => !is(i));
+  }
   const hit = (i, d) => i.check === d.check && names(i, d) && (!d.severity || i.severity === d.severity)
     && (!d.resizeOnly || Object.keys(i.seen).every((m) => /resize/.test(m)));
   const rows = [
@@ -109,11 +151,10 @@ export function score(spec, { page, twin, dPage, dTwin }) {
     still: stillGuard({ page, twin, dPage, dTwin }),
     precision: truePos.length / (truePos.length + falsePos.length || 1),
     recall: caught / rows.length,
-    rows,
+    rows, expected, problems,
     falsePositives: falsePos.map((i) => ({ id: i.id, check: i.check, severity: i.severity, message: i.message, elements: i.elements.map((e) => e.sel) })),
   };
-  mkdirSync(OUT, { recursive: true });
-  writeFileSync(join(OUT, 'result.json'), JSON.stringify(result, null, 2));
+  if (write) { mkdirSync(OUT, { recursive: true }); writeFileSync(join(OUT, 'result.json'), JSON.stringify(result, null, 2)); }
   return result;
 }
 
@@ -129,5 +170,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const s of r.still) console.log(`moving tiles on a still page: ${s}`);
   if (!bp.equal) console.log(`breakpoints found by the resize pass: test print ${bp.testPrint}, twin ${bp.twin}; the fixtures have ${bp.expected}`);
   console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twins: ${r.findingsOnTwin} findings.`);
-  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal && !r.still.length ? 0 : 1);
+  for (const p of r.problems) console.log(`FAIL  ${p}`);
+  if (r.expected.length) console.log(`Expected on both pages, as info, and set aside: ${r.expected.map((x) => `${x.id} ${x.check}`).join(', ')}.`);
+  process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal && !r.still.length && !r.problems.length ? 0 : 1);
 }

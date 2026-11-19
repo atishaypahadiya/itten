@@ -106,6 +106,16 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
 
+## Fixtures
+
+A fixture is a page with planted defects, a clean twin with each one fixed, and a list of rows (`fixtures/defects.json`, `fixtures/expected.json`). The rule is shared with KERCKHOFFS and ERLANG:
+
+- A **defect** row is a finding the page must have and its twin must not. Recall is defects caught over defects planted; precision is true positives over all findings.
+- An **expected** row is a finding both pages have. It must be reported on the page and on its twin, as info; it counts as neither a catch nor a false positive. On one page only, or as a warning or an error, it fails the test.
+- Every clean twin exits 0: complete, with no error and no warning.
+
+`scripts/fixture-test.js` scores the rows and `scripts/expected-test.js` runs the rule on a pair of its own, with controls.
+
 ## Continuous integration
 
 The rule shared with KERCKHOFFS and ERLANG: a specialist's own tests run at least on every non-Markdown change, that is on every push to `main` and every pull request that changes anything but Markdown, and on any pushed `v*` tag.

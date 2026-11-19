@@ -96,6 +96,14 @@ node scripts/fixture-test.js          # four widths, about 7 minutes
 node scripts/fixture-test.js --full   # 41 widths, about 20 minutes
 ```
 
+### Expected rows
+
+A fixture can also list a finding that both pages have, under `expected` in `defects.json`. It is not a defect: the twin keeps it. An expected row must be reported on the page and on its twin, as info; its findings are then set aside and count as neither a catch nor a false positive. A row reported on one page only, or as a warning or an error, fails the fixture test. Every clean twin must exit 0: complete, with no error and no warning. The rule is shared with KERCKHOFFS and ERLANG.
+
+| ID | Check | On both pages |
+|---|---|---|
+| x01 | `spacing-scale` | Side padding from 8 to 24 px, `clamp(0.5rem, 2vw, 1.5rem)`. Without a system file every fluid range is listed once, as info, and this one is meant. |
+
 A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
 Precision is true positives over all findings. Recall is defects caught over defects planted. On 16 November 2026, the default four widths gave recall 49 of 49 and precision 57 of 57, with WebKit included for the pair inspected against the system, and no findings on either clean twin. The 57 findings for 49 defects are expected: d03 is 2 px away from three neighbouring edges, d09's two buttons each fail, d07 both fails to load and names a family outside the system, d39's padding is reported once for each value, 12 px and 16 px, d34's scroll handler stalls frames at full speed and on the reference device, one finding each, after the resize d47's box sticks out and its text runs past the edge, and d49's byline and note each begin a line with a mark. d07's missing font file is also listed in d19's failed-request finding, which is one finding.

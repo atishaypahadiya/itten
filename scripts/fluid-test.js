@@ -39,6 +39,7 @@ export async function run({ quiet = true } = {}) {
       const r = await go('fluid.html', slug, extra), twin = await go('fluid-clean.html', `${slug}-clean`, extra);
       const all = findingsOf(r), on = (cls) => (i) => i.elements.some((e) => e.label === cls);
       if (r.status !== 'complete') fails.push(`${name}: the run is ${r.status}`);
+      if (twin.status !== 'complete') fails.push(`${name}: the clean twin is ${twin.status}, so it would not exit 0`);
       if (findingsOf(twin).length) fails.push(`${name}: the clean twin has findings: ${findingsOf(twin).map((i) => i.fingerprint).join('; ')}`);
       for (const [what, rep] of [['page', r], ['twin', twin]]) if (rep.sweep.fluidity !== (judged ? 'judged' : 'unknown')) fails.push(`${name}, ${what}: sweep.fluidity is ${rep.sweep.fluidity}`);
       const noted = r.notJudged.some((n) => /^Fluidity/.test(n));

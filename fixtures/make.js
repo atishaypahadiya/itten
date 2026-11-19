@@ -128,6 +128,13 @@ const D = [
   ['d21', 'type-scale', 'Fluid type without a system', 'Planted: a heading set with clamp() from 30 to 42 px between 750 and 1250 px wide. Without a system it must be listed once, as info.', 'The heading is set at 32 px.', `<p class="display">A fluid heading</p>`, `#d21 .display { font-size: clamp(1.875rem, 0.75rem + 2.4vw, 2.625rem); }`],
   ['d22', 'spacing-scale', 'Fluid spacing without a system', 'Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.', 'The side padding is 24 px.', `<div class="tint gutter"><p>Side padding that grows with the window</p></div>`, `#d22 .gutter { padding: 0.75rem round(clamp(1rem, 4vw, 3.5rem), 1px); }`],
 ];
+// Expected rows: a finding both pages have, reported as info, which is
+// neither a catch nor a false positive. Without a system every fluid range
+// is listed for the record, and this one is deliberate on both pages.
+// [id, check, title, why it is on both pages, markup, css]
+const X = [
+  ['x01', 'spacing-scale', 'A fluid inset both pages keep', 'Both pages: side padding from 8 to 24 px, 2vw. It is meant, and the twin keeps it; without a system it is listed once, as info, on each page.', `<div class="tint inset"><p>Side padding both pages share</p></div>`, `#x01 .inset { padding: 0.75rem clamp(0.5rem, 2vw, 1.5rem); }`],
+];
 const distinctPage = (clean) => `<!doctype html>
 <html lang="en">
 <head>
@@ -139,6 +146,8 @@ const distinctPage = (clean) => `<!doctype html>
 /* Shared by both pages. */
 .display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
 .gutter { padding: 0.75rem 1.5rem; }
+/* Expected on both pages. fixtures/defects.json lists them. */
+${X.map((s) => `/* ${s[0]} ${s[1]} */\n${s[5]}`).join('\n')}
 </style>${clean ? '' : `
 <style id="planted">
 ${D.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
@@ -150,6 +159,11 @@ ${D.map((s) => `  <section id="${s[0]}">
     <h2>${s[2]}</h2>
     <p class="small">${clean ? tie(s[4]) : s[3]}</p>
     ${specimen(s, clean)}
+  </section>`).join('\n')}
+${X.map((s) => `  <section id="${s[0]}">
+    <h2>${s[2]}</h2>
+    <p class="small">${tie(s[3])}</p>
+    ${s[4]}
   </section>`).join('\n')}
 </main>
 </body>
@@ -217,6 +231,8 @@ writeFileSync(dir + 'defects.json', JSON.stringify({
     page: 'fixtures/distinct.html', twin: 'fixtures/distinct-clean.html',
     note: 'Inspected without a system file. Each defect must be reported with the severity given. The page and its twin must give the same totals across the sweep, since each fluid range counts as one value, as the fixed size that replaces it does.',
     defects: D.map((s) => ({ id: s[0], check: s[1], title: s[2], planted: s[3].replace(/^Planted: /, ''), css: s[6], fixedInTwin: s[4], severity: 'info' })),
+    expectedNote: 'An expected row is a finding both pages have: it must be reported on the page and on its twin, as info, and it counts as neither a catch nor a false positive. Every clean twin must still exit 0.',
+    expected: X.map((s) => ({ id: s[0], check: s[1], title: s[2], why: s[3], css: s[5], severity: 'info' })),
   },
 }, null, 2) + '\n');
 writeFileSync(dir + 'd19-data.json', JSON.stringify({ label: 'Drawn from d19-data.json' }) + '\n');
