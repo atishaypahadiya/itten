@@ -38,6 +38,12 @@ export async function run() {
     writeFileSync(join(copy, 'package.json'), JSON.stringify({ version: '9.9.9' }));
     const unknown = 'itten 9.9.9 (commit unknown: not a git checkout of ITTEN)';
     if (versionLine(copy) !== unknown) fails.push(`plain copy: "${versionLine(copy)}"`);
+    // The skill's own SKILL.md, as in the repository: no source recorded, so no commit.
+    writeFileSync(join(copy, 'SKILL.md'), '---\nname: itten\ndescription: x\nmetadata:\n  version: "9.9.9"\n---\n# ITTEN\n');
+    if (versionLine(copy) !== unknown) fails.push(`skill not installed by gh: "${versionLine(copy)}"`);
+    // Installed by gh skill install, which records the repository and the ref it installed.
+    writeFileSync(join(copy, 'SKILL.md'), '---\nname: itten\ndescription: x\nmetadata:\n    github-path: skills/itten\n    github-ref: v9.9.9\n    github-repo: https://github.com/o/itten\n    version: 9.9.9\n---\n# ITTEN\n');
+    if (versionLine(copy) !== 'itten 9.9.9 v9.9.9 (skill installed from https://github.com/o/itten)') fails.push(`skill installed by gh: "${versionLine(copy)}"`);
     const outer = join(tmp, 'outer'), vendored = join(outer, 'itten'); mkdirSync(vendored, { recursive: true });
     writeFileSync(join(vendored, 'package.json'), JSON.stringify({ version: '9.9.9' }));
     git(outer, 'init', '-q'); git(outer, 'add', '.'); git(outer, ...ident, 'commit', '-qm', 'x');

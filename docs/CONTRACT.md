@@ -33,7 +33,7 @@ Node 20 or later. Playwright is the only dependency.
 | `--watchdog <minutes>` | 10 | Minutes without progress before the run stops; 0 for never. |
 | `--baseline <file>`, `--write-baseline [file]`, `--page <key>` | | Compare with accepted findings, or record them (`itten-baseline.json` in the working directory by default). |
 | `--shard <i/n>`, `--merge <dir,dir,...>` | | Split one page's jobs across machines, then combine them. |
-| `--version` | | Prints `itten <version> <commit SHA>` and exits 0, running nothing else. Adds `(with uncommitted changes)` when a tracked file differs from the commit; prints `commit unknown` for a copy of ITTEN that is not its own git checkout. |
+| `--version` | | Prints `itten <version> <commit SHA>` and exits 0, running nothing else. Adds `(with uncommitted changes)` when a tracked file differs from the commit; prints `commit unknown` for a copy of ITTEN that is not its own git checkout, except the Agent Skill installed with `gh skill install`, which prints the ref it was installed at and the repository. |
 
 Put the URL first. A flag takes the next argument as its value unless that argument starts with `--`. An unknown flag is ignored, not rejected; from 0.5 it exits 64 and runs nothing.
 
