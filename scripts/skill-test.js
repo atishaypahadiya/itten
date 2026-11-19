@@ -8,7 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, cpSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, frontmatter, SKILL } from './skill.js';
 
@@ -34,7 +34,9 @@ export async function run() {
   const tmp = mkdtempSync(join(tmpdir(), 'itten-skill-'));
   try {
     const copy = join(tmp, 'itten');
-    cpSync(SKILL, copy, { recursive: true, filter: (p) => !/\/(node_modules|dist)(\/|$)/.test(p) });
+    // What an install leaves (node_modules, dist) is not copied; judged on the path inside the skill, so a
+    // checkout that itself sits under a dist/ folder is copied whole.
+    cpSync(SKILL, copy, { recursive: true, filter: (p) => !/^(node_modules|dist)(\/|$)/.test(relative(SKILL, p)) });
     const sh = (...a) => spawnSync('bash', [join(copy, 'scripts', 'setup.sh'), ...a], { encoding: 'utf8', timeout: 30000, env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: join(tmp, 'browsers') } });
     const list = sh();
     if (list.status !== 0) fails.push(`setup.sh without --yes exited ${list.status}, not 0`);
