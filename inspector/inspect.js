@@ -30,6 +30,7 @@ import { readArgs, bad, exitCode, EXIT } from './usage.js';
 import { timedIn, judge, environmentCauses, isSoftware, RUNS } from './timing.js';
 import { validate } from '../scripts/lib/schema.js';
 import { versionLine } from './version.js';
+import { scaleKeys, FP } from './fingerprint.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = JSON.parse(readFileSync(join(HERE, '..', 'schema', 'system.schema.json'), 'utf8'));
@@ -737,6 +738,8 @@ export async function inspect(url, o = {}) {
     if (o.freeze !== false) await c.addInitScript(frameInit, stop);
     await c.addInitScript(lateInit, T.window);
     if (health || okUrls) {
+      // answered: the server sent the page itself (the top frame's document).
+      c.on('response', (r) => { if (health && r.status() < 400 && r.request().isNavigationRequest()) { try { if (!r.frame().parentFrame()) health.answered = true; } catch { /* no frame: a worker's request */ } } });
       c.on('response', (r) => { if (r.status() >= 400) { if (health && !health.has(r.url())) health.set(r.url(), { url: r.url(), method: r.request().method(), type: r.request().resourceType(), why: `HTTP ${r.status()}`, status: r.status() }); } else okUrls?.add(r.url()); });
       c.on('requestfailed', (r) => { const why = r.failure()?.errorText || 'failed'; if (health && !/ERR_ABORTED/.test(why) && !health.has(r.url())) health.set(r.url(), { url: r.url(), method: r.method(), type: r.resourceType(), why, status: null }); });
     }
@@ -891,11 +894,15 @@ export async function inspect(url, o = {}) {
     try {
       await within(TO.width, 'the width as a whole', async () => {
         ctx = await within(TO.close, 'opening a browser context', () => newContext(b, { dpr: pass.dpr, width: pass.resize ? pass.resize[0] : pass.w, failed, health }));
-        // A load that fails or runs out of its limit is the server's failure
-        // too: the job is run again once, then dropped (runHealthy).
+        // A load that fails, or runs out of its limit before the server has
+        // answered for the page, is the server's failure: the job is run again
+        // once, then dropped (runHealthy). A load that runs out after the page
+        // was answered is the page's own (a script that holds the main thread):
+        // a timed-out error, as any step past its limit is.
         const page = await within(TO.load, 'loading the page', () => openPass(ctx, pass, job.kind.startsWith('light') ? r.errors : null)).catch((e) => {
+          if (e instanceof StepTimeout && (health.answered || o.health === false)) throw e;
           if (e instanceof StepTimeout) r.loadFailed = `the page load did not finish within ${Math.round(e.ms / 1000)} s`;
-          else if (pass.engine) throw e;
+          else if (pass.engine || o.health === false) throw e;
           else r.loadFailed = String(e.message || e).split('\n')[0];
           return null;
         });
@@ -1112,6 +1119,7 @@ export async function inspect(url, o = {}) {
       const it = { id: nextId(), fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: f.elements.slice(0, 8).map((e) => ({ ...e, rect: [0, 0, 0, 0] })), seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
       const m = measuredFields(it); if (m) it.measured = m;
       if (f.movingBackground) it.movingBackground = true;
+      if (f.scale) it.scale = f.scale;
       issues.set(it.fingerprint, it);
       cropQueue.push({ it, pass: { ...at, w, label: it.first }, find: true });
     };
@@ -1174,7 +1182,7 @@ export async function inspect(url, o = {}) {
     // from a fixed value, and nothing that needs a value to be fixed is
     // reported (a fixed value off a scale, px that should be rem).
     const fluidity = widths.length >= 3 ? 'judged' : 'unknown';
-    for (const f of scaleFindings(obs, system, widths, distinct)) if (fluidity === 'judged' || !/^fixed\|/.test(f.key)) addFinding(f, LIGHT);
+    for (const f of scaleFindings(obs, system, widths, distinct)) if (fluidity === 'judged' || f.scale?.kind !== 'fixed') addFinding(f, LIGHT);
 
     // Pass set 2: the browser's text size doubled (16 px default becomes 32 px).
     for (const job of jobsOf('200')) {
@@ -1433,7 +1441,7 @@ export async function inspect(url, o = {}) {
       tool: 'itten-inspector', date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}`, timing: { cpus: tenv.cpus, renderer: tenv.renderer, software: isSoftware(tenv.renderer), load: loads } },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
-      sweep: { tier, fluidity, ...(passes.size < PASSES.length ? { passes: PASSES.filter((p) => passes.has(p)) } : {}), widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
+      sweep: { tier, fluidity, fingerprints: FP, ...(passes.size < PASSES.length ? { passes: PASSES.filter((p) => passes.has(p)) } : {}), widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
       schedule: { workers, jobs: plan.jobs.length, shards: shards ? shards.length : null, phases, seconds: { total: Math.round((Date.now() - clock.start) / 100) / 10, jobs: clock.jobs ?? null, crops: clock.crops, motion: clock.motion } },
       coverage,
       health,
@@ -1651,6 +1659,14 @@ export function fluidAt(f, w) {
   return f.min + ((f.max - f.min) * (w - f.minWidth)) / (f.maxWidth - f.minWidth);
 }
 
+// Scale findings get their keys together, since two of one report must not
+// share one (fingerprint.js). Each carries scale: { kind, value, properties }
+// and sels, all its elements; sels is dropped once the key is made.
+function keyed(list) {
+  const keys = scaleKeys(list.map((f) => ({ check: f.check, props: f.scale.properties, sels: f.sels })));
+  return list.map(({ sels, ...f }, i) => ({ ...f, key: keys[i] }));
+}
+
 // Spacing that keeps its size when the browser's text size is doubled is set
 // in px: the gaps stay put while the text grows. Each margin, padding and gap
 // is compared with itself at 100% and 200% text, at the same width. Values
@@ -1671,11 +1687,11 @@ function spacingUnitFindings(obs) {
       g.props.add(prop); g.ws.add(w);
     }
   }
-  return [...groups].sort((a, b) => a[0] - b[0]).map(([v, g]) => ({
-    check: 'spacing-unit', severity: 'warning', key: 'px|' + v, mode: '200% text', count: g.n, widths: [...g.ws].sort((a, b) => a - b),
+  return keyed([...groups].sort((a, b) => a[0] - b[0]).map(([v, g]) => ({
+    check: 'spacing-unit', severity: 'warning', scale: { kind: 'unit', value: v, properties: [...g.props] }, sels: g.sels, mode: '200% text', count: g.n, widths: [...g.ws].sort((a, b) => a - b),
     elements: g.sels.map((s) => ({ sel: s, label: obs.labels.get(s) || s, ...(obs.texts.get(s) ? { text: obs.texts.get(s) } : {}) })),
     message: `${v} px of ${[...g.props].join(', ')} stays ${v} px when the browser's text size is doubled, on ${plural(g.n, 'element')}: it is set in px, so the text grows and the gap does not. Set spacing in rem, the unit of the type (${Math.round((v / 16) * 10000) / 10000}rem at the default 16 px).`,
-  }));
+  })));
 }
 
 function scaleFindings(obs, system, widths, distinct) {
@@ -1725,7 +1741,7 @@ function scaleFindings(obs, system, widths, distinct) {
       const message = off
         ? `${what} is not on the ${scaleText} (nearest ${near(scaleVals, v)} px)${frac(v) ? ' and is fractional' : ''}; ${where}.`
         : `${what} is fractional, usually compounded from em or percentage maths; ${where}.`;
-      out.push({ check, severity: 'warning', key: 'fixed|' + v, message, count: g.n, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
+      out.push({ check, severity: 'warning', scale: { kind: 'fixed', value: v, properties: noun === 'spacing' ? [...g.props] : ['font-size'] }, sels: g.sels, message, count: g.n, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
     }
     for (const [sig, g] of fluid) {
       const vals = [...new Set(g.byW.values())];
@@ -1740,12 +1756,12 @@ function scaleFindings(obs, system, widths, distinct) {
         const pts = [...g.byW].sort((a, b) => a[0] - b[0]);
         const v0 = pts[0][1], v1 = pts.at(-1)[1];
         const from = pts.filter(([, v]) => v === v0).at(-1)[0], to = pts.find(([, v]) => v === v1)[0];
-        out.push({ check, severity: 'info', key: 'fluid|' + sig, count: g.sels.length, widths: sortW(pts.map(([w]) => w)),
+        out.push({ check, severity: 'info', scale: { kind: 'fluid', properties: noun === 'spacing' ? [...g.props] : ['font-size'] }, sels: g.sels, count: g.sels.length, widths: sortW(pts.map(([w]) => w)),
           message: `${what} with the viewport, from ${v0} px at ${from} px wide to ${v1} px at ${to} px wide (${vals.length} values across the sweep, counted as one range in the totals). A fluid range, listed for the record. ${noun === 'type' ? 'A system file can declare it as a fluid step.' : 'With a system file it is checked against the spacing scale; a deliberate range is logged as an override.'}`,
           elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
         continue;
       }
-      out.push({ check, severity: 'warning', key: 'fluid|' + sig, count: g.sels.length, widths: sortW(g.bad),
+      out.push({ check, severity: 'warning', scale: { kind: 'fluid', properties: noun === 'spacing' ? [...g.props] : ['font-size'] }, sels: g.sels, count: g.sels.length, widths: sortW(g.bad),
         message: `${what} with the viewport, from ${lo} to ${hi} px across the sweep: ${vals.length} distinct values, ${nf} fractional${system ? `, ${noff} off the ${noun} scale` : ''}. ${noun === 'type' ? 'Declare the range as a fluid step in the system (min, max and the widths between which it scales), or snap it to fixed steps at breakpoints.' : 'Fluid values land between steps at most widths; snap them to the scale at breakpoints, or log the fluid range as an override.'}`,
         elements: g.sels.map((s) => ({ sel: s, label: label(s) })) });
     }
@@ -1826,7 +1842,7 @@ function scaleFindings(obs, system, widths, distinct) {
       const which = g.cands.length === 1
         ? `the "${g.cands[0].name}" step${g.cands[0].weight != null ? ` (weight ${g.cands[0].weight})` : ''} sets ${sets(g.cands[0])}`
         : `the ${g.cands.length} steps at this size and weight set ${g.cands.map((st) => `${sets(st)} ("${st.name}")`).join(', ')}`;
-      out.push({ check: 'type-scale', severity: 'warning', key: 'lh|' + k, count: g.sels.length, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })),
+      out.push({ check: 'type-scale', severity: 'warning', scale: { kind: 'line-height', properties: ['line-height'] }, sels: g.sels, count: g.sels.length, widths: sortW(g.ws), elements: g.sels.map((s) => ({ sel: s, label: label(s) })),
         message: `Line height ${g.l}${g.l === 'normal' ? '' : ' px'} at ${g.fs} px; ${which}; on ${plural(g.sels.length, 'text element')}.` });
     }
   }
@@ -1855,7 +1871,9 @@ function scaleFindings(obs, system, widths, distinct) {
     fontSizes: distinct.fixed.fontSizes.length + distinct.fluid.fontSizes.length,
     spacing: distinct.fixed.spacing.length + distinct.fluid.spacing.length,
   };
-  return out;
+  // The scale findings' keys, made together; the others keep theirs.
+  const scale = keyed(out.filter((f) => f.sels));
+  return out.map((f) => (f.sels ? scale.shift() : f));
 }
 
 // ------------------------------------------------------------------- fonts

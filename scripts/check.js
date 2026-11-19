@@ -49,6 +49,9 @@
 //   (scripts/health-test.js);
 // - a command runs on a flag it does not know, or the inspector's exit code
 //   is not the shared one for its report (scripts/exit-test.js);
+// - a fingerprint holds a value the sweep measured, or the fixtures' 0.3.3
+//   baseline does not match a run of the fixtures with nothing new and
+//   nothing fixed (scripts/fingerprint-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -280,20 +283,15 @@ try {
     const nep = readB(join(ROOT, 'fixtures', 'baselines', 'neptune-fork-0.3.2.json'));
     for (const key of ['/', '/adams-challis/']) same(against(page([], { subject: `http://x${key}`, url: `http://x${key}` }), nep, 'nep', key), `a clean report/1 against neptune-fork's baseline (${key})`);
     const fix = readB(join(ROOT, 'fixtures', 'itten-baseline.json'));
-    const held = fix.pages['/fixtures/distinct.html'].findings;
-    const again = page(held.map((h, k) => tf({ id: `i00${k + 1}`, check: h.check, fingerprint: h.fingerprint, severity: h.severity, message: h.message, elements: h.elements.map((sel) => ({ sel, label: sel })), seen: { light: '320' } })));
-    same(against(again, fix, 'fix', '/fixtures/distinct.html'), "report/1 against the fixtures' 0.3.3 baseline, same fingerprints");
-    // A fluid finding's fingerprint holds its value at each width, so 0.3.5's extra
-    // breakpoint widths change it; so do the widths that turn an off-scale size
-    // into a fluid one. Same check, same elements: the same finding.
-    const ts = (fp, sel, o = {}) => tf({ id: o.id ?? 'i001', check: 'type-scale', fingerprint: fp, severity: o.severity ?? 'warning', message: 'm', elements: [{ sel, label: 'p' }], seen: { light: '320' } });
-    const was = { pages: { '/p': { widths: '320, 768, 1440, 1920', findings: [
-      { fingerprint: 'type-scale|fixed|18', check: 'type-scale', severity: 'warning', message: 'm', elements: ['#d16 > p'] },
-      { fingerprint: 'spacing-scale|fluid|16,31,56,56', check: 'spacing-scale', severity: 'info', message: 'm', elements: ['#d22 > div'] }] } } };
-    const moved = page([ts('type-scale|fluid|16,16.69,16.7,18,18,18,18,18', '#d16 > p'), tf({ id: 'i002', check: 'spacing-scale', fingerprint: 'spacing-scale|fluid|16,31,40,40,56,56', severity: 'info', message: 'm', elements: [{ sel: '#d22 > div', label: 'div' }], seen: { light: '320' } })]);
-    same(against(moved, was, 'w', '/p'), 'fluid fingerprints that changed with the sweep, on the same elements');
-    const other = against(page([ts('type-scale|fluid|16,18', '#d99 > p'), tf({ id: 'i002', check: 'spacing-scale', fingerprint: 'spacing-scale|fluid|16,56', severity: 'info', message: 'm', elements: [{ sel: '#d22 > div', label: 'div' }], seen: { light: '320' } })]), was, 'w', '/p');
-    if (other.new.join() !== 'i001' || other.fixed.map((x) => x.fingerprint).join() !== 'type-scale|fixed|18') fail('Baseline', `the same check on another element must count as new and fixed: new ${other.new.join()}, fixed ${other.fixed.map((x) => x.fingerprint).join()}`);
+    // A baseline from before fp/2 is re-keyed as it is compared: the same
+    // findings under their fp/2 fingerprints match it (scripts/fingerprint-test.js
+    // has the cases; the fixtures' real reports are compared below).
+    const { rekey } = await import('../inspector/fingerprint.js');
+    const held = rekey(fix.pages['/fixtures/distinct.html'].findings);
+    const again = { ...page(held.map((h, k) => tf({ id: `i00${k + 1}`, check: h.check, fingerprint: h.fingerprint, severity: h.severity, message: h.message, elements: h.elements.map((sel) => ({ sel, label: sel })), seen: { light: '320' } }))), sweep: { fingerprints: 'fp/2' } };
+    same(against(again, fix, 'fix', '/fixtures/distinct.html'), "report/1 against the fixtures' 0.3.3 baseline, re-keyed");
+    const { run: fingerprintTest } = await import('./fingerprint-test.js');
+    for (const x of fingerprintTest()) fail('Fingerprints', x);
     const c = against(page([tf(f({ id: 'i001' })), tf(r({ id: 'i002' }))]), { pages: { '/p': { widths: '320', findings: [{ fingerprint: f().fingerprint, check: f().check, severity: f().severity }, { fingerprint: 'radius|gone', check: 'radius', severity: 'warning' }] } } }, 'b', '/p');
     if (c.new.join() !== 'i002' || c.fixed.map((x) => x.fingerprint).join() !== 'radius|gone') fail('Baseline', `the baseline compare misreads what is new and fixed: new ${c.new.join()}, fixed ${c.fixed.map((x) => x.fingerprint).join()}`);
   } catch (e) { fail('Baseline', `the baseline compare cannot read a baseline: ${e.message}`); }
@@ -313,6 +311,12 @@ try {
   const n7 = [];
   if (compare(sum(mv({ severity: 'error' }), r()), sum(r()), 't', n7).length) fail('Parity', 'compare() fails on a summary that differs only by a finding over a moving background');
   if (compare(sum(mv(), r({ severity: 'error' })), sum(mv(), r({ severity: 'error' }), r({ fingerprint: 'radius|y', severity: 'error' })), 't').filter((d) => d.includes('report.summary')).length !== 1) fail('Parity', 'compare() lets a summary differ by a finding that is not over a moving background');
+  // A timing finding unreliable (info) in one run and counted (a warning) in the other: a note, summary included.
+  const tm = (o) => f({ check: 'frame-timing', fingerprint: 'frame-timing|x|scroll|full', ...o });
+  const sev = (...issues) => ({ ...rep(...issues), summary: Object.fromEntries(['error', 'warning', 'info'].map((s) => [s, issues.filter((i) => i.severity === s).length])) });
+  const nT = [];
+  if (compare(sev(tm({ severity: 'info', timing: { reliable: false, reason: 'timing unreliable' } }), r()), sev(tm({ severity: 'warning' }), r()), 't', nT).length || !nT.length) fail('Parity', 'compare() fails on a timing finding that is unreliable in one run and counted in the other');
+  if (!compare(sev(tm({ severity: 'info', timing: { reliable: false } }), r()), sev(tm({ severity: 'warning' }), r(), r({ fingerprint: 'radius|z' })), 't').length) fail('Parity', 'compare() lets a summary differ by a finding with reliable timing');
   const fonts = (name, n) => ({ ...rep(), renderedFonts: [{ requested: 'Inter Tight', rendered: [`${name} (web font): ${n} glyphs`] }] });
   const n8 = [];
   if (compare(fonts('Inter Tight', 459), fonts('Inter Tight', 460), 't', n8).length || n8.length !== 1) fail('Parity', 'compare() does not take renderedFonts glyph counts as measured');
@@ -352,6 +356,10 @@ try {
   if (stillGuard({ page: d({ tiles: 3, unexplained: 0 }), twin: none, dPage: none, dTwin: none }).length) fail('Moving tiles', 'the guard fails the test print for tiles over its animations');
   if (stillGuard({ page: d({ tiles: 3, unexplained: 1 }), twin: none, dPage: none, dTwin: none }).length !== 1) fail('Moving tiles', 'the guard lets an unexplained moving tile on the test print pass');
   if (stillGuard({ page: none, twin: none, dPage: none, dTwin: d({ tiles: 1, unexplained: 0 }) }).length !== 1) fail('Moving tiles', 'the guard lets a moving tile on a distinct page pass, explained or not');
+  // The fixtures' 0.3.3 baseline matches these runs through fp/2: nothing
+  // new, nothing fixed, at whichever widths this check swept.
+  { const { against: againstBaseline } = await import('./fingerprint-test.js');
+    for (const [k, pg] of [['test-print', '/fixtures/index.html'], ['clean-twin', '/fixtures/clean.html'], ['distinct-test-print', '/fixtures/distinct.html'], ['distinct-clean-twin', '/fixtures/distinct-clean.html']]) for (const x of againstBaseline(r.reports[k], pg, k)) fail('Fingerprints', x); }
   for (const pr of r.problems ?? []) fail('Fixtures', pr);
   { const { expectedTests } = await import('./fixture-test.js'); for (const f of expectedTests()) fail('Fixtures', `expected rows: ${f}`); }
   if (r.expected?.length) fixtureLine += ` Expected on both pages, as info: ${r.expected.map((x) => x.id).join(', ')}.`;
@@ -619,9 +627,9 @@ try {
   for (const p of reports) {
     const rep = JSON.parse(readFileSync(p, 'utf8'));
     for (const e of rerr(rep).slice(0, 3)) fail('Finding format', `${p.slice(ROOT.length + 1)}: ${e}`);
-    // complete exactly when no step timed out (no fixture uses --wait-for)
-    const stopped = (rep.findings ?? []).some((f) => f.check === 'timed-out');
-    if (rep.status !== (stopped ? 'partial' : 'complete')) fail('Finding format', `${p.slice(ROOT.length + 1)}: status ${rep.status}, but ${stopped ? 'a step timed out' : 'nothing timed out'}`);
+    // complete exactly when no step timed out and no job was dropped (no fixture uses --wait-for)
+    const stopped = (rep.findings ?? []).some((f) => f.check === 'timed-out') || rep.health?.dropped?.length > 0;
+    if (rep.status !== (stopped ? 'partial' : 'complete')) fail('Finding format', `${p.slice(ROOT.length + 1)}: status ${rep.status}, but ${stopped ? 'a step timed out or a job was dropped' : 'nothing timed out and no job was dropped'}`);
   }
   for (const p of reports) for (const f of JSON.parse(readFileSync(p, 'utf8')).findings ?? []) {
     n++;

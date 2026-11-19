@@ -102,8 +102,8 @@ async function planFix(f, ctx) {
   };
 
   if (f.check === 'spacing-unit' || f.check === 'text-resize') {
-    const props = f.check === 'text-resize' ? ['font-size'] : ((f.message.match(/ px of ([a-z, -]+) stays/) || [])[1] || '').split(/,\s*/).filter(Boolean);
-    const want = f.check === 'spacing-unit' ? Number(f.fingerprint.split('|').at(-1)) : null;
+    const props = f.check === 'text-resize' ? ['font-size'] : f.scale?.properties ?? [];
+    const want = f.check === 'spacing-unit' ? f.scale?.value ?? null : null;
     const edits = new Map(), why = [];
     for (const sel of sels) for (const prop of props) {
       const v = await located(sel, prop);
@@ -118,8 +118,8 @@ async function planFix(f, ctx) {
     return { class: 'px-to-rem', kind: 'auto', edits: [...edits.values()].map((x) => x.edit), targets: sels, note: `px to rem at ${rootPx} px to the rem, so the value follows the reader's text size.` };
   }
 
-  if (f.check === 'type-scale' && /^type-scale\|fixed\|/.test(f.fingerprint) && system?.type?.scale) {
-    const v = Number(f.fingerprint.split('|').at(-1));
+  if (f.check === 'type-scale' && f.scale?.kind === 'fixed' && system?.type?.scale) {
+    const v = f.scale.value;
     const steps = [...new Set(system.type.scale.filter((s) => s.size).map((s) => s.size))].sort((a, b) => a - b);
     const dist = steps.map((s) => Math.abs(s - v));
     const best = Math.min(...dist);
@@ -140,8 +140,8 @@ async function planFix(f, ctx) {
     return { class: 'em-to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `A size compounded from em or %, ${v} px, to the nearest step, ${nearest[0]} px, in rem.` };
   }
 
-  if (f.check === 'spacing-scale' && /^spacing-scale\|fixed\|/.test(f.fingerprint)) {
-    const props = ((f.message.match(/as ([a-z, -]+)\.$/) || [])[1] || 'padding-top').split(/,\s*/);
+  if (f.check === 'spacing-scale' && f.scale?.kind === 'fixed') {
+    const props = f.scale.properties?.length ? f.scale.properties : ['padding-top'];
     return guided('off-scale', `${f.message} Which step it should be is a choice; a value one step off the scale is fixed only once the tolerance is decided (questions, Q2).`, await where(props[0]));
   }
 

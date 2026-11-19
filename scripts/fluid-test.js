@@ -21,7 +21,7 @@ import { findingsOf } from '../inspector/finding.js';
 import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const needsFixed = (i) => /^(spacing-scale|type-scale)\|fixed\|/.test(i.fingerprint) || i.check === 'spacing-unit';
+const needsFixed = (i) => i.scale?.kind === 'fixed' || i.check === 'spacing-unit';
 
 export async function run({ quiet = true } = {}) {
   const fails = [];
@@ -47,10 +47,10 @@ export async function run({ quiet = true } = {}) {
       if (fixedGutter.length) fails.push(`${name}: the fluid gutter is reported as a fixed value: ${fixedGutter.map((i) => i.fingerprint).join('; ')}`);
       if (judged) {
         if (noted) fails.push(`${name}: the report says fluidity was not judged`);
-        if (!all.some((i) => /^spacing-scale\|fluid\|/.test(i.fingerprint) && on('div.gutter')(i))) fails.push(`${name}: the gutter is not judged fluid`);
-        if (!all.some((i) => i.fingerprint === 'spacing-scale|fixed|13' && on('div.card')(i))) fails.push(`${name}: the 13 px padding is not reported off the scale`);
+        if (!all.some((i) => i.check === 'spacing-scale' && i.scale?.kind === 'fluid' && on('div.gutter')(i))) fails.push(`${name}: the gutter is not judged fluid`);
+        if (!all.some((i) => i.check === 'spacing-scale' && i.scale?.kind === 'fixed' && i.scale.value === 13 && on('div.card')(i))) fails.push(`${name}: the 13 px padding is not reported off the scale`);
         if (!all.some((i) => i.check === 'spacing-unit' && on('div.card')(i))) fails.push(`${name}: the 13 px padding is not reported as px`);
-        const other = all.filter((i) => !/^spacing-scale\|(fluid|fixed\|13)/.test(i.fingerprint) && i.check !== 'spacing-unit');
+        const other = all.filter((i) => !(i.check === 'spacing-scale' && (i.scale?.kind === 'fluid' || (i.scale?.kind === 'fixed' && i.scale.value === 13))) && i.check !== 'spacing-unit');
         if (other.length) fails.push(`${name}: reported besides the planted: ${other.map((i) => i.fingerprint).join('; ')}`);
       } else {
         if (!noted) fails.push(`${name}: the report does not note that fluidity was not judged`);

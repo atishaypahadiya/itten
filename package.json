@@ -29,6 +29,7 @@
     "test:fluid": "node scripts/fluid-test.js",
     "test:health": "node scripts/health-test.js",
     "test:exit": "node scripts/exit-test.js",
+    "test:fingerprint": "node scripts/fingerprint-test.js",
     "test:expected": "node scripts/expected-test.js",
     "fix": "node inspector/fix.js",
     "skill": "node scripts/skill.js"

@@ -4,12 +4,13 @@
 // action was given it), so the same file serves a local server, a preview
 // deploy and production.
 //
-// A finding is identified by its fingerprint: the check and the key the
-// inspector groups it by (an element's selector, a value, a fluid curve), not
-// by its id or its message, which change from run to run.
+// A finding is identified by its fingerprint: the check and where it is (an
+// element's selector, a property and its elements), never a value measured
+// at run time, and not its id or its message, which change from run to run.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { view, findingsOf } from './finding.js';
+import { FP, rekey, propsPart } from './fingerprint.js';
 
 const SEVERITY = ['error', 'warning', 'info'];
 
@@ -20,7 +21,9 @@ export const pageKey = (url) => { const u = new URL(url); return u.pathname + u.
 // same before and after finding/1), entries that hold report findings (flat,
 // in "issues", or finding/1), or a report.json itself (report/1, or flat from
 // before 0.3.5), taken as the baseline of its one page. Findings are matched
-// by fingerprint only, so a project upgrading ITTEN keeps its baseline.
+// by fingerprint. An entry says which version its fingerprints are
+// ("fingerprints": "fp/2"); one that does not is fp/1 and is re-keyed as it
+// is compared, so a project upgrading ITTEN keeps its baseline.
 export function readBaseline(path) {
   if (!path || !existsSync(path)) return null;
   const b = JSON.parse(readFileSync(path, 'utf8'));
@@ -42,6 +45,8 @@ const entryFor = (report) => ({
   version: report.version,
   system: report.system,
   widths: report.sweep?.widths,
+  // The fingerprint version (fingerprint.js); none means fp/1.
+  ...(report.sweep?.fingerprints ? { fingerprints: report.sweep.fingerprints } : {}),
   findings: findingsOf(report).map(known),
 });
 
@@ -57,26 +62,29 @@ export function writeBaseline(path, report, key = pageKey(report.subject ?? repo
 
 // New: in this run, not in the baseline. Fixed: in the baseline, not in this
 // run. Worse and better: in both, at a different severity.
-export function compare(report, baseline, file, page = pageKey(report.subject ?? report.url)) {
+export function compare(report, baseline, file, page = pageKey(report.subject ?? report.url), o = {}) {
   const entry = baseline?.pages?.[page];
   if (!entry) return { file, page, found: false, new: [], fixed: [], worse: [], better: [] };
-  const kept = (entry.findings ?? entry.issues ?? []).map(known);
+  // A baseline from before fp/2 is re-keyed as it is read (fingerprint.js):
+  // its scale findings held what the sweep measured, so another set of
+  // widths gave the same finding another fingerprint.
+  const old = (entry.fingerprints ?? baseline.fingerprints) !== FP;
+  const read = (entry.findings ?? entry.issues ?? []).map(known);
+  const kept = old && o.rekey !== false ? rekey(read) : read;
   const before = new Map(kept.map((f) => [f.fingerprint, f]));
   const issues = findingsOf(report);
   const now = new Set(issues.map((i) => i.fingerprint));
-  const out = { file, page, found: true, date: entry.date, widths: entry.widths, sameWidths: entry.widths === report.sweep?.widths, new: [], fixed: [], worse: [], better: [] };
-  // By fingerprint first. A fingerprint can hold values a sweep measures (a
-  // fluid size's value at each width), so another set of widths, or another
-  // version's sweep, gives the same finding another fingerprint. A finding
-  // left unmatched is then matched to one left over in the baseline with the
-  // same check on the same elements, one to one; a finding with no elements
-  // matches by fingerprint only.
+  const out = { file, page, found: true, date: entry.date, widths: entry.widths, sameWidths: entry.widths === report.sweep?.widths, ...(old ? { rekeyed: kept.filter((f) => f.was && f.was !== f.fingerprint).length } : {}), new: [], fixed: [], worse: [], better: [] };
+  // By fingerprint. One case more: a re-keyed scale finding whose elements
+  // were cut at 8 has no exact fingerprint, so it is matched to a finding of
+  // this run of the same check and properties whose first 8 elements are
+  // those 8, one to one.
   const els = (f) => (f.elements ?? []).map((e) => (typeof e === 'string' ? e : e.sel)).sort().join('\n');
   const spare = kept.filter((f) => !now.has(f.fingerprint));
   const pair = new Map();
   for (const i of issues) {
     if (before.has(i.fingerprint) || !els(i)) continue;
-    const k = spare.findIndex((f) => f.check === i.check && els(f) === els(i));
+    const k = spare.findIndex((f) => f.cut && f.check === i.check && propsPart(f.fingerprint) === propsPart(i.fingerprint) && els(f) === els(i));
     if (k >= 0) pair.set(i, spare.splice(k, 1)[0]);
   }
   for (const i of issues) {

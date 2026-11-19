@@ -71,9 +71,11 @@ const UNRELIABLE = ' (timing unreliable)';
 const MOVING = ' (over a moving background)', MEASURED = ' (measured)', PORTS = ' (a server port)';
 const glyphless = (v) => JSON.stringify(v ?? null).replace(/: \d+ glyphs/g, ': <n> glyphs');
 // The summary counted without the findings over a moving background.
-const steadySummary = (r) => {
+// `skip` holds the fingerprints loose in either run: a timing finding can be
+// unreliable (info) in one run and counted (a warning) in the other.
+const steadySummary = (r, skip = new Set()) => {
   const by = {};
-  for (const i of findingsOf(r)) if (!loose(i)) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
+  for (const i of findingsOf(r)) if (!loose(i) && !skip.has(i.fingerprint)) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
   return JSON.stringify(Object.keys(by).sort().map((k) => [k, by[k]]));
 };
 
@@ -102,7 +104,8 @@ export function compare(a, b, name = 'page', notes = []) {
     const s = JSON.stringify(a[f]), t = JSON.stringify(b[f]);
     if (s === t) continue;
     const line = `${name}: report.${f} differs: ${s.slice(0, 240)} against ${t.slice(0, 240)}`;
-    if (f === 'summary' && steadySummary(a) === steadySummary(b)) notes.push(line + ' (findings over a moving background, or with unreliable timing)');
+    const skip = new Set([...findingsOf(a), ...findingsOf(b)].filter(loose).map((i) => i.fingerprint));
+    if (f === 'summary' && steadySummary(a, skip) === steadySummary(b, skip)) notes.push(line + ' (findings over a moving background, or with unreliable timing)');
     else if (f === 'renderedFonts' && glyphless(a[f]) === glyphless(b[f])) notes.push(line + MEASURED);
     else diffs.push(line);
   }

@@ -103,8 +103,32 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
   - contrast over a background that moves, which depends on the frame sampled;
   - anything the page itself varies.
 - **Different machines.** Fonts and text rendering differ by platform, so text measurements, and the findings that rest on them, can differ.
-- **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
+- **Different width sets.** The same finding keeps its fingerprint (`fp/2`, see Fingerprints). What differs is what a wider sweep sees: a value that looks fixed at four widths is fluid at eight, so the finding's message, its `scale.kind` and the widths it was seen at change, and a finding that only shows between two widths appears.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
+
+## Fingerprints
+
+Two runs are compared by fingerprint, so a fingerprint is the same for the same finding in every run. It names the check and where the finding is, joined by `|`: **never a value measured at run time; declared values may appear.** A motion's duration and easing, a font's family and a radius are declared: they are the same at every width and in every run, and they say which declaration is meant. The rule is shared with KERCKHOFFS and ERLANG.
+
+The version is `fp/2` (`sweep.fingerprints` in the report, `fingerprints` in a baseline entry; `inspector/fingerprint.js`). Under `fp/1`, before 0.5, a scale finding held what the sweep measured: its kind and value (`type-scale|fixed|18`) or its value at each width (`spacing-scale|fluid|16,38.4,48,48`), so another set of widths gave the same finding another fingerprint. Under `fp/2` a scale finding (`spacing-scale`, the sizes and line heights of `type-scale`, `spacing-unit`) is
+
+```
+<check>|<properties>|<elements>
+type-scale|font-size|#d16 > p:nth-of-type(2)
+spacing-scale|gap,padding|nav > ul, nav > ul > li
+```
+
+- **Properties**: the CSS properties it is about, sorted, joined by commas: `padding`, `margin`, `gap`, `font-size` or `line-height`. A side or an axis is named by its property (`padding-top` is `padding`, `row-gap` is `gap`).
+- **Elements**: the selectors of all its elements, sorted, joined by `, `, taken before the report cuts the list to 8. More than 8 are named by their number and a digest of the sorted list: `23 elements:5f0c9a1e77b2` (the first 12 hex digits of its SHA-256, the selectors joined by a line feed).
+- **Collisions.** Two findings of one report that would share a fingerprint are told apart by the sides and axes themselves (`spacing-unit|padding-bottom,padding-top|…` and `spacing-unit|padding-left,padding-right|…`). Only when those match too is a number added, `|2`, `|3`, in the order the findings are reported; that order can change with the widths, so it is the last resort.
+
+What the fingerprint no longer holds is in the finding: `itten.scale` has `kind` (`fixed`, `fluid`, `line-height` or `unit`), `value` in px for `fixed` and `unit`, and `properties` as measured.
+
+Every other fingerprint is as it was: the check and a selector, a pair of selectors, or a declared value (`radius|6`, `type-scale|step|16|500|text`, `motion-timing|<selector>|<pseudo>|transform|350|cubic-bezier(…)`).
+
+**Baselines.** A baseline entry written by 0.5 says `"fingerprints": "fp/2"`. One that does not is `fp/1`, and its scale findings are re-keyed as it is compared, from each finding's check, message (for the properties) and elements, so no project writes its baseline again. A re-keyed finding whose elements were cut at 8 has no exact fingerprint; it matches the run's finding of the same check and properties whose first 8 elements are those 8. The comparison reports how many it re-keyed (`baseline.rekeyed`). Until 0.5 a finding whose fingerprint had changed was matched by the same check on the same elements; that stopgap is gone.
+
+A group's elements are part of what it is: when one more element takes an off-scale value, the group has a new fingerprint, and a comparison shows it as new and the old group as fixed.
 
 ## Fixtures
 
@@ -126,7 +150,9 @@ ITTEN runs its self-test on every push and every pull request, with no path filt
 
 A run that measures a page the server failed to send measures an error state. The first load of a run (the watch load) says what the server sends: the requests it answered, and the ones that failed there too, which are the page's own (a missing file fails on every load, and is reported as `page-load`).
 
-A job's load has a server failure when a request the first load did not fail gets no response, is reset, is answered 5xx, or is answered 4xx though the first load was sent it; or when the page load itself fails or runs out of its limit. Such a job is run again once.
+A job's load has a server failure when a request the first load did not fail gets no response, is reset, is answered 5xx, or is answered 4xx though the first load was sent it; or when the page load itself fails, or runs out of its limit before the server has answered for the page. Such a job is run again once.
+
+A load that runs out of its limit after the server answered for the page is the page's own (a script that holds the main thread, a load event that never comes): it is a `timed-out` error, like any step past its limit, and the job is not run again.
 
 - **The second run is served:** it is the one reported. `health.retried` lists the job and the requests that failed the first time, and `notJudged` says so. The run can still be `complete`.
 - **It fails again:** the job is dropped. Nothing it measured is kept, `health.dropped` lists the job and its failed requests, and the report is `partial` with a `reason` that names them. It is `partial`, never `refused`, also when every job is dropped.

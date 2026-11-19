@@ -148,6 +148,17 @@
         }
       }
     },
+    "scale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "properties"],
+      "description": "On a scale finding (spacing-scale, type-scale's sizes and line heights, spacing-unit): what the fingerprint no longer holds. Its fingerprint names the properties and the elements only (fp/2).",
+      "properties": {
+        "kind": { "enum": ["fixed", "fluid", "line-height", "unit"], "description": "fixed: one value off the scale. fluid: a value that follows the viewport. line-height: a line height no step sets. unit: spacing set in px." },
+        "value": { "type": "number", "description": "The value in px, for fixed and unit." },
+        "properties": { "type": "array", "items": { "type": "string" }, "description": "The CSS properties measured, sides and axes named (padding-top, row-gap, font-size)." }
+      }
+    },
     "movingBackground": {
       "enum": [
         true
