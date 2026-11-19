@@ -619,8 +619,10 @@ export async function inspect(url, o = {}) {
   // tier does and as itten fix does to check a fix again.
   const passes = new Set(o.passes ?? (fast ? FAST_PASSES : PASSES));
   for (const p of passes) if (!PASSES.includes(p)) throw new Error(`no pass called "${p}" (${PASSES.join(', ')})`);
-  let widths = o.widths ?? (fast ? FAST_WIDTHS : o.full ? FULL_WIDTHS : DEFAULT_WIDTHS);
-  const quick = passes.has('scan') && !o.full && !o.widths && o.aroundBreakpoints !== false;
+  // The full sweep measures every width quick mode does: its 40 px steps,
+  // the default widths, and (below) the widths either side of each breakpoint.
+  let widths = o.widths ?? (fast ? FAST_WIDTHS : o.full ? [...new Set([...FULL_WIDTHS, ...DEFAULT_WIDTHS])].sort((a, b) => a - b) : DEFAULT_WIDTHS);
+  const around = passes.has('scan') && !o.widths && o.aroundBreakpoints !== false;
   const tier = fast ? 'fast' : o.passes ? 'passes' : o.widths ? 'widths' : o.full ? 'full' : 'quick';
   const keyWidths = o.keyWidths ?? [320, 768, 1440];
   const system = o.system ?? null;
@@ -909,8 +911,8 @@ export async function inspect(url, o = {}) {
       took.push(['watch', (Date.now() - t0) / 1000]);
       log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${((watched.quietAt ?? 0) / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
 
-      // The breakpoint scan, for the resize pairs and, in quick mode, the
-      // widths around each breakpoint.
+      // The breakpoint scan, for the resize pairs and the widths around each
+      // breakpoint (quick mode and the full sweep).
       t0 = Date.now();
       const scanDone = phase('breakpoint scan');
       let scan = { sigs: new Map(), breakpoints: [], timedOut: null };
@@ -922,7 +924,7 @@ export async function inspect(url, o = {}) {
           const page = await openPass(sctx, { w: widths[0] });
           const ask = [...new Set([...widths, ...engineWidths0])].sort((a, b) => a - b);
           const s = await scanBreakpoints(page, widths[0], widths.at(-1), ask);
-          if (quick) for (const w of aroundBreakpoints(widths, s.breakpoints)) if (!s.sigs.has(w)) { await page.setViewportSize({ width: w, height: VIEW_H }); s.sigs.set(w, await page.evaluate(breakpointState)); }
+          if (around) for (const w of aroundBreakpoints(widths, s.breakpoints)) if (!s.sigs.has(w)) { await page.setViewportSize({ width: w, height: VIEW_H }); s.sigs.set(w, await page.evaluate(breakpointState)); }
           return s;
         });
       } catch (e) {
@@ -932,7 +934,7 @@ export async function inspect(url, o = {}) {
       } finally { await closeQuietly(sctx); }
       scanDone();
       took.push(['scan', (Date.now() - t0) / 1000]);
-      const added = quick ? aroundBreakpoints(widths, scan.breakpoints).filter((w) => !widths.includes(w)) : [];
+      const added = around ? aroundBreakpoints(widths, scan.breakpoints).filter((w) => !widths.includes(w)) : [];
       widths = [...widths, ...added].sort((a, b) => a - b);
       const engineWidths = [...new Set([...engineWidths0, ...added])].sort((a, b) => a - b);
       log(`  breakpoints: ${scan.breakpoints.length ? scan.breakpoints.map((b) => b + ' px').join(', ') : 'none'}${added.length ? `; widths added: ${added.join(', ')} px` : ''}`);

@@ -37,6 +37,8 @@
 // - on a page that draws WebGL every frame, drawn in software, a step runs
 //   out of its limit, a crop names no frame, or two crops held at the same
 //   frame differ (scripts/frozen-test.js);
+// - the full sweep leaves out a width quick mode measures, or misses the
+//   finding between two breakpoints (scripts/sweep-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -411,6 +413,15 @@ try {
   for (const f of await fixTest()) fail('Fix', f);
 } catch (e) {
   fail('Fix', `the fix test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------------ Sweep
+// The full sweep measures every width quick mode does (scripts/sweep-test.js).
+try {
+  const { run: sweepTest } = await import('./sweep-test.js');
+  for (const f of await sweepTest()) fail('Sweep', f);
+} catch (e) {
+  fail('Sweep', `the sweep test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ----------------------------------------------------------------- Frozen

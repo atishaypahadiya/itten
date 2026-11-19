@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A finding between two steps</title>
+<style>
+  /* In px, so the 200% text pass adds no overflow of its own. */
+  body { margin: 0; padding: 32px; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+  .band { padding: 16px; background: #eee; }
+  /* Decoy: a breakpoint where the layout changes and nothing goes wrong on either side. */
+  .cols { display: grid; gap: 16px; }
+  @media (min-width: 700px) { .cols { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 890px) and (max-width: 900px) { .band { width: 1100px; } }
+</style>
+</head>
+<body>
+  <!-- scripts/sweep-test.js. Planted: between 890 and 900 px the band is 1100 px wide and sticks out past the right edge (overflow). At 880 and 920 px, the full sweep's nearest steps, nothing is wrong. -->
+  <!-- One short line at every width, so no line check has anything to say about it. -->
+  <div class="band">The band</div>
+  <div class="cols"><p>One column of text.</p><p>Another column of text.</p></div>
+</body>
+</html>
