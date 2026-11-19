@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
@@ -131,6 +132,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  readArgs(process.argv.slice(2), { name: 'health-test.js', usage: 'node scripts/health-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'A job the server fails is run again once, then dropped: the run is partial, names the job and its requests, and is never refused.');

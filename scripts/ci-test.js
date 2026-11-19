@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -48,6 +49,7 @@ export function run() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  readArgs(process.argv.slice(2), { name: 'ci-test.js', usage: 'node scripts/ci-test.js' });
   const fails = run();
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'The self-test runs on every push and every pull request, with no filter.');

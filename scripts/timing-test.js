@@ -30,6 +30,7 @@ import { failing } from '../inspector/baseline.js';
 import { judge, spreadOf, isSoftware, timedIn, REASON } from '../inspector/timing.js';
 import { compare } from './parity-test.js';
 import { SOFTWARE } from './frozen-test.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -121,6 +122,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  readArgs(process.argv.slice(2), { name: 'timing-test.js', usage: 'node scripts/timing-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'Timing findings count only on three close measurements, a quiet machine and a GPU; otherwise they are info, with the reason and the environment.');

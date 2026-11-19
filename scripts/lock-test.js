@@ -21,6 +21,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { take, sweep, locks, lockDir, lockFile, stateOf, FORMAT } from '../inspector/lock.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ME = fileURLToPath(import.meta.url);
 const ROOT = join(dirname(ME), '..');
@@ -152,7 +153,8 @@ export async function run() {
   return fails;
 }
 
-if (process.argv[1] === ME && !process.argv[2]) {
+if (process.argv[1] === ME && !['--hold', '--inspect'].includes(process.argv[2])) {
+  readArgs(process.argv.slice(2), { name: 'lock-test.js', usage: 'node scripts/lock-test.js' });
   const fails = await run();
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'The timing lock is held only while timing, removed on exit and on signals, and stale locks are cleared.');

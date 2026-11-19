@@ -28,6 +28,7 @@
     "test:timing": "node scripts/timing-test.js",
     "test:fluid": "node scripts/fluid-test.js",
     "test:health": "node scripts/health-test.js",
+    "test:exit": "node scripts/exit-test.js",
     "fix": "node inspector/fix.js",
     "skill": "node scripts/skill.js"
   },

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { view, findingsOf } from '../inspector/finding.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fixtures');
@@ -117,6 +118,7 @@ export function score(spec, { page, twin, dPage, dTwin }) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'fixture-test.js', usage: 'node scripts/fixture-test.js [--full] [--from <report dir>]...', flags: { full: 'flag', from: 'list' } });
   const from = process.argv.flatMap((a, i) => (process.argv[i - 1] === '--from' ? [a] : []));
   const r = from.length ? fromAction(from) : await run({ full: process.argv.includes('--full'), quiet: false });
   for (const row of r.rows) console.log(`${row.caught ? 'caught' : 'MISSED'}  ${row.id}  ${row.check.padEnd(18)} ${row.title}  ${row.issues.join(' ')}`);

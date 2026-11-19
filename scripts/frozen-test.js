@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SOFTWARE = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu'];
@@ -68,6 +69,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  readArgs(process.argv.slice(2), { name: 'frozen-test.js', usage: 'node scripts/frozen-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : `Frozen captures: every crop names its frame, two held at frame ${AT} are identical, and two free ones differ.`);

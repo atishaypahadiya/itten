@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { versionLine } from '../inspector/version.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,6 +54,7 @@ export async function run() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'version-test.js', usage: 'node scripts/version-test.js' });
   const fails = await run();
   for (const f of fails) console.log(`FAIL ${f}`);
   console.log(fails.length ? `${fails.length} failed` : 'version: all passed');

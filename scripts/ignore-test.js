@@ -12,6 +12,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -37,6 +38,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'ignore-test.js', usage: 'node scripts/ignore-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'Ignore scope: passes.');

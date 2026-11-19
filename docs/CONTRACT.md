@@ -27,7 +27,7 @@ Node 20 or later. Playwright is the only dependency.
 | `--full` | off | Every 40 px from 320 to 1920 px, and every width quick mode measures. Without it (quick mode): 320, 768, 1440 and 1920 px, and the widths either side of each breakpoint. |
 | `--widths <a,b,c>` or `<from:to:step>` | | The widths to measure, replacing the mode's. With fewer than three, a value's fluidity is unknown (`sweep.fluidity`): a value is fluid when it takes three or more values across the sweep, so no fixed value off the spacing or type scale and no spacing in px is reported, and `notJudged` says so. |
 | `--engines <list>`, `--no-engines` | `webkit,firefox` | Second-opinion engines for the layout checks. Chromium always runs. |
-| `--fail-on error\|warning\|never` | `never` | The severity at which the exit code becomes 1. |
+| `--fail-on error\|warning\|never` | `warning` | The lowest severity that fails the run (exit 1). Info never does. Before 0.5 the default was `never`. |
 | `--workers <n>` | CPU cores less two, at most one per GB of memory beyond 2 GB, at least 1 | Jobs run at once. |
 | `--wait-for <selector>` | none | Waits up to 30 s for the selector on each load before measuring. |
 | `--settle <ms>` | 0 | Extra wait after each load. |
@@ -36,7 +36,7 @@ Node 20 or later. Playwright is the only dependency.
 | `--shard <i/n>`, `--merge <dir,dir,...>` | | Split one page's jobs across machines, then combine them. |
 | `--version` | | Prints `itten <version> <commit SHA>` and exits 0, running nothing else. Adds `(with uncommitted changes)` when a tracked file differs from the commit; prints `commit unknown` for a copy of ITTEN that is not its own git checkout, except the Agent Skill installed with `gh skill install`, which prints the ref it was installed at and the repository. |
 
-Put the URL first. A flag takes the next argument as its value unless that argument starts with `--`. An unknown flag is ignored, not rejected; from 0.5 it exits 64 and runs nothing.
+Put the URL first. A flag takes the next argument as its value unless that argument starts with `--`. An unknown flag exits 64 and runs nothing, as does a flag without its value.
 
 ## Inputs
 
@@ -64,14 +64,20 @@ A second-opinion engine that fails to launch, or fails partway through, is recor
 
 ## Exit codes
 
-| Code | When |
-|---|---|
-| 0 | The run finished, `complete` or `partial`, with nothing at or above `--fail-on`. With the default, `never`, every finished run exits 0. Also `--version`, a valid `--validate`, and a shard. |
-| 1 | Findings at or above `--fail-on` (with a baseline, only new findings and findings that got worse); or the run failed, and `report.json` is `refused` with the error; or the system file is invalid. |
-| 2 | Bad usage: no URL, or a malformed `--shard` or `--workers`. |
-| 124 | Stopped by the watchdog; `report.json` is `refused`. |
+Every ITTEN command uses these, shared with KERCKHOFFS and ERLANG (`inspector/usage.js`):
 
-A `partial` run can exit 0, so read `status` in `report.json`, not only the exit code. From 0.5 the codes are the ones shared by every specialist: 0 complete, 1 failing findings, 2 refused, 3 partial, 64 bad usage.
+| Code | Meaning |
+|---|---|
+| 0 | `complete`, and no failing finding. Also `--version`, a valid `--validate`, and a shard. |
+| 1 | Failing findings, whether the run is `complete` or `partial`. For `--validate`, a file that is not valid; for `fix.js`, a fix that was reverted; for a test or the check, a failure. |
+| 2 | `refused`: nothing was judged. The page could not be reached, the run failed (`report.json` holds the error), or the system file is not valid. |
+| 3 | `partial`, and no failing finding. |
+| 64 | Bad usage: an unknown flag, a flag without its value, an argument too many or missing, or a value a flag does not take. Nothing is run: no browser, no report. (`EX_USAGE` in `sysexits.h`.) |
+| 124 | The watchdog stopped a run that made no progress; `report.json` is `refused`. |
+
+**Severity.** Errors and warnings fail a run; info never does. An info-only run exits 0 when complete and 3 when partial. `--fail-on error` lets warnings pass, and `--fail-on never` lets everything pass; with a baseline, only new findings and findings that got worse count. The summary counts errors, warnings and info apart (`summary.error`, `summary.warning`, `summary.info`, and the last line the command prints).
+
+Read `status` in `report.json` as well as the exit code: 1 says a finding fails, not whether the run was whole.
 
 ## Network
 
@@ -200,6 +206,6 @@ An edit is one of:
 - A byte-order mark at the start of a file is not counted: line 1, column 1 is the character after it, and an edit never removes it.
 - A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
 
-Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
+Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused or the system file is not valid; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
 
 Some inspector messages also name the measured alternative in prose, for example "With hyphens: auto the deepest hole would be 12%".

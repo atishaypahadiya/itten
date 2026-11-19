@@ -47,6 +47,8 @@
 //   does not judge fluidity (scripts/fluid-test.js);
 // - a job the server failed is kept, not run again, or refuses the run
 //   (scripts/health-test.js);
+// - a command runs on a flag it does not know, or the inspector's exit code
+//   is not the shared one for its report (scripts/exit-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -59,6 +61,9 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate, register } from './lib/schema.js';
+import { readArgs } from '../inspector/usage.js';
+// Before anything runs: an argument this command does not know ends it with exit 64.
+readArgs(process.argv.slice(2), { name: 'check.js', usage: 'node scripts/check.js [--full]', flags: { full: 'flag' } });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -439,6 +444,15 @@ try {
   for (const f of await lockTest()) fail('Lock', f);
 } catch (e) {
   fail('Lock', `the lock test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------------- Exit
+// The shared exit codes and strict command lines (scripts/exit-test.js).
+try {
+  const { run: exitTest } = await import('./exit-test.js');
+  for (const f of await exitTest()) fail('Exit', f);
+} catch (e) {
+  fail('Exit', `the exit test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------------- CI

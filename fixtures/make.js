@@ -11,6 +11,9 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readArgs } from '../inspector/usage.js';
+// Before anything runs: an argument this command does not know ends it with exit 64.
+readArgs(process.argv.slice(2), { name: 'make.js', usage: 'node fixtures/make.js', flags: {} });
 // A no-break space before the last word of each paragraph, so its last line
 // can never hold one word alone. The clean twins set all their copy this way,
 // and the specimens in TIE, whose last line came out short (two words or

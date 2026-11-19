@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { start } from './serve.js';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,6 +65,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  readArgs(process.argv.slice(2), { name: 'sweep-test.js', usage: 'node scripts/sweep-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `${fails.length} failure(s).` : 'The full sweep measures every width quick mode does, and catches the band between two breakpoints that its 40 px steps miss.');

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, frontmatter, SKILL } from './skill.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -56,6 +57,7 @@ export async function run() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'skill-test.js', usage: 'node scripts/skill-test.js' });
   const fails = await run();
   for (const f of fails) console.error(`skill: ${f}`);
   console.log(fails.length ? `${fails.length} failed.` : 'The skill matches the repository and runs from a copy.');

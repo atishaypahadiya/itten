@@ -22,6 +22,7 @@ import { loadSystem, inspect } from '../inspector/inspect.js';
 import { fix, AUTO } from '../inspector/fix.js';
 import { findingsOf } from '../inspector/finding.js';
 import { apply, revert, offsetOf, positionOf, EditError } from '../inspector/edits.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIX = join(ROOT, 'fixtures', 'fix');
@@ -171,6 +172,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'fix-test.js', usage: 'node scripts/fix-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.error(`fix: ${f}`);
   console.log(fails.length ? `${fails.length} failed.` : 'Every fix class matches its twin and re-inspects clean; planted failures are reverted; build output is never edited.');

@@ -25,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validateOverrides } from './overrides.js';
 import { rules } from './lib/rules.js';
+import { readArgs } from '../inspector/usage.js';
 
 export const FILES = ['.gitmodules', 'itten.overrides.json'];
 
@@ -157,6 +158,7 @@ export function render(r) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
+  readArgs(args, { name: 'telemetry.js', usage: 'node scripts/telemetry.js [--owner <login>] [--threshold 3] [--from <dir>] [--out research/telemetry.md] [--json <file>]', flags: { owner: 'value', threshold: 'value', from: 'value', out: 'value', json: 'value' } });
   const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
   const owner = opt('--owner', 'atishaypahadiya');
   const threshold = Number(opt('--threshold', '3'));

@@ -21,6 +21,7 @@ import { inspect, loadSystem, phaseOverlaps, measuredFields } from '../inspector
 import { view, findingsOf } from '../inspector/finding.js';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { duration } from '../inspector/timings.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -128,6 +129,7 @@ export async function run({ n = 6, pages }) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2);
+  readArgs(argv, { name: 'parity-test.js', usage: 'node scripts/parity-test.js [--url <url>]... [--workers 6] [--full] [--saved <dir>]', flags: { url: 'list', workers: 'value', full: 'flag', saved: 'value' } });
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const urls = argv.flatMap((a, i) => (argv[i - 1] === '--url' ? [a] : []));
   const n = Number(opt('--workers') ?? 6), full = argv.includes('--full');

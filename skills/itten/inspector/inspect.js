@@ -26,6 +26,7 @@ import { container } from './group.js';
 import { toFinding, pagePath, REPORT } from './finding.js';
 import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
 import { take as takeLock } from './lock.js';
+import { readArgs, bad, exitCode, EXIT } from './usage.js';
 import { timedIn, judge, environmentCauses, isSoftware, RUNS } from './timing.js';
 import { validate } from '../scripts/lib/schema.js';
 import { versionLine } from './version.js';
@@ -2550,15 +2551,18 @@ async function contrastIssues(page, res, coverage, opts = {}) {
 }
 
 // --------------------------------------------------------------------- CLI
-function parseArgs(argv) {
-  const o = { _: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) { const k = a.slice(2); const v = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true; o[k] = v; }
-    else o._.push(a);
-  }
-  return o;
-}
+// The inspector's command line (docs/CONTRACT.md, "Command line").
+const CLI = {
+  name: 'inspect.js',
+  usage: 'node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report] [--fast | --full] (docs/CONTRACT.md lists every flag)',
+  positional: [0, 1],
+  flags: {
+    version: 'flag', validate: 'value', system: 'value', out: 'value', fast: 'flag', full: 'flag', widths: 'value', 'key-widths': 'value',
+    'no-breakpoint-widths': 'flag', 'no-engines': 'flag', engines: 'value', workers: 'value', shard: 'value', merge: 'value',
+    'wait-for': 'value', settle: 'value', 'reference-index': 'value', 'slow-to': 'value', watchdog: 'value',
+    baseline: 'value', page: 'value', 'write-baseline': 'optional', 'fail-on': 'value',
+  },
+};
 const parseWidths = (s) => {
   if (s.includes(':')) { const [a, b, st] = s.split(':').map(Number); const out = []; for (let w = a; w <= b; w += st) out.push(w); return out; }
   return s.split(',').map(Number);
@@ -2569,7 +2573,8 @@ const parseWidths = (s) => {
 // /var is a link to /private/var, and an installed skill can sit behind one).
 const startedAsCommand = () => { try { return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); } catch { return false; } };
 if (startedAsCommand()) {
-  const args = parseArgs(process.argv.slice(2));
+  // An unknown flag ends here with exit 64: nothing is run and nothing written.
+  const args = readArgs(process.argv.slice(2), CLI);
   // Before anything else, and whatever follows it: --version runs nothing.
   if (args.version !== undefined) { console.log(versionLine()); process.exit(0); }
   if (args.validate) {
@@ -2579,22 +2584,26 @@ if (startedAsCommand()) {
     process.exit(0);
   }
   const url = args._[0];
-  if (!url) { console.error('Usage: node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]'); process.exit(2); }
+  if (!url) bad(CLI, 'no URL given');
   let system = null;
   if (args.system) {
     const r = loadSystem(args.system);
-    if (r.errors.length) { console.error(`${args.system} is not valid:\n  ` + r.errors.join('\n  ')); process.exit(1); }
+    // A system file that is not valid: nothing is judged, so the run is refused.
+    if (r.errors.length) { console.error(`${args.system} is not valid:\n  ` + r.errors.join('\n  ')); process.exit(EXIT.refused); }
     system = r.system;
   }
   const out = args.out || 'itten-report';
   let shard;
   if (args.shard) {
     const m = String(args.shard).match(/^(\d+)\/(\d+)$/);
-    if (!m || +m[1] < 1 || +m[1] > +m[2]) { console.error(`--shard takes i/n, as 2/3, not "${args.shard}"`); process.exit(2); }
+    if (!m || +m[1] < 1 || +m[1] > +m[2]) bad(CLI, `--shard takes i/n, as 2/3, not "${args.shard}"`);
     shard = { i: +m[1], n: +m[2] };
   }
-  if (args.fast && args.full) { console.error('--fast and --full are different tiers; give one'); process.exit(2); }
-  if (args.workers !== undefined && !(Number(args.workers) >= 1)) { console.error(`--workers takes a number of 1 or more, not "${args.workers}"`); process.exit(2); }
+  if (args.fast && args.full) bad(CLI, '--fast and --full are different tiers; give one');
+  if (args.workers !== undefined && !(Number(args.workers) >= 1)) bad(CLI, `--workers takes a number of 1 or more, not "${args.workers}"`);
+  // Errors and warnings fail a run unless --fail-on says otherwise; info never does.
+  const failOn = String(args['fail-on'] ?? 'warning').replace(/s$/, '');
+  if (!['error', 'warning', 'never'].includes(failOn)) bad(CLI, `--fail-on takes error, warning or never, not "${args['fail-on']}"`);
   const report = await inspect(url, {
     workers: args.workers !== undefined ? Number(args.workers) : undefined, shard,
     mergeFrom: typeof args.merge === 'string' ? args.merge.split(',').filter(Boolean) : undefined,
@@ -2615,7 +2624,7 @@ if (startedAsCommand()) {
     // The run judged nothing: say so in report.json, with the error, then fail.
     if (!shard) { mkdirSync(resolve(out), { recursive: true }); writeFileSync(join(resolve(out), 'report.json'), JSON.stringify(refusedReport(url, `the run failed: ${String(e.message || e).split('\n')[0]}`), null, 2)); }
     console.error(e.stack || String(e));
-    process.exit(1);
+    process.exit(EXIT.refused);
   });
   if (report.shard) process.exit(0);
   const s = report.summary;
@@ -2624,6 +2633,10 @@ if (startedAsCommand()) {
   const b = report.baseline;
   if (b) console.log(b.found ? `Against ${b.file}: ${b.new.length} new, ${b.fixed.length} fixed.` : `${b.file} has no entry for ${b.page}.`);
   if (args['write-baseline']) console.log(`Baseline written for this page to ${typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json'}.`);
-  // With --baseline, only new findings and findings that got worse fail the run.
-  if (failing(report, args['fail-on']).length) process.exit(1);
+  // The shared exit codes: 1 with a failing finding, complete or partial; 3
+  // for a partial run without one; 2 refused; 0 otherwise. With --baseline,
+  // only new findings and findings that got worse fail the run.
+  const nFailing = failing(report, failOn).length;
+  if (nFailing) console.log(`${nFailing} failing at --fail-on ${failOn}.`);
+  process.exit(exitCode(report.status, nFailing));
 }

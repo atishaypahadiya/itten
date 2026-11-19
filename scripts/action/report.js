@@ -15,6 +15,7 @@
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { render, marker } from './markdown.js';
+import { readArgs } from '../../inspector/usage.js';
 
 const env = (k, d = '') => (process.env[k] ?? '').trim() || d;
 
@@ -86,4 +87,7 @@ export async function main() {
   return result;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) await main();
+if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+  readArgs(process.argv.slice(2), { name: 'action/report.js', usage: 'node scripts/action/report.js (inputs from the environment)' });
+  await main();
+}

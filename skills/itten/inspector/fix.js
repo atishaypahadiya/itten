@@ -390,7 +390,7 @@ if (startedAsCommand()) {
   if (args.root && (!existsSync(args.root) || !statSync(args.root).isDirectory())) bad.push(`--root ${args.root} is not a folder`);
   if (bad.length) { console.error(`fix: ${bad.join('; ')}\n${usage}`); process.exit(64); }
   let system = null;
-  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(64); } system = r.system; }
+  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(2); } system = r.system; }
   const r = await fix(args._[0], { root: args.root, system, systemPath: args.system ?? null, out: args.out, apply: args.apply, fast: !!args.fast, engines: args['no-engines'] ? [] : undefined, dryRun: !!args['dry-run'] });
   const s = r.summary;
   console.log(`${s.kept} kept, ${s.reverted} reverted, ${s.guided} guided${s.planned ? `, ${s.planned} planned` : ''}. Fixes: ${join(args.out ?? 'itten-fix', 'fixes.json')}`);

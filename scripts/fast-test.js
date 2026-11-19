@@ -19,6 +19,7 @@ import { start } from './serve.js';
 import { inspect, loadSystem, FAST_CHECKS, FAST_WIDTHS } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
 import { failing } from '../inspector/baseline.js';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist', 'fast');
@@ -73,6 +74,7 @@ export async function run({ quiet = true } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'fast-test.js', usage: 'node scripts/fast-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.error(`fast: ${f}`);
   console.log(fails.length ? `${fails.length} failed.` : 'The fast tier catches its planted defects, reports nothing else, and runs in under 30 s.');

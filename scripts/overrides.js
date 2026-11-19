@@ -14,6 +14,7 @@ import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate } from './lib/schema.js';
 import { rules } from './lib/rules.js';
+import { readArgs, bad as badUsage } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SCHEMA = JSON.parse(readFileSync(join(ROOT, 'schema', 'overrides.schema.json'), 'utf8'));
@@ -79,13 +80,11 @@ export function checkFiles(json, md) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
+  const SPEC = { name: 'overrides.js', usage: 'node itten/scripts/overrides.js render|validate|check [--in itten.overrides.json] [--out docs/itten-overrides.md]', flags: { in: 'value', out: 'value' }, positional: [1, 1] };
+  const cmd = readArgs(args, SPEC)._[0];
   const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
-  const cmd = args[0];
   const json = opt('--in', 'itten.overrides.json'), md = opt('--out', 'docs/itten-overrides.md');
-  if (!['render', 'validate', 'check'].includes(cmd)) {
-    console.error('Usage: node itten/scripts/overrides.js render|validate|check [--in itten.overrides.json] [--out docs/itten-overrides.md]');
-    process.exit(2);
-  }
+  if (!['render', 'validate', 'check'].includes(cmd)) badUsage(SPEC, `"${cmd}" is not render, validate or check`);
   if (!existsSync(json)) { console.error(`${json} not found.`); process.exit(1); }
   if (cmd === 'check') {
     const r = checkFiles(json, md);

@@ -32,6 +32,7 @@ import { failing } from '../../inspector/baseline.js';
 import { view, findingsOf } from '../../inspector/finding.js';
 import { movingTiles } from '../../inspector/report-html.js';
 import { checkFiles } from '../overrides.js';
+import { readArgs } from '../../inspector/usage.js';
 
 const env = (k, d = '') => (process.env[k] ?? '').trim() || d;
 const problems = [];
@@ -173,6 +174,8 @@ async function main(out) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+  // Its inputs come from the environment (INPUT_*); it takes no arguments.
+  readArgs(process.argv.slice(2), { name: 'action/run.js', usage: 'node scripts/action/run.js (inputs from INPUT_* in the environment)' });
   const dir = out();
   mkdirSync(dir, { recursive: true });
   let summary;

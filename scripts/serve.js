@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, normalize, extname, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readArgs } from '../inspector/usage.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = {
@@ -45,6 +46,7 @@ export function start(port = 4173, dir = null) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'serve.js', usage: 'node scripts/serve.js [port] [dir]', positional: [0, 2] });
   const port = Number(process.argv[2] ?? process.env.PORT ?? 4173);
   await start(port, process.argv[3] ?? null);
   console.log(`Serving at http://127.0.0.1:${port}/`);

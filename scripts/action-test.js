@@ -19,6 +19,7 @@ import { start } from './serve.js';
 import { brokenWordMessage } from '../inspector/inspect.js';
 import { renderHtml } from '../inspector/report-html.js';
 import { compareVersions } from './compare-versions.mjs';
+import { readArgs } from '../inspector/usage.js';
 
 const issue = (id, check, key, severity, sel = '#a') => ({ id, fingerprint: `${check}|${key}`, check, title: check, rule: '', severity, message: `${check} message. More.`, elements: [{ sel }] });
 const reportOf = (url, issues) => ({ url, date: '2026-11-15T00:00:00Z', version: 'test', system: 'itten.system.json', sweep: { widths: '320, 768, 1440, 1920' }, issues });
@@ -224,6 +225,7 @@ export async function run() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  readArgs(process.argv.slice(2), { name: 'action-test.js', usage: 'node scripts/action-test.js' });
   const fails = await run();
   for (const f of fails) console.log(`FAIL  ${f}`);
   console.log(fails.length ? `\n${fails.length} failure(s).` : 'Action tests passed.');
