@@ -25,6 +25,7 @@ import { readBaseline, writeBaseline, compare, failing } from './baseline.js';
 import { container } from './group.js';
 import { toFinding, pagePath, REPORT } from './finding.js';
 import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
+import { take as takeLock } from './lock.js';
 import { validate } from '../scripts/lib/schema.js';
 import { versionLine } from './version.js';
 
@@ -676,6 +677,9 @@ export async function inspect(url, o = {}) {
 
   // Phase 1, alone. The benchmark has its own limit: a browser that cannot
   // run it cannot run anything, and the run stops with an error.
+  // The timing lock is held while anything is timed: here until the watch
+  // load ends, and again for the motion pass (inspector/lock.js).
+  let unlock = o.lock === false ? () => {} : takeLock('benchmark', estimate(timings, pageKey, 'bench').s + (o.mergeFrom ? 0 : estimate(timings, pageKey, 'watch').s));
   let t0 = Date.now();
   const benchDone = phase('benchmark');
   const bench = await within(TIMEOUTS.check * 1000, 'opening the benchmark page', () => browser.newPage());
@@ -688,7 +692,7 @@ export async function inspect(url, o = {}) {
     const cdp = await bench.context().newCDPSession(bench);
     slowed = await calibrate(bench, cdp, o.slowTo);
   }
-  const T = settleTiming(slowed ? slowed.slowedIndex : await within(TIMEOUTS.check * 1000, 'the benchmark', async () => Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex))));
+  const T = settleTiming(slowed ? slowed.slowedIndex : await within(TIMEOUTS.check * 1000, 'the benchmark', async () => Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex))).catch((e) => { unlock(); throw e; }));
   await bench.close();
   benchDone({ others: browser.contexts().length });
   took.push(['bench', (Date.now() - t0) / 1000]);
@@ -884,6 +888,7 @@ export async function inspect(url, o = {}) {
     // ------------------------------------------- phases 1 and 2: measure
     let plan, results, shards = null;
     if (merging) {
+      unlock();
       ({ plan, results, shards, watched } = readShards(o.mergeFrom, url));
       widths = plan.widths;
       log(`Merging ${plural(shards.length, 'shard')}: ${plural(plan.jobs.length, 'job')}`);
@@ -908,6 +913,7 @@ export async function inspect(url, o = {}) {
       } finally { await closeQuietly(wctx); }
       watched.failed = [...watchFailed.values()];
       watchDone();
+      unlock();
       took.push(['watch', (Date.now() - t0) / 1000]);
       log(`  watched ${(watched.watched / 1000).toFixed(1)} s: ${watched.still === false ? 'never still' : `still at ${((watched.quietAt ?? 0) / 1000).toFixed(1)} s`}${watched.late.length ? `, ${plural(watched.late.length, 'element')} added after, the last at ${(watched.until / 1000).toFixed(1)} s` : ''}`);
 
@@ -1220,6 +1226,7 @@ export async function inspect(url, o = {}) {
     // closed first.
     for (const c of browser.contexts()) await closeQuietly(c);
     t0 = Date.now();
+    if (passes.has('motion') && o.lock !== false) unlock = takeLock('motion', estimate(timings, pageKey, 'motion').s);
     const motionDone = phase('motion');
     const othersAtMotion = browser.contexts().length;
     const motionMerge = async (page, raw, pass) => {
@@ -1244,6 +1251,7 @@ export async function inspect(url, o = {}) {
       for (const c of browser.contexts()) await closeQuietly(c);
       motion = null;
     }
+    unlock();
     motionDone({ others: othersAtMotion });
     clock.motion = (Date.now() - t0) / 1000;
     took.push(['motion', clock.motion]);
@@ -1352,6 +1360,7 @@ export async function inspect(url, o = {}) {
     log(`Done in ${duration((Date.now() - clock.start) / 1000)}: alone ${duration(took.filter(([k]) => ['bench', 'watch', 'scan'].includes(k)).reduce((n, [, s]) => n + s, 0))}, jobs ${clock.jobs != null ? duration(clock.jobs) : 'merged'}, crops ${duration(clock.crops)}, motion ${duration(clock.motion)}.`);
     return report;
   } finally {
+    unlock();
     dog?.stop();
     for (const p of others.values()) { const e = await p; await e.b?.close().catch(() => {}); }
     await browser.close();

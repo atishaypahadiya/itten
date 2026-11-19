@@ -100,6 +100,43 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
 
+## The timing lock
+
+While ITTEN times anything, it holds a lock file, so a tool that generates load on the same machine (ERLANG) can wait: load takes CPU from the browser being timed and skews the benchmark, the settle windows and frame timing. Format `itten-timing-lock/1`; the code is `inspector/lock.js`.
+
+**Where.** One file per ITTEN process, `timing-<pid>.json`, in the first of:
+
+1. `$ITTEN_LOCK_DIR`
+2. `$XDG_STATE_HOME/itten/locks`
+3. `$HOME/.local/state/itten/locks`
+
+ITTEN makes the directory with mode 0700 and the file with mode 0600. The file is written to `timing-<pid>.json.tmp` and renamed, so a reader never sees half a file. Only names that match `timing-<digits>.json` are locks; a reader ignores everything else in the directory.
+
+**Contents.** One JSON object with exactly these fields:
+
+| Field | Value |
+|---|---|
+| `format` | `"itten-timing-lock/1"` |
+| `pid` | The ITTEN process's id, a whole number; the same as in the file's name. |
+| `phase` | `"benchmark"` (the CPU benchmark and the watch load, before the jobs) or `"motion"` (the motion and frame-timing pass, after them). |
+| `taken` | When the lock was taken, ISO 8601 in UTC with milliseconds. |
+| `expires` | When it lapses, in the same form: the phase's expected length from earlier runs plus 60 s, and never more than 15 minutes after `taken`. |
+| `project` | The directory the run was started in, an absolute path. |
+
+**When.** The lock exists only during the two timed phases. No lock is held while the parallel jobs, the breakpoint scan or the crops run. While a phase runs past its expected length the lock is renewed (`expires` moved to 60 s from now, the file rewritten by rename), at most every 30 s, up to the 15-minute limit. It is removed when the phase ends, when the process exits, and on `SIGINT` and `SIGTERM` (the process then dies of the signal as it would have). A process killed with `SIGKILL` leaves its file; that is what expiry and the pid are for.
+
+**How a reader treats a lock.** A reader only reads; it never writes, renews or deletes a lock.
+
+- **Active**: the file parses, its `format` is `itten-timing-lock/1`, the process `pid` is alive on this machine, and the time is before `expires`.
+- **Active, too**: a file that cannot be read or parsed, has another `format`, or lacks a whole-number `pid` or a readable `expires`. A reader that cannot tell assumes timing is under way.
+- **Stale**: the process `pid` is not alive, or the time is at or past `expires`. A stale lock is ignored and left in place.
+
+**What the other tool does.** While any lock in the directory is active it generates no load on this machine: it waits and reads again (once a second is enough; a phase lasts seconds to a few minutes), or stops and says which lock held it. It reads the directory again immediately before it starts generating load. A directory that does not exist holds no locks.
+
+**What ITTEN does with others' locks.** Each time it takes its lock, ITTEN deletes stale locks in the directory: a dead pid, or past expiry. It never deletes a live one or another live process's. A file it cannot read is deleted only when the pid in its name is dead or the file was last written more than 15 minutes ago. Two ITTEN runs on one machine each hold and remove only their own file. A lock that cannot be written (a read-only directory) never fails a run; the run goes on without one.
+
+ITTEN does not wait for anything: the lock says when ITTEN is timing, and it is for the load generator to keep off. The inspector's `lock: false` option (tests only) runs without it.
+
 ## Fixes
 
 The inspector changes no files, and `finding/1` has no field for a fix. Fixes come from a separate command:
