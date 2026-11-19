@@ -29,7 +29,7 @@ Where two of them conflict, security floors come first, then accessibility floor
 | `docs/templates/` | Text the projects of the set share word for word: `part-of-a-set.md`, the README section above. |
 | `skills/itten/` | ITTEN as an Agent Skill: `SKILL.md`, the skill's `scripts/setup.sh`, and copies of the protocol, inspector, schemas and lockfile, assembled by `scripts/skill.js`. Installed with `gh skill install` (see `ITTEN.md`). |
 | `inspector/` | `inspect.js` and its parts. Opens a page in Chromium and measures it across widths, doubled text size, light and dark, and two pixel ratios, then checks the layout again in WebKit and Firefox. Writes `report.json`, `report.html` and zoomed crops. |
-| `fixtures/` | A test print with one planted defect per inspector check, and its clean twin. |
+| `fixtures/` | A test print with one planted defect per inspector check, and its clean twin; `fixtures/fix/`, a page per class of mechanical fix with its hand-written fixed twin. |
 | `reference/` | The rules corpus: 131 rules with IDs, strengths and evidence levels. The protocol cites it. |
 | `library/` | Earlier research on fashion colourways, typefaces, icons and texture, with the font and icon files. Use any of it only when a project's brief asks for it. |
 | `research/baselines/` | Inspector summaries of real pages, kept for comparison. |
@@ -49,6 +49,7 @@ npm run check:full               # the same with the 41-width fixture sweep
 npm run fixtures                 # the fixture test alone, with a per-defect table
 npm run inspect -- <url> [--system itten.system.json] [--out dir] [--full]
 npm run inspect -- --version      # the version and the commit it runs from
+npm run fix -- <url> --root <dir>  # mechanical fixes, each checked again (docs/CONTRACT.md, Fixes)
 npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 ```
 

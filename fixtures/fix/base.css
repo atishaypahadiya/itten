@@ -1,0 +1,30 @@
+/* Shared by every fix fixture, before and twin. Every value comes from
+   fixtures/itten.system.json. The test copies this file, and the text font
+   into fonts/, beside the fixture folders it fixes. */
+
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url("fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: block;
+}
+
+:root {
+  color-scheme: light dark;
+  --ground: light-dark(#FFFFFF, #141414);
+  --text: light-dark(#1A1A1A, #EDEDED);
+  --tint: light-dark(#F0F0F0, #262626);
+}
+
+* { box-sizing: border-box; }
+html, body, h1, h2, p { margin: 0; padding: 0; }
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: "Atkinson Hyperlegible Next", sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+main { max-width: 720px; margin: 0 auto; padding: 4rem 1rem; display: flex; flex-direction: column; gap: 2rem; }
+h1 { font-size: 1.5rem; line-height: 2rem; font-weight: 600; text-wrap: balance; }
+p { text-wrap: pretty; }

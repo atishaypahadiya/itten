@@ -1,0 +1,3 @@
+/* The byline is as wide as its first item, which is kept whole, so it breaks at every width. */
+.byline { width: min-content; }
+.byline .whole { white-space: nowrap; }

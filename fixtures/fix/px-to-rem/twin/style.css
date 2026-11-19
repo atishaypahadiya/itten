@@ -1,0 +1,3 @@
+/* Planted: padding and a font size in px, which stay put when the reader doubles the text size. */
+.card { padding: 1.5rem; background: var(--tint); }
+.caption { font-size: 0.875rem; line-height: 1.25rem; }

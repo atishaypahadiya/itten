@@ -1,0 +1,3 @@
+/* Planted: the pulse loops with no prefers-reduced-motion guard. */
+.pulse { width: 6rem; height: 1.5rem; background: var(--tint); animation: pulse 1000ms linear infinite alternate; }
+@keyframes pulse { to { opacity: 0.6; } }

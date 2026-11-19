@@ -1,0 +1,3 @@
+/* Planted: 0.875em inside 1.125em, 15.75 px; the nearest step is 16 px. */
+.box { font-size: 1.125em; }
+.box .note { font-size: 0.875em; line-height: 1.5rem; }

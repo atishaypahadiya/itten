@@ -100,6 +100,31 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so screenshots wait on frames the CPU draws. The screenshot steps (contrast against rendered pixels, crops) and the motion pass run out of their limits, and the run is `partial`, or `refused` if a page load times out. On HundredLives on a 4-CPU GitHub runner, that happened with 4 workers (compare-versions run 44198069706) and again with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Such a page cannot be inspected whole on a machine without a GPU until captures freeze the page (planned for 0.5).
 
-## Suggested fixes
+## Fixes
 
-Findings carry no fix. `finding/1` has no field for one, and the inspector changes no files. Some messages name the measured alternative in prose, for example "With hyphens: auto the deepest hole would be 12%" or "Share the edge, or log the optical offset". Mechanical fixes, written to the project's source and checked again before they are kept, are planned for 0.4 (`itten fix`).
+The inspector changes no files, and `finding/1` has no field for a fix. Fixes come from a separate command:
+
+```sh
+node <itten>/inspector/fix.js <url> --root <dir> [--system itten.system.json] [--out itten-fix] [--fast] [--no-engines] [--dry-run] [--apply fixes.json]
+```
+
+`--root` is the folder the server serves at the URL's root; a URL's path names a file under it. The command inspects the page (quick mode, or the fast tier with `--fast`), plans a fix for each finding, and writes `fixes.json` in `--out`, with the inspection's reports beside it (`before/`, and `recheck/<n>/` for each re-check).
+
+- **Auto fixes** are written to the project's files, one at a time, and only to a file that is the source of truth: the file under `--root` holds exactly the text the server sends, git does not ignore it, it has no source map, and it is not in a build output folder (`dist`, `build`, `out`, `.next`, `.nuxt`, `.svelte-kit`, `_site`, `.output`). Declarations are found through the DevTools protocol, which gives each one's range in the served text. The classes: px spacing and font sizes to rem (`spacing-unit`, `text-resize`); a size compounded from `em` or `%` to the nearest step of the type scale (`type-scale`); a no-break space before a separator that begins a line (`line-start`, in the page's HTML file); `text-wrap: balance` or `pretty` where the check measured an improvement; and a `prefers-reduced-motion: reduce` block that stops an animation or transition, when the system's `reducedMotion` is `instant` or `none-animated`.
+- **Every auto fix is checked again.** The page is inspected with only the passes and at only the widths its finding was seen in, before and after the edit. The fix is kept when the finding is gone from the elements it changed and no finding is there that was not before; otherwise the edit is reverted, and `fixes.json` says what the re-check found (`recheck.cleared`, `recheck.new`). A re-check that is not `complete` reverts the fix too.
+- **Guided fixes** write nothing: the finding's locations (file, line and column where the value comes from a stylesheet, otherwise the element's selector) and a note. A value off a scale and a duration or easing off the system are guided until the owner decides how they are fixed; so is any fix whose source is not the source of truth.
+- **`--apply <file>`** checks fixes written elsewhere the same way, `{ "fixes": [{ "finding": { "check", "fingerprint" }, "note", "edits": [...] }] }`, and reverts any that fail.
+
+An edit is one of:
+
+| Shape | Effect |
+|---|---|
+| `{ "file", "line", "column", "length", "replace" }` | Replaces `length` characters at `line`:`column` with `replace`; a length of 0 inserts. |
+| `{ "create": file, "content" }` | Makes a file that must not exist. |
+| `{ "remove": file }` | Deletes a file. |
+
+`file` is relative to `--root` and never outside it. `line` and `column` are 1-based; `column` and `length` count UTF-16 code units, as JavaScript strings do. A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
+
+Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
+
+Some inspector messages also name the measured alternative in prose, for example "With hyphens: auto the deepest hole would be 12%".

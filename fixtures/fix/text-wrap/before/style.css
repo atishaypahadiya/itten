@@ -1,0 +1,3 @@
+/* Planted: the heading has no text-wrap of its own, and the paragraph is set back to plain wrapping. */
+h2 { max-width: 240px; font-size: 1.5rem; line-height: 2rem; font-weight: 600; }
+.lead { max-width: 240px; text-wrap: wrap; }

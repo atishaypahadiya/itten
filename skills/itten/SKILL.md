@@ -68,6 +68,19 @@ file, follow `protocol/01-teardown.md` and `protocol/02-system.md`.
 - Look at a finding's crops before changing anything: the crop shows what was measured.
 - A change is done only when the page has been inspected again and the finding is gone, with nothing new.
 
+## Fixing
+
+`inspector/fix.js` writes the fixes that have one right answer, and checks each one again before keeping it:
+
+```sh
+node <this folder>/inspector/fix.js http://127.0.0.1:<port>/<page> --root <the folder the server serves> --system itten.system.json --out itten-fix
+```
+
+It edits only source files (never build output), one fix at a time, and reverts any fix that leaves its finding or
+brings a new one. Everything else in `itten-fix/fixes.json` is a guided fix: where the value comes from, and a note.
+Make those changes yourself, or ask the user where the note says a choice is needed. A fix you write can be checked
+the same way with `--apply <file>` (see the comment at the top of `fix.js`).
+
 ## Rules
 
 - Measure; do not judge by eye. Every value in a fix comes from the system file or from the project's brief.

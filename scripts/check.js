@@ -31,6 +31,9 @@
 // - the fast tier (--fast) misses a planted layout or line defect on the
 //   test print, reports anything else or anything on the clean twin, or
 //   takes 30 s or more on either (scripts/fast-test.js);
+// - itten fix leaves a fixture different from its hand-written twin, or the
+//   fixed page reports anything, or a second run changes something; keeps a
+//   planted failing fix; or edits a page in build output (scripts/fix-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -396,6 +399,15 @@ try {
   for (const f of await fastTest()) fail('Fast tier', f);
 } catch (e) {
   fail('Fast tier', `the fast-tier test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// -------------------------------------------------------------------- Fix
+// itten fix on fixtures/fix (scripts/fix-test.js).
+try {
+  const { run: fixTest } = await import('./fix-test.js');
+  for (const f of await fixTest()) fail('Fix', f);
+} catch (e) {
+  fail('Fix', `the fix test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------ Skill
