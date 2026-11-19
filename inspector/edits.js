@@ -20,7 +20,7 @@
 // before anything is written. It returns an undo record, and revert() puts
 // every file back as it was.
 
-import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync, realpathSync, lstatSync } from 'node:fs';
 import { dirname, resolve, relative, isAbsolute, sep, join } from 'node:path';
 
 export class EditError extends Error {}
@@ -56,12 +56,23 @@ export function inside(root, file) {
   const full = resolve(root, file);
   const rel = relative(resolve(root), full);
   if (rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..')) throw new EditError(`"${file}" is outside the project root`);
-  // Through symbolic links too: the deepest part of the path that exists,
-  // resolved, must still be inside the resolved root.
-  let real = full, rest = [];
-  while (!existsSync(real) && dirname(real) !== real) { rest.unshift(real.slice(dirname(real).length + 1)); real = dirname(real); }
-  const realRoot = realpathSync(resolve(root)), realRel = relative(realRoot, join(realpathSync(real), ...rest));
-  if (realRel.startsWith('..') || isAbsolute(realRel)) throw new EditError(`"${file}" reaches outside the project root through a symbolic link`);
+  // Through symbolic links too. Each part of the path that exists is looked
+  // at itself (lstat, which does not follow a link): a link must resolve to
+  // somewhere inside the resolved root, and a link that points at nothing is
+  // refused, since writing through it would make its target.
+  const realRoot = realpathSync(resolve(root));
+  const within = (p) => { const r = relative(realRoot, p); return !r.startsWith('..') && !isAbsolute(r); };
+  let cur = realRoot;
+  for (const part of rel.split(sep)) {
+    const p = join(cur, part);
+    let st;
+    try { st = lstatSync(p); } catch { break; }   // the rest does not exist yet
+    if (!st.isSymbolicLink()) { cur = p; continue; }
+    let target;
+    try { target = realpathSync(p); } catch { throw new EditError(`"${file}" goes through a symbolic link that points at nothing`); }
+    if (!within(target)) throw new EditError(`"${file}" reaches outside the project root through a symbolic link`);
+    cur = target;
+  }
   return full;
 }
 

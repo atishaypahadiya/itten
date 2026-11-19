@@ -59,6 +59,17 @@ export function editTests() {
       refused('removing a file through a symbolic link out of the root', [{ remove: 'link/o.css' }]);
       if (readFileSync(join(outside, 'o.css'), 'utf8') !== 'o { p: 1px; }\n' || existsSync(join(outside, 'new'))) fails.push('edits: a file outside the root was changed through a symbolic link');
       rmSync(join(dir, 'link'));
+      // A link that points at nothing, outside the root: creating through it would make its target.
+      symlinkSync(join(outside, 'not-there.css'), join(dir, 'dangling.css'));
+      symlinkSync(join(outside, 'no-dir'), join(dir, 'dangling-dir'));
+      refused('creating a file at a symbolic link that points at nothing', [{ create: 'dangling.css', content: 'x' }]);
+      refused('creating a file under a symbolic link that points at nothing', [{ create: 'dangling-dir/n.css', content: 'x' }]);
+      if (existsSync(join(outside, 'not-there.css')) || existsSync(join(outside, 'no-dir'))) fails.push('edits: a file outside the root was made through a symbolic link that pointed at nothing');
+      rmSync(join(dir, 'dangling.css')); rmSync(join(dir, 'dangling-dir'));
+      // A link that stays inside the root is followed.
+      symlinkSync(join(dir, 'a.css'), join(dir, 'inside.css'));
+      try { apply(dir, [{ file: 'inside.css', line: 1, column: 1, length: 0, replace: '' }]); } catch (e) { fails.push(`edits: a symbolic link that stays inside the root is refused: ${e.message}`); }
+      rmSync(join(dir, 'inside.css'));
     } finally { rmSync(outside, { recursive: true, force: true }); }
     // A byte-order mark is not counted, and a line ends at \n only.
     writeFileSync(join(dir, 'bom.css'), '\uFEFFa { b: 1px; }\r\nc { d: 2px; }\r\n');
