@@ -3,6 +3,10 @@
 # planted defect caught, nothing else reported, nothing on the clean twins.
 name: Self-test
 
+# No path or branch filter: main's required checks (checks, fixtures) must
+# report on every commit, and an unfiltered push covers main and v* tags.
+# The rule shared with the other specialists is "at least every non-Markdown
+# change"; this is more (scripts/ci-test.js holds it).
 on:
   push:
   pull_request:
@@ -74,3 +78,5 @@ jobs:
         run: node scripts/action-test.js
       - name: The skill matches the repository and runs from a copy
         run: node scripts/skill-test.js
+      - name: The workflow runs on every push and pull request
+        run: node scripts/ci-test.js

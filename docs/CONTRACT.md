@@ -100,6 +100,12 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
 
+## Continuous integration
+
+The rule shared with KERCKHOFFS and ERLANG: a specialist's own tests run at least on every non-Markdown change, that is on every push to `main` and every pull request that changes anything but Markdown, and on any pushed `v*` tag.
+
+ITTEN runs its self-test on every push and every pull request, with no path filter. `main` requires the `checks` and `fixtures` jobs, and a required check must report on every commit: a workflow filtered out by `paths-ignore` reports nothing, so a Markdown-only pull request could never merge. `scripts/ci-test.js` fails if a filter is added.
+
 ## The server's health
 
 A run that measures a page the server failed to send measures an error state. The first load of a run (the watch load) says what the server sends: the requests it answered, and the ones that failed there too, which are the page's own (a missing file fails on every load, and is reported as `page-load`).
@@ -185,7 +191,14 @@ An edit is one of:
 | `{ "create": file, "content" }` | Makes a file that must not exist. |
 | `{ "remove": file }` | Deletes a file. |
 
-**The edit-unit rule, shared with KERCKHOFFS and ERLANG.** `file` is relative to `--root` and never outside it. `line` and `column` are 1-based; `column` and `length` count UTF-16 code units, as JavaScript strings do. A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
+**The edit-unit rule, shared with KERCKHOFFS and ERLANG.**
+
+- `file` is relative to the root (`--root`), with `/` between its parts. A path that is absolute, that leaves the root (`..`), or that reaches outside it through a symbolic link is refused.
+- `line` and `column` are 1-based.
+- `column` and `length` count UTF-16 code units, as JavaScript strings do.
+- A line ends at `\n` and nowhere else. The `\r` of a `\r\n` pair is the last character of its line.
+- A byte-order mark at the start of a file is not counted: line 1, column 1 is the character after it, and an edit never removes it.
+- A set of edits is written all or none: overlapping edits, a position past the end of a line or file, or a create over an existing file are refused before anything is written.
 
 Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
 

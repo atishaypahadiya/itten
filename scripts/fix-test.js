@@ -11,7 +11,8 @@
 // ignores, is never edited: every fix there is guided.
 // Usage: node scripts/fix-test.js. Exports run() for scripts/check.js.
 
-import { mkdtempSync, mkdirSync, cpSync, readFileSync, readdirSync, statSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, cpSync, readFileSync, readdirSync, statSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
+import { notSource } from '../inspector/locate.js';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +48,25 @@ export function editTests() {
     refused('a column past the end of a line', [{ file: 'a.css', line: 1, column: 40, length: 0, replace: 'x' }]);
     refused('a line past the end of the file', [{ file: 'a.css', line: 9, column: 1, length: 0, replace: 'x' }]);
     refused('a file outside the root', [{ file: '../a.css', line: 1, column: 1, length: 0, replace: 'x' }]);
+    refused('an absolute path', [{ file: join(dir, 'a.css'), line: 1, column: 1, length: 0, replace: 'x' }]);
+    // Through a symbolic link: a folder in the root that points outside it.
+    const outside = mkdtempSync(join(tmpdir(), 'itten-outside-'));
+    try {
+      writeFileSync(join(outside, 'o.css'), 'o { p: 1px; }\n');
+      symlinkSync(outside, join(dir, 'link'));
+      refused('a file reached through a symbolic link out of the root', [{ file: 'link/o.css', line: 1, column: 8, length: 3, replace: 'x' }]);
+      refused('creating a file through a symbolic link out of the root', [{ create: 'link/new/n.css', content: 'x' }]);
+      refused('removing a file through a symbolic link out of the root', [{ remove: 'link/o.css' }]);
+      if (readFileSync(join(outside, 'o.css'), 'utf8') !== 'o { p: 1px; }\n' || existsSync(join(outside, 'new'))) fails.push('edits: a file outside the root was changed through a symbolic link');
+      rmSync(join(dir, 'link'));
+    } finally { rmSync(outside, { recursive: true, force: true }); }
+    // A byte-order mark is not counted, and a line ends at \n only.
+    writeFileSync(join(dir, 'bom.css'), '\uFEFFa { b: 1px; }\r\nc { d: 2px; }\r\n');
+    apply(dir, [{ file: 'bom.css', line: 1, column: 8, length: 3, replace: '1rem' }, { file: 'bom.css', line: 2, column: 8, length: 3, replace: '2rem' }]);
+    if (readFileSync(join(dir, 'bom.css'), 'utf8') !== '\uFEFFa { b: 1rem; }\r\nc { d: 2rem; }\r\n') fails.push(`edits: positions in a file with a byte-order mark and \\r\\n line ends are off: ${JSON.stringify(readFileSync(join(dir, 'bom.css'), 'utf8'))}`);
+    const crlf = 'ab\r\ncd';
+    if (offsetOf(crlf, 1, 3) !== 2 || offsetOf(crlf, 2, 1) !== 4 || positionOf('\uFEFFab', 1).column !== 1 || offsetOf('\uFEFFab', 1, 1) !== 1) fails.push('edits: \\r is not the last character of its line, or a byte-order mark is counted');
+    if (notSource(dir, 'bom.css', readFileSync(join(dir, 'bom.css'), 'utf8').slice(1)) !== null) fails.push('locate: a file with a byte-order mark is not taken as the text the browser decodes from it');
     refused('creating a file that exists', [{ create: 'a.css', content: '' }]);
     refused('removing a file that does not exist', [{ remove: 'b.css' }]);
     if (readFileSync(join(dir, 'a.css'), 'utf8') !== 'a { b: 1px; }\nc { d: 2px; }\n') fails.push('edits: a refused set wrote something');

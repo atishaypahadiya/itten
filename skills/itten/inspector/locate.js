@@ -50,8 +50,9 @@ const BUILD_DIRS = new Set(['dist', 'build', 'out', '.next', '.nuxt', '.svelte-k
 export function notSource(root, file, served) {
   const p = join(root, file);
   if (!existsSync(p) || !statSync(p).isFile()) return `no file at ${file} under the project root`;
+  // The browser drops a byte-order mark as it decodes; positions do not count it either (edits.js).
   const text = readFileSync(p, 'utf8');
-  if (text !== served) return `${file} on disk is not the text the server sends, so a build step makes what is served`;
+  if (text !== served && text.replace(/^\uFEFF/, '') !== served.replace(/^\uFEFF/, '')) return `${file} on disk is not the text the server sends, so a build step makes what is served`;
   if (/[#@]\s*sourceMappingURL=/.test(text)) return `${file} has a source map, so it is built from another file`;
   if (file.split('/').some((d) => BUILD_DIRS.has(d))) return `${file} is in a build output folder`;
   try {

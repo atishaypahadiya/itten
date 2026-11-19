@@ -9,22 +9,29 @@
 // `file` is relative to the project root. `line` and `column` are 1-based;
 // `column` and `length` count UTF-16 code units, as JavaScript strings and
 // the DevTools protocol do. A length of 0 inserts; an empty `replace`
-// deletes.
+// deletes. A line ends at \n and nowhere else: the \r of a \r\n pair is the
+// last character of its line. A byte-order mark at the start of the file is
+// not counted: line 1, column 1 is the character after it. A path that is
+// absolute, leaves the root, or reaches outside it through a symbolic link
+// is refused. (The edit-unit rule, shared with KERCKHOFFS and ERLANG.)
 //
 // apply() writes a set of edits all or none: edits that overlap, point past
 // the end of a line or the file, or create a file that exists are refused
 // before anything is written. It returns an undo record, and revert() puts
 // every file back as it was.
 
-import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
-import { dirname, resolve, relative, isAbsolute, sep } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, resolve, relative, isAbsolute, sep, join } from 'node:path';
 
 export class EditError extends Error {}
+
+// 1 where the text begins with a byte-order mark, which no position counts.
+const bom = (text) => (text.charCodeAt(0) === 0xFEFF ? 1 : 0);
 
 // The offset in text of a 1-based line and column.
 export function offsetOf(text, line, column) {
   if (!Number.isInteger(line) || !Number.isInteger(column) || line < 1 || column < 1) throw new EditError(`line ${line}, column ${column} is not a position (both are 1-based whole numbers)`);
-  let at = 0;
+  let at = bom(text);
   for (let l = 1; l < line; l++) {
     const nl = text.indexOf('\n', at);
     if (nl < 0) throw new EditError(`line ${line} is past the end of the file (${l} lines)`);
@@ -38,7 +45,7 @@ export function offsetOf(text, line, column) {
 
 // The 1-based line and column of an offset in text.
 export function positionOf(text, offset) {
-  let line = 1, start = 0;
+  let line = 1, start = bom(text);
   for (let i = text.indexOf('\n'); i >= 0 && i < offset; i = text.indexOf('\n', i + 1)) { line++; start = i + 1; }
   return { line, column: offset - start + 1 };
 }
@@ -49,6 +56,12 @@ export function inside(root, file) {
   const full = resolve(root, file);
   const rel = relative(resolve(root), full);
   if (rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..')) throw new EditError(`"${file}" is outside the project root`);
+  // Through symbolic links too: the deepest part of the path that exists,
+  // resolved, must still be inside the resolved root.
+  let real = full, rest = [];
+  while (!existsSync(real) && dirname(real) !== real) { rest.unshift(real.slice(dirname(real).length + 1)); real = dirname(real); }
+  const realRoot = realpathSync(resolve(root)), realRel = relative(realRoot, join(realpathSync(real), ...rest));
+  if (realRel.startsWith('..') || isAbsolute(realRel)) throw new EditError(`"${file}" reaches outside the project root through a symbolic link`);
   return full;
 }
 

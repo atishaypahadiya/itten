@@ -441,6 +441,15 @@ try {
   fail('Lock', `the lock test could not run: ${e.message.split('\n')[0]}`);
 }
 
+// --------------------------------------------------------------------- CI
+// The self-test workflow's triggers (scripts/ci-test.js).
+try {
+  const { run: ciTest } = await import('./ci-test.js');
+  for (const f of ciTest()) fail('CI', f);
+} catch (e) {
+  fail('CI', `the CI test could not run: ${e.message.split('\n')[0]}`);
+}
+
 // ----------------------------------------------------------------- Health
 // The page server's health (scripts/health-test.js).
 try {
