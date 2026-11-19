@@ -13,7 +13,7 @@ Work through `docs/teardown.md` category by category. For each value you carry i
 1. List every gap the teardown measured, with how often it repeats.
 2. Find the base unit: the largest value that divides most of the repeated gaps within the measurement's uncertainty. If the inspiration has no clear unit, use 4 px (LAY-05).
 3. Write the scale as the repeated gaps, rounded to the unit, in ascending order. Six to twelve steps is typical. Add a step only when the teardown shows a gap the existing steps cannot express.
-4. Check the ratio between the gap separating groups and the gap inside them. Record it as `groupRatioMin`; it must be at least 2 unless the teardown shows the inspiration deliberately does otherwise (LAY-06).
+4. Check the ratio between the gap separating groups and the gap inside them. Record it as `groupRatioMin`; it must be at least 2 unless the teardown shows the inspiration deliberately does otherwise (LAY-06). Optionally record `tolerance` in px, on `spacing` and on `type`: how far off a step a value may be for `itten fix` to move it there, when only one step is that near (1 px when absent; docs/CONTRACT.md, Fixes).
 5. Where the inspiration's side margins or section gaps grow with the window, declare each such range in `spacing.fluid`, as a fluid type step is declared: a name, `min` at and below `minWidth`, `max` at and above `maxWidth`. Write it as `clamp(min, a + b·vw, max)` with the limits in rem (the same arithmetic as step 6 under Type). The inspector accepts a margin, padding or gap where a declared range puts it at that width, within 0.5 px, and reports any other value that follows the viewport.
 6. Write every step in rem in the build (24 px is `1.5rem`), so spacing follows the browser's text size (CRF-30).
 

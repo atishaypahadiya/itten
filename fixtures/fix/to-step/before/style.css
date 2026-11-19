@@ -1,0 +1,5 @@
+/* Planted: 13 px padding; only 12 is within 1 px, so it is moved there. 17 px text; only 16 is within 1 px. */
+.card { padding: 0.8125rem; background: var(--tint); }
+.lede { font-size: 1.0625rem; line-height: 1.5rem; }
+/* On the scale: left alone. */
+.well { padding: 1.5rem; background: var(--tint); }

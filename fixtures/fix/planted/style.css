@@ -1,2 +1,2 @@
-/* Planted: 13 px padding; the scale has 12 and 16. */
-.card { padding: 0.8125rem; background: var(--tint); }
+/* Planted: 14 px padding; the scale has 12 and 16, and neither is within 1 px, so which step is a choice. */
+.card { padding: 0.875rem; background: var(--tint); }

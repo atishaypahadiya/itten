@@ -17,12 +17,16 @@
 // Auto classes:
 //   px-to-rem       spacing-unit, text-resize: a px value to rem
 //   em-to-step      type-scale: a size set in em or % to the nearest step
+//   to-step         spacing-scale, type-scale: a value off the scale to the
+//                   step, when exactly one step is within the tolerance
+//                   (spacing.tolerance and type.tolerance in the system
+//                   file, 1 px by default)
 //   nbsp-separator  line-start: a no-break space before a separator
 //   text-wrap       text-wrap-balance, text-wrap-pretty
 //   reduced-motion  reduced-motion, when the system makes movement instant
 //                   or nothing animated
-// Guided only, until the owner decides (dist QUESTIONS Q2, Q4): a value off
-// the scale, and durations and easings off the system.
+// Guided only: a value off the scale with no step, or more than one, within
+// the tolerance; and durations and easings off the system.
 //
 // Usage:
 //   node itten/inspector/fix.js <url> --root <dir> [--system itten.system.json] [--out itten-fix]
@@ -42,7 +46,14 @@ import { findingsOf } from './finding.js';
 import { apply, revert, readIn, EditError } from './edits.js';
 import { attach, declarationOf, valuePlace, rulesOf, placeOf, notSource, fileOf } from './locate.js';
 
-export const AUTO = ['px-to-rem', 'em-to-step', 'nbsp-separator', 'text-wrap', 'reduced-motion'];
+export const AUTO = ['px-to-rem', 'em-to-step', 'to-step', 'nbsp-separator', 'text-wrap', 'reduced-motion'];
+// How far from a step a value may be and still have one right answer, in
+// px, where the system does not say (spacing.tolerance, type.tolerance).
+export const TOLERANCE = 1;
+// The steps within the tolerance of a value. An off-scale value is moved
+// mechanically only when there is exactly one.
+export const stepsWithin = (steps, v, tol = TOLERANCE) => [...new Set(steps)].sort((a, b) => a - b).filter((s) => Math.abs(s - v) <= tol + 1e-6);
+const nearestSteps = (steps, v) => { const s = [...new Set(steps)].sort((a, b) => a - b); return [[...s].reverse().find((x) => x < v), s.find((x) => x > v)].filter((x) => x !== undefined); };
 const SEPARATORS = '·•|/';
 const num = (x) => String(Number(x.toFixed(4)));
 
@@ -126,6 +137,19 @@ export async function planFix(f, ctx) {
     const nearest = steps.filter((s, i) => dist[i] === best);
     const edits = new Map(), why = [];
     let unit = null;
+    // Set in px or rem: one step off the scale. Moved only when exactly one
+    // step is within the tolerance; the unit it is written in is kept.
+    const tol = system.type.tolerance ?? TOLERANCE;
+    const within = stepsWithin(steps, v, tol);
+    const stepEdits = new Map();
+    let allFixed = sels.length > 0;
+    for (const sel of sels) {
+      const p = await located(sel, 'font-size');
+      const m = p.why ? null : p.text.match(/^(-?\d*\.?\d+)(px|rem)$/i);
+      if (!m || Math.abs(Number(m[1]) * (m[2].toLowerCase() === 'rem' ? rootPx : 1) - v) > 0.01) { allFixed = false; break; }
+      stepEdits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px` });
+    }
+    if (allFixed && within.length === 1) return { class: 'to-step', kind: 'auto', edits: [...stepEdits.values()], targets: sels, note: `${v} px is off the type scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
     for (const sel of sels) {
       const p = await located(sel, 'font-size');
       if (p.why) { why.push(`${sel}: ${p.why}`); continue; }
@@ -134,7 +158,7 @@ export async function planFix(f, ctx) {
       edits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${num(nearest[0] / rootPx)}rem` });
     }
     const locations = await where('font-size');
-    if (why.length && !edits.size && unit) return guided('off-scale', `${v} px is off the type scale (nearest ${nearest.join(' or ')} px) and is set in fixed units (${unit}). Which step it should be is a choice; a value one step off the scale is fixed only once the tolerance is decided (questions, Q2).`, locations);
+    if (why.length && !edits.size && unit) return guided('off-scale', `${v} px is off the type scale and is set in fixed units (${unit}). ${within.length ? `${within.join(' and ')} px are both within ${tol} px` : `No step is within ${tol} px (nearest ${nearestSteps(steps, v).join(' or ')} px)`}: which step it should be is a choice.`, locations);
     if (why.length) return guided('em-to-step', `Not every size can be moved to a step: ${why.join('; ')}.`, locations);
     if (nearest.length !== 1) return guided('em-to-step', `${v} px is as near ${nearest.join(' px as ')} px: which step is a choice.`, locations);
     return { class: 'em-to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `A size compounded from em or %, ${v} px, to the nearest step, ${nearest[0]} px, in rem.` };
@@ -142,10 +166,28 @@ export async function planFix(f, ctx) {
 
   if (f.check === 'spacing-scale' && f.scale?.kind === 'fixed') {
     const props = f.scale.properties?.length ? f.scale.properties : ['padding-top'];
-    return guided('off-scale', `${f.message} Which step it should be is a choice; a value one step off the scale is fixed only once the tolerance is decided (questions, Q2).`, await where(props[0]));
+    const v = f.scale.value, steps = system?.spacing?.scale ?? [];
+    const tol = system?.spacing?.tolerance ?? TOLERANCE;
+    const within = stepsWithin(steps, v, tol);
+    const choice = within.length > 1 ? `${within.join(' and ')} px are both within ${tol} px` : `no step is within ${tol} px (nearest ${nearestSteps(steps, v).join(' or ')} px)`;
+    if (within.length !== 1) return guided('off-scale', `${f.message} Which step it should be is a choice: ${choice}.`, await where(props[0]));
+    // Exactly one step within the tolerance: each place the value is written
+    // in px or rem is moved to it, in the unit it is written in.
+    const edits = new Map(), why = [];
+    for (const sel of sels) for (const prop of props) {
+      const p = await located(sel, prop);
+      if (p.why) { if (!/takes .* from no rule|comes from/.test(p.why)) why.push(`${sel} ${prop}: ${p.why}`); continue; }
+      const m = p.text.match(/^(-?\d*\.?\d+)(px|rem)$/i);
+      if (!m) { why.push(`${sel} ${prop}: set as ${p.text}`); continue; }
+      const px = Math.abs(Number(m[1])) * (m[2].toLowerCase() === 'rem' ? rootPx : 1);
+      if (Math.abs(px - v) > 0.01) continue;   // this side holds another value
+      edits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${Number(m[1]) < 0 ? '-' : ''}${m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px`}` });
+    }
+    if (why.length || !edits.size) return guided('off-scale', `${f.message} ${within[0]} px is the only step within ${tol} px, but not every place it is written can be moved: ${why.join('; ') || 'no px or rem value was found'}.`, await where(props[0]));
+    return { class: 'to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `${v} px is off the spacing scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
   }
 
-  if (f.check === 'motion-timing') return guided('motion-timing', `${f.message} Which system duration or easing it should use is a choice (questions, Q4).`, sels.map((s) => ({ selector: s })));
+  if (f.check === 'motion-timing') return guided('motion-timing', `${f.message} Which system duration or easing it should use is a choice.`, sels.map((s) => ({ selector: s })));
 
   if (f.check === 'line-start') {
     if (/Closing punctuation/.test(f.message)) return guided('nbsp-separator', 'A line begins with closing punctuation: remove the space before it, or make it a no-break space. Which is a choice of wording.', sels.map((s) => ({ selector: s })));

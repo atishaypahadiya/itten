@@ -1,15 +1,15 @@
 {
-  "note": "Two fixes written to fail, for the 13 px padding of .card (style.css line 2, column 18, \"0.8125rem\"). Given to itten fix with --apply, each is checked again and reverted.",
+  "note": "Two fixes written to fail, for the 14 px padding of .card (style.css line 2, column 18, \"0.875rem\"). Given to itten fix with --apply, each is checked again and reverted.",
   "fixes": [
     {
       "finding": { "check": "spacing-scale", "fingerprint": "spacing-scale|padding|body > main > div" },
-      "note": "Leaves its finding: 14 px is off the scale too.",
-      "edits": [{ "file": "planted/style.css", "line": 2, "column": 18, "length": 9, "replace": "0.875rem" }]
+      "note": "Leaves its finding: 13 px is off the scale too.",
+      "edits": [{ "file": "planted/style.css", "line": 2, "column": 18, "length": 8, "replace": "0.8125rem" }]
     },
     {
       "finding": { "check": "spacing-scale", "fingerprint": "spacing-scale|padding|body > main > div" },
       "note": "Clears it but brings another: 12 px is on the scale, and the 2000 px width overflows the page.",
-      "edits": [{ "file": "planted/style.css", "line": 2, "column": 18, "length": 9, "replace": "0.75rem; width: 125rem" }]
+      "edits": [{ "file": "planted/style.css", "line": 2, "column": 18, "length": 8, "replace": "0.75rem; width: 125rem" }]
     }
   ]
 }

@@ -110,6 +110,11 @@
         },
         "note": {
           "type": "string"
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "For itten fix: how far, in px, a value off the scale may be from a step and still be moved to it. A value is moved only when exactly one step is within the tolerance. 1 when absent. The inspector does not use it: every value off the scale is reported."
         }
       }
     },
@@ -276,6 +281,11 @@
         "hangingPunctuation": {
           "type": "boolean",
           "description": "Opening quotes and brackets at the start of a block hang into the margin (CRF-24)."
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "For itten fix: how far, in px, a font size off the scale may be from a step and still be moved to it, when exactly one step is that near. 1 when absent."
         }
       }
     },

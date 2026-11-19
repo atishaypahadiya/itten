@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { start } from './serve.js';
 import { loadSystem, inspect } from '../inspector/inspect.js';
-import { fix, AUTO } from '../inspector/fix.js';
+import { fix, AUTO, stepsWithin } from '../inspector/fix.js';
 import { findingsOf } from '../inspector/finding.js';
 import { apply, revert, offsetOf, positionOf, EditError } from '../inspector/edits.js';
 import { readArgs } from '../inspector/usage.js';
@@ -96,6 +96,11 @@ export async function run({ quiet = true } = {}) {
   const fails = editTests();
   const { system, errors } = loadSystem(join(ROOT, 'fixtures', 'itten.system.json'));
   if (errors.length) return [`fixtures/itten.system.json is not valid: ${errors.join('; ')}`];
+  // The tolerance: a value is moved only when exactly one step is within it.
+  for (const [steps, v, tol, want] of [[[4, 8, 12, 16], 13, 1, [12]], [[4, 8, 12, 16], 14, 1, []], [[4, 8, 12, 16], 14, 2, [12, 16]], [[14, 16, 16, 24], 17, 1, [16]], [[14, 16, 24], 15, 1, [14, 16]], [[12, 16], 13, 0, []], [[12, 16], 12.4, 0.5, [12]]]) {
+    const got = stepsWithin(steps, v, tol);
+    if (got.join() !== want.join()) fails.push(`stepsWithin: the steps within ${tol} px of ${v} in ${steps.join(', ')} are ${got.join(', ') || 'none'}, not ${want.join(', ') || 'none'}`);
+  }
   const classes = readdirSync(FIX).filter((n) => existsSync(join(FIX, n, 'before')));
   for (const c of AUTO) if (!classes.includes(c)) fails.push(`no fixture for the fix class ${c}`);
   const work = mkdtempSync(join(tmpdir(), 'itten-fix-'));
@@ -150,7 +155,7 @@ export async function run({ quiet = true } = {}) {
     if (cli.status !== 1) fails.push(`planted: itten fix --apply exited ${cli.status}, not 1, with both fixes reverted`);
     const own = await fix(url('planted/index.html'), opts('planted-own'));
     const off = own.fixes.find((x) => x.finding.check === 'spacing-scale');
-    if (!off || off.kind !== 'guided' || off.class !== 'off-scale' || !off.locations?.some((l) => l.file === 'planted/style.css' && l.line === 2)) fails.push(`planted: the value off the scale is not a guided fix located at planted/style.css line 2 (${JSON.stringify(off?.locations)})`);
+    if (!off || off.kind !== 'guided' || off.class !== 'off-scale' || !/no step is within 1 px \(nearest 12 or 16 px\)/.test(off.note) || !off.locations?.some((l) => l.file === 'planted/style.css' && l.line === 2)) fails.push(`planted: the value off the scale is not a guided fix located at planted/style.css line 2 (${JSON.stringify(off?.locations)})`);
     if (!same(tree(join(site, 'planted')), planted)) fails.push('planted: a guided fix wrote to the page');
 
     // Never build output.
