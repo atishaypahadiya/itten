@@ -28,6 +28,9 @@
 //   does not stop a stalled process (scripts/timeout-test.js);
 // - --version does not print the version and ITTEN's own commit, or names
 //   another repository's commit for a copy of ITTEN (scripts/version-test.js);
+// - the fast tier (--fast) misses a planted layout or line defect on the
+//   test print, reports anything else or anything on the clean twin, or
+//   takes 30 s or more on either (scripts/fast-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -384,6 +387,15 @@ try {
   for (const f of await versionTest()) fail('Version', f);
 } catch (e) {
   fail('Version', `the version test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------------- Fast
+// The after-each-change tier (scripts/fast-test.js).
+try {
+  const { run: fastTest } = await import('./fast-test.js');
+  for (const f of await fastTest()) fail('Fast tier', f);
+} catch (e) {
+  fail('Fast tier', `the fast-tier test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------ Skill

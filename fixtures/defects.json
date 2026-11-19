@@ -2,7 +2,7 @@
   "page": "fixtures/index.html",
   "twin": "fixtures/clean.html",
   "system": "fixtures/itten.system.json",
-  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect's resource. A resizeOnly defect must be seen only by the resize pass.",
+  "note": "Each defect is planted inside the section with its id. An inspector finding is a true positive when its check matches and it names an element inside that section, or the file given as the defect's resource. A resizeOnly defect must be seen only by the resize pass. needs names the pass a defect is seen in when it is not the default one, light at 100% text; the fast tier (--fast) runs only that pass.",
   "breakpoints": 2,
   "breakpointsNote": "fixture.css has one media query and one container query that change the layout between the default widths; the resize pass must find both, on both pages.",
   "defects": [
@@ -100,7 +100,8 @@
       "title": "Clipping at 200% text",
       "planted": "a fixed 40 px height with overflow hidden. The text fits at the default text size and is cut off when the browser text size is doubled.",
       "css": ".fixed { height: 40px; overflow: hidden; }",
-      "fixedInTwin": "A 40 px minimum height, so the box grows with the text."
+      "fixedInTwin": "A 40 px minimum height, so the box grows with the text.",
+      "needs": "200% text"
     },
     {
       "id": "d13",
@@ -366,7 +367,8 @@
       "planted": "a script sets the box's width in px from its column when the page loads, and never again. Opened at any width the box fits; made narrower after loading, it runs off the page. Only the resize pass sees it.",
       "markup": "<div class=\"d47-box\"><p>A box as wide as its column was when the page loaded.</p></div>\n    <script>\n      addEventListener('load', () => { const b = document.querySelector('.d47-box'); b.style.width = b.parentElement.clientWidth + 'px'; });\n    </script>",
       "fixedInTwin": "The box's width is left to CSS, so it follows the window.",
-      "resizeOnly": true
+      "resizeOnly": true,
+      "needs": "the resize pass"
     },
     {
       "id": "d48",

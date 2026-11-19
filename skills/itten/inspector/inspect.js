@@ -5,7 +5,7 @@
 //
 // Usage:
 //   node itten/inspector/inspect.js <url> [--system itten.system.json] [--out itten-report]
-//        [--full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
+//        [--fast | --full] [--widths 320:1920:40] [--key-widths 320,768,1440] [--engines webkit,firefox | --no-engines] [--fail-on error|warning]
 //        [--wait-for <selector>] [--settle <ms>] [--reference-index 400] [--slow-to <index>] [--watchdog <minutes>]
 //        [--baseline itten-baseline.json] [--write-baseline [itten-baseline.json]] [--page <baseline key>]
 //        [--workers N] [--shard i/n | --merge <shard dir>,<shard dir>,...] [--no-breakpoint-widths]
@@ -110,6 +110,10 @@ const TYPO = ['widow', 'orphan', 'rag', 'hyphenation', 'text-wrap-balance', 'tex
 const VIEW_H = 900;
 export const DEFAULT_WIDTHS = [320, 768, 1440, 1920];
 export const FULL_WIDTHS = Array.from({ length: 41 }, (_, i) => 320 + i * 40);
+// The fast tier, after each change: three widths, so a value's fluidity can
+// still be judged; Chromium only; layout and line checks only.
+export const FAST_WIDTHS = [320, 768, 1440];
+export const FAST_CHECKS = [...new Set(['spacing-scale', 'type-scale', 'near-miss-edge', 'sibling-gaps', 'radius', 'radius-concentric', 'target-size', 'overflow', 'clipping', 'overlap', 'broken-word', 'hairline-subpixel', 'widow', 'orphan', 'rag', 'hyphenation', 'text-wrap-balance', 'text-wrap-pretty', 'hanging-punctuation', 'line-start', 'page-load'])];
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'math', 'emoji', 'fangsong', '-apple-system', 'blinkmacsystemfont']);
 const PLATFORM_UI = /^(segoe ui|roboto|helvetica neue|helvetica|arial|ubuntu|oxygen|oxygen-sans|cantarell|fira sans|droid sans|noto sans|open sans|sf pro( text| display)?|san francisco|liberation sans)$/i;
 
@@ -552,8 +556,12 @@ async function pool(jobs, order, n, work) {
 export async function inspect(url, o = {}) {
   // Four widths by default, with the widths around each breakpoint between
   // them; the full sweep, 320 to 1920 px in 40 px steps, with full.
-  let widths = o.widths ?? (o.full ? FULL_WIDTHS : DEFAULT_WIDTHS);
-  const quick = !o.full && !o.widths && o.aroundBreakpoints !== false;
+  // The fast tier: three widths, light, Chromium, layout and line checks;
+  // no breakpoint scan, resize, 200% text, 2x, other engines or motion.
+  const fast = !!o.fast;
+  let widths = o.widths ?? (fast ? FAST_WIDTHS : o.full ? FULL_WIDTHS : DEFAULT_WIDTHS);
+  const quick = !fast && !o.full && !o.widths && o.aroundBreakpoints !== false;
+  const tier = fast ? 'fast' : o.widths ? 'widths' : o.full ? 'full' : 'quick';
   const keyWidths = o.keyWidths ?? [320, 768, 1440];
   const system = o.system ?? null;
   const outDir = o.out ? resolve(o.out) : null;
@@ -725,7 +733,7 @@ export async function inspect(url, o = {}) {
       let n = res.issues.length + ty.issues.length;
       // Contrast and fonts at the key widths, light and then dark, on the
       // same load: a reader switching the scheme does not reload.
-      if (keyWidths.includes(w)) {
+      if (!fast && keyWidths.includes(w)) {
         const cdp = await page.context().newCDPSession(page);
         await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
         for (const scheme of ['light', 'dark']) await within(TO.check, `contrast and fonts in ${scheme}`, async () => {
@@ -746,7 +754,7 @@ export async function inspect(url, o = {}) {
         await page.emulateMedia({ colorScheme: 'light' });
         await cdp.detach().catch(() => {});
       }
-      r.log = `  ${pass.label}: ${plural(n, 'finding')}${keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}`;
+      r.log = `  ${pass.label}: ${plural(n, 'finding')}${!fast && keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}`;
     },
     async text200(page, pass, r) {
       const last = pass.w === keyWidths.at(-1);
@@ -844,7 +852,7 @@ export async function inspect(url, o = {}) {
       let scan = { sigs: new Map(), breakpoints: [], timedOut: null };
       const engineWidths0 = o.engineWidths ?? (o.full ? widths : DEFAULT_WIDTHS);
       let sctx = null;
-      try {
+      if (!fast) try {
         scan = await within(TO.load + TO.check, 'the breakpoint scan', async () => {
           sctx = await newContext(browser, { width: widths[0] });
           const page = await openPass(sctx, { w: widths[0] });
@@ -864,7 +872,7 @@ export async function inspect(url, o = {}) {
       widths = [...widths, ...added].sort((a, b) => a - b);
       const engineWidths = [...new Set([...engineWidths0, ...added])].sort((a, b) => a - b);
       log(`  breakpoints: ${scan.breakpoints.length ? scan.breakpoints.map((b) => b + ' px').join(', ') : 'none'}${added.length ? `; widths added: ${added.join(', ')} px` : ''}`);
-      plan = makePlan(widths, keyWidths, engineWidths, o.engines ?? ['webkit', 'firefox'], scan, added);
+      plan = makePlan(widths, keyWidths, fast ? [] : engineWidths, fast ? [] : o.engines ?? ['webkit', 'firefox'], scan, added, fast);
 
       // The plan line: what will run, on how many workers, and how long it
       // should take, from the times recorded on earlier runs.
@@ -1158,7 +1166,7 @@ export async function inspect(url, o = {}) {
         }
       }
     };
-    try {
+    if (!fast) try {
       motion = await within(TO.motion, 'the motion passes', () => motionPasses(browser, url, o, system, keyWidths.at(-1), motionMerge, log, T, watched.until));
     } catch (e) {
       if (!(e instanceof StepTimeout)) throw e;
@@ -1228,10 +1236,11 @@ export async function inspect(url, o = {}) {
       tool: 'itten-inspector', date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
-      sweep: { widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
+      sweep: { tier, widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
       schedule: { workers, jobs: plan.jobs.length, shards: shards ? shards.length : null, phases, seconds: { total: Math.round((Date.now() - clock.start) / 100) / 10, jobs: clock.jobs ?? null, crops: clock.crops, motion: clock.motion } },
       coverage,
       notJudged: [
+        ...(fast ? ['The fast tier, after a change: Chromium only, light, 100% text, at ' + rangeText(widths) + ' px, layout and line checks only. Not run: contrast and fonts, 200% text, device pixel ratio 2, the resize pass, WebKit and Firefox, and motion. Run quick mode for those.'] : []),
         `Insides of drawn content: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and role="img" (mark a diagram drawn with HTML elements role="img"). Their outer boxes are measured. A figure's tables, text and caption are measured like the rest of the page. Skipped on this page: ${coverage.graphics} graphics.`,
         'States other than the default: hover, focus-visible, active, disabled, empty, loading and error are not measured (CRF-15). Hover, focus and clicks are used only to start motion for the motion checks.',
         'Text drawn by ::before, ::after or ::marker, inside shadow DOM, or inside canvas and WebGL.',
@@ -1330,9 +1339,13 @@ export function phaseOverlaps(phases) {
 // findings are recorded in: each width at 100% text in Chromium (contrast
 // and fonts at the key widths), each at 200% text, the Chromium resizes,
 // the two widths at 2x, then per engine its widths and its resizes.
-function makePlan(widths, keyWidths, engineWidths, engineNames, scan, added) {
+function makePlan(widths, keyWidths, engineWidths, engineNames, scan, added, fast = false) {
   const jobs = [];
   const J = (kind, body, pass, extra = {}) => jobs.push({ i: jobs.length, kind, body, pass, ...extra });
+  if (fast) {
+    for (const w of widths) J('light', 'light', { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT }, { chromiumText: true });
+    return { widths, keyWidths, engineWidths: [], engines: [], pairs: [], breakpoints: [], added: [], scanTimedOut: null, jobs, fast: true };
+  }
   for (const w of widths) J(keyWidths.includes(w) ? 'light-key' : 'light', 'light', { w, mode: 'light', label: `${w} px, light`, dpr: 1, checks: LAYOUT }, { chromiumText: true });
   for (const w of widths) J('200', 'text200', { w, mode: '200% text', text: 200, label: `${w} px, 200% text`, dpr: 1, checks: TEXT200 }, { chromiumText: true });
   const pairs = resizePairs(widths, scan.sigs, keyWidths.at(-1));
@@ -2374,12 +2387,13 @@ if (startedAsCommand()) {
     if (!m || +m[1] < 1 || +m[1] > +m[2]) { console.error(`--shard takes i/n, as 2/3, not "${args.shard}"`); process.exit(2); }
     shard = { i: +m[1], n: +m[2] };
   }
+  if (args.fast && args.full) { console.error('--fast and --full are different tiers; give one'); process.exit(2); }
   if (args.workers !== undefined && !(Number(args.workers) >= 1)) { console.error(`--workers takes a number of 1 or more, not "${args.workers}"`); process.exit(2); }
   const report = await inspect(url, {
     workers: args.workers !== undefined ? Number(args.workers) : undefined, shard,
     mergeFrom: typeof args.merge === 'string' ? args.merge.split(',').filter(Boolean) : undefined,
     aroundBreakpoints: args['no-breakpoint-widths'] ? false : undefined,
-    system, systemPath: args.system || null, out, full: !!args.full,
+    system, systemPath: args.system || null, out, full: !!args.full, fast: !!args.fast,
     widths: args.widths ? parseWidths(args.widths) : undefined,
     keyWidths: args['key-widths'] ? parseWidths(args['key-widths']) : undefined,
     engines: args['no-engines'] ? [] : typeof args.engines === 'string' ? args.engines.split(',').filter(Boolean) : undefined,

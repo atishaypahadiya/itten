@@ -45,9 +45,16 @@ file, follow `protocol/01-teardown.md` and `protocol/02-system.md`.
 
 ## Three tiers
 
-- **After each change**: the changed page, in quick mode: 320, 768, 1440 and 1920 px and the widths either side
-  of each breakpoint.
-- **On every pull request**: quick mode in CI, through the ITTEN Action (`action.yml` in ITTEN's repository).
+- **After each change**: the fast tier, `--fast`, on the changed page: 320, 768 and 1440 px in Chromium, layout
+  and line checks only, in seconds. It does not check contrast, fonts, 200% text, other engines or motion, and
+  says so in the report; quick mode does.
+
+  ```sh
+  node <this folder>/inspector/inspect.js http://127.0.0.1:<port>/<page> --fast --system itten.system.json --out itten-report
+  ```
+- **Before opening a pull request, and in CI on it**: quick mode: 320, 768, 1440 and 1920 px and the widths either
+  side of each breakpoint, in Chromium, WebKit and Firefox, with contrast, fonts, 200% text and motion. In CI it
+  runs through the ITTEN Action (`action.yml` in ITTEN's repository).
 - **Before a release**: the full sweep, every 40 px from 320 to 1920 px (`--full`), in CI.
 
 ## Reading the report

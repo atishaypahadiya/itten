@@ -23,6 +23,7 @@ Node 20 or later. Playwright is the only dependency.
 |---|---|---|
 | `--out <dir>` | `itten-report`, in the working directory | Where the report is written. |
 | `--system <file>` | none | The project's system file (`schema/system.schema.json`). Without one, values are judged against each other (distinct-value mode), not against a scale. |
+| `--fast` | off | The fast tier, for after each change: 320, 768 and 1440 px, Chromium only, light and 100% text, layout and line checks and the page-load findings. No breakpoint scan, resize pass, 200% text, 2× pass, WebKit, Firefox, contrast, fonts or motion; `sweep.tier` is `fast` and `notJudged` says what was not run. On the test print, under 30 s. Not with `--full`. |
 | `--full` | off | Every 40 px from 320 to 1920 px. Without it (quick mode): 320, 768, 1440 and 1920 px, and the widths either side of each breakpoint. |
 | `--widths <a,b,c>` or `<from:to:step>` | | The widths to measure, replacing the mode's. |
 | `--engines <list>`, `--no-engines` | `webkit,firefox` | Second-opinion engines for the layout checks. Chromium always runs. |

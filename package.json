@@ -20,6 +20,7 @@
     "test:canvas": "node scripts/canvas-test.js",
     "test:version": "node scripts/version-test.js",
     "test:skill": "node scripts/skill-test.js",
+    "test:fast": "node scripts/fast-test.js",
     "skill": "node scripts/skill.js"
   },
   "devDependencies": {

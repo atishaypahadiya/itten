@@ -22,6 +22,7 @@ node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.jso
 | `<url>` | The page to inspect. Inspect each distinct template, not only the home page. |
 | `--system <path>` | The project's `itten.system.json`. It is validated first; the run stops if it is invalid. Without it the inspector runs in distinct-value mode: it reports how many font sizes, spacing values and radii the page uses instead of checking them against a scale. |
 | `--out <dir>` | Where the report goes. Default `itten-report`. Add it to `.gitignore`. |
+| `--fast` | The fast tier, after each change: 320, 768 and 1440 px (three widths, so a value's fluidity can still be judged), in Chromium only, light, at 100% text, with the layout and line checks and the page-load findings. Nothing else runs: no contrast or fonts, 200% text, 2× pass, resize pass, WebKit, Firefox or motion. It takes seconds; use quick mode before a pull request. |
 | `--full` | Sweep every 40 px from 320 to 1920 px (41 widths) instead of the default: 320, 768, 1440 and 1920 px and the width on each side of each breakpoint between them, in Chromium and in WebKit and Firefox. Use it before a release, and to find the widths where a finding starts and stops. |
 | `--widths a:b:step` or `a,b,c` | Any other set of widths, measured as given: no widths are added around breakpoints. |
 | `--no-breakpoint-widths` | Measure the four default widths only, without the widths around each breakpoint. |
