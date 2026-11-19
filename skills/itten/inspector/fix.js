@@ -85,7 +85,7 @@ const elementsOf = (f) => (f.elements ?? []).map((e) => e.sel).filter(Boolean);
 
 // A plan for one finding: { class, kind: 'auto' | 'guided', edits, note,
 // locations, targets (the elements the edits change) }.
-async function planFix(f, ctx) {
+export async function planFix(f, ctx) {
   const { src, root, url, system, rootPx } = ctx;
   const guided = (cls, note, locations = []) => ({ class: cls, kind: 'guided', edits: [], note, locations });
   const sels = elementsOf(f);

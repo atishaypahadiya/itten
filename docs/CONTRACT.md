@@ -245,3 +245,35 @@ An edit is one of:
 Exit codes of `fix.js`: 0, no fix reverted; 1, a fix was reverted; 2, the inspection was refused or the system file is not valid; 64, bad usage (an unknown flag, no URL, no `--root`), with nothing run.
 
 Some inspector messages also name the measured alternative in prose, for example "With hyphens: auto the deepest hole would be 12%".
+
+## Work packets
+
+`node <itten>/inspector/packets.js <url> --root <dir>` groups the findings of a run by root cause and by the files a fix touches, and writes `<out>/packets.json` (`packets/1`). It changes nothing in the project.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--root <dir>` | required | The folder the server serves at the URL's root. |
+| `--system <file>` | none | The system file, as for the inspector. |
+| `--report <file>` | none | Group this `report.json`'s findings. Without it the page is inspected first, in quick mode (`--fast` for the fast tier, `--no-engines` for Chromium only). |
+| `--out <dir>` | `itten-packets` | Where `packets.json` goes. |
+| `--codeowners <file>` | found | The CODEOWNERS file. By default `.github/CODEOWNERS`, `CODEOWNERS` or `docs/CODEOWNERS` at the top of the git repository `--root` is in (or in `--root`, outside a repository). |
+
+**Causes.** A cause is found through the browser's style sources, as `itten fix` finds a value's place:
+
+- A finding about a CSS value (`spacing-scale`, `spacing-unit`, `type-scale`, `text-resize`, `radius`, `radius-concentric`, `contrast`, `text-wrap-balance`, `text-wrap-pretty`) is caused by the rule whose declaration gives the element that value: `{ "kind": "rule", "file", "line", "column", "selector" }`, the line its selector begins on.
+- Any other finding is caused by the element, in the page's file: `{ "kind": "markup", "file", "selector" }`. So is a value no rule of the project sets.
+- Where `itten fix` has an auto fix for the finding, each place it edits is a cause too: `{ "kind": "edit", "file", "line", "column" }`. Findings fixed by one edit (one `text-wrap` declaration added to the rule many paragraphs share) are then one packet.
+- A cause in text a build step made, in a file git ignores, or from another origin has no file: `{ "kind": "unlocated", "why" }`. A step that timed out is `{ "kind": "run" }`.
+
+**Packets.** Findings that share a cause are one packet, and so are findings joined through a third that shares a cause with each. Every finding is in exactly one packet. A packet has:
+
+- `id` (`p01`, in the order of its first finding), `causes`, and `findings` (each `id`, `check`, `severity`, `fingerprint`);
+- `files`: its causes' files and the files its mechanical fixes edit, relative to `--root`;
+- `mechanical`: true when `itten fix` has an auto fix for every finding in it; `classes` lists the fix classes;
+- `owners`, where the project has a CODEOWNERS file: the owners of its files (for each file, the last pattern that matches);
+- `conflicts`: the packets that name one of its files. Two packets that touch the same file conflict;
+- `conflictFree`: true when all its causes have files and no other packet names one of them. Conflict-free packets touch disjoint files, so they can be fixed at once.
+
+The command checks its own output before writing it (every finding in one packet, conflict-free packets on disjoint files) and fails if that does not hold. Exit codes: 0, written; 2, the inspection was refused; 64, bad usage.
+
+Claims on packets (a file and a line range with a lease, in `.specialists/board.jsonl`) belong to the board, which is not built yet.

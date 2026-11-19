@@ -52,6 +52,8 @@
 // - a fingerprint holds a value the sweep measured, or the fixtures' 0.3.3
 //   baseline does not match a run of the fixtures with nothing new and
 //   nothing fixed (scripts/fingerprint-test.js);
+// - a finding is in no work packet or in two, or packets marked conflict-free
+//   share a file (scripts/packets-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -455,6 +457,15 @@ try {
   for (const f of await lockTest()) fail('Lock', f);
 } catch (e) {
   fail('Lock', `the lock test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ---------------------------------------------------------------- Packets
+// Work packets on their fixture (scripts/packets-test.js).
+try {
+  const { run: packetsTest } = await import('./packets-test.js');
+  for (const f of await packetsTest()) fail('Packets', f);
+} catch (e) {
+  fail('Packets', `the packets test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Expected

@@ -1,0 +1,4 @@
+# Owners for the packets fixture. The last pattern that matches a file names its owners.
+*.css @styles
+/planted/notes.css @notes @styles-lead
+*.html @pages

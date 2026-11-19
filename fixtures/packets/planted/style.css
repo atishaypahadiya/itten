@@ -1,0 +1,5 @@
+/* Planted. Line 2: 13 px padding, off the scale and in px: two findings, one rule, one packet. Line 3: a size in px. */
+.card { padding: 13px; background: var(--tint); }
+.caption { font-size: 14px; line-height: 1.25rem; }
+/* A decoy: nothing wrong, so it is in no packet. */
+.plain { padding: 1rem; background: var(--tint); }

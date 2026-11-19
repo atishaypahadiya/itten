@@ -1,0 +1,2 @@
+/* Planted. Line 2: padding in px, alone in this file: a packet no other touches. */
+.aside { padding: 24px; background: var(--tint); }

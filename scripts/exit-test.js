@@ -31,7 +31,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Every command: the scripts, the action's two, the inspector and the fixer.
 export function commands() {
   const scripts = readdirSync(join(ROOT, 'scripts')).filter((f) => f.endsWith('.js')).map((f) => `scripts/${f}`);
-  return ['inspector/inspect.js', 'inspector/fix.js', 'scripts/action/run.js', 'scripts/action/report.js', 'fixtures/make.js', ...scripts];
+  return ['inspector/inspect.js', 'inspector/fix.js', 'inspector/packets.js', 'scripts/action/run.js', 'scripts/action/report.js', 'fixtures/make.js', ...scripts];
 }
 
 export function unitTests() {
@@ -67,7 +67,7 @@ export async function run() {
     // An unknown flag: 64, quickly, with nothing made.
     for (const c of commands()) {
       const out = join(tmp, c.replace(/\W+/g, '-'));
-      const lead = c === 'inspector/inspect.js' ? [`http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--out', out] : c === 'inspector/fix.js' ? [`http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--root', ROOT, '--out', out] : c === 'scripts/overrides.js' ? ['validate'] : [];
+      const lead = c === 'inspector/inspect.js' ? [`http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--out', out] : c === 'inspector/fix.js' || c === 'inspector/packets.js' ? [`http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--root', ROOT, '--out', out] : c === 'scripts/overrides.js' ? ['validate'] : [];
       const t = Date.now();
       const r = spawnSync(process.execPath, [join(ROOT, c), ...lead, '--no-such-flag'], { cwd: tmp, encoding: 'utf8', timeout: 20000, env: { ...process.env, GITHUB_OUTPUT: '', GITHUB_STEP_SUMMARY: '' } });
       if (r.status !== 64) fails.push(`${c} --no-such-flag exits ${r.status ?? r.signal}, not 64`);
