@@ -129,12 +129,11 @@ const D = [
   ['d22', 'spacing-scale', 'Fluid spacing without a system', 'Planted: side padding from 16 to 56 px, 4vw rounded to whole pixels. Without a system it must be listed once, as info, as fluid type is.', 'The side padding is 24 px.', `<div class="tint gutter"><p>Side padding that grows with the window</p></div>`, `#d22 .gutter { padding: 0.75rem round(clamp(1rem, 4vw, 3.5rem), 1px); }`],
 ];
 // Expected rows: a finding both pages have, reported as info, which is
-// neither a catch nor a false positive. Without a system every fluid range
-// is listed for the record, and this one is deliberate on both pages.
+// neither a catch nor a false positive. None here: these pages stay as
+// fixtures/itten-baseline.json has them, and the rule has a pair of its own
+// (fixtures/expected.html, scripts/expected-test.js).
 // [id, check, title, why it is on both pages, markup, css]
-const X = [
-  ['x01', 'spacing-scale', 'A fluid inset both pages keep', 'Both pages: side padding from 8 to 24 px, 2vw. It is meant, and the twin keeps it; without a system it is listed once, as info, on each page.', `<div class="tint inset"><p>Side padding both pages share</p></div>`, `#x01 .inset { padding: 0.75rem clamp(0.5rem, 2vw, 1.5rem); }`],
-];
+const X = [];
 const distinctPage = (clean) => `<!doctype html>
 <html lang="en">
 <head>
@@ -146,9 +145,7 @@ const distinctPage = (clean) => `<!doctype html>
 /* Shared by both pages. */
 .display { font-size: 2rem; line-height: 3rem; font-weight: 600; }
 .gutter { padding: 0.75rem 1.5rem; }
-/* Expected on both pages. fixtures/defects.json lists them. */
-${X.map((s) => `/* ${s[0]} ${s[1]} */\n${s[5]}`).join('\n')}
-</style>${clean ? '' : `
+${X.length ? `/* Expected on both pages. fixtures/defects.json lists them. */\n${X.map((s) => `/* ${s[0]} ${s[1]} */\n${s[5]}`).join('\n')}\n` : ''}</style>${clean ? '' : `
 <style id="planted">
 ${D.map((s) => `/* ${s[0]} ${s[1]} */\n${s[6]}`).join('\n')}
 </style>`}
@@ -159,12 +156,12 @@ ${D.map((s) => `  <section id="${s[0]}">
     <h2>${s[2]}</h2>
     <p class="small">${clean ? tie(s[4]) : s[3]}</p>
     ${specimen(s, clean)}
-  </section>`).join('\n')}
-${X.map((s) => `  <section id="${s[0]}">
+  </section>`).join('\n')}${X.map((s) => `
+  <section id="${s[0]}">
     <h2>${s[2]}</h2>
     <p class="small">${tie(s[3])}</p>
     ${s[4]}
-  </section>`).join('\n')}
+  </section>`).join('')}
 </main>
 </body>
 </html>

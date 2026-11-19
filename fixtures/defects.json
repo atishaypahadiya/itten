@@ -412,15 +412,6 @@
       }
     ],
     "expectedNote": "An expected row is a finding both pages have: it must be reported on the page and on its twin, as info, and it counts as neither a catch nor a false positive. Every clean twin must still exit 0.",
-    "expected": [
-      {
-        "id": "x01",
-        "check": "spacing-scale",
-        "title": "A fluid inset both pages keep",
-        "why": "Both pages: side padding from 8 to 24 px, 2vw. It is meant, and the twin keeps it; without a system it is listed once, as info, on each page.",
-        "css": "#x01 .inset { padding: 0.75rem clamp(0.5rem, 2vw, 1.5rem); }",
-        "severity": "info"
-      }
-    ]
+    "expected": []
   }
 }

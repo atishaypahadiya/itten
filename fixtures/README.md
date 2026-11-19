@@ -100,9 +100,11 @@ node scripts/fixture-test.js --full   # 41 widths, about 20 minutes
 
 A fixture can also list a finding that both pages have, under `expected` in `defects.json`. It is not a defect: the twin keeps it. An expected row must be reported on the page and on its twin, as info; its findings are then set aside and count as neither a catch nor a false positive. A row reported on one page only, or as a warning or an error, fails the fixture test. Every clean twin must exit 0: complete, with no error and no warning. The rule is shared with KERCKHOFFS and ERLANG.
 
+The rule has a pair of its own, `expected.html` and `expected-clean.html`, listed in `expected.json` and run by `scripts/expected-test.js`. The pairs above have no expected row, so they stay as `itten-baseline.json` holds them.
+
 | ID | Check | On both pages |
 |---|---|---|
-| x01 | `spacing-scale` | Side padding from 8 to 24 px, `clamp(0.5rem, 2vw, 1.5rem)`. Without a system file every fluid range is listed once, as info, and this one is meant. |
+| x01 | `spacing-scale` | Side padding from 24 to 48 px, `clamp(1.5rem, 4vw, 3rem)`. Without a system file every fluid range is listed once, as info, and this one is meant. |
 
 A finding is a true positive when its check matches a planted defect and it names an element inside that defect's section, or, for d19, the file the section requests: a failed request has no element. The failed-request finding also lists d07's missing font file, so one finding covers both. Any other finding on the test print, and every finding on the clean twin, is a false positive. The test passes when every defect is caught and there are no false positives. It writes `dist/fixtures/result.json` and the four reports under `dist/fixtures/`.
 
