@@ -124,6 +124,30 @@
         }
       }
     },
+    "timing": {
+      "type": "object",
+      "description": "On a finding that rests on a measured time: whether it counts. It counts only when measured at least 3 times with a relative spread of at most 10%, with the 1-minute load average below half the CPU count before and after, and no software renderer. Otherwise the finding is info, reason is \"timing unreliable\", causes say why, and was is the severity it would have had.",
+      "required": ["reliable", "values", "environment"],
+      "additionalProperties": false,
+      "properties": {
+        "reliable": { "type": "boolean" },
+        "reason": { "enum": ["timing unreliable"] },
+        "causes": { "type": "array", "items": { "type": "string" } },
+        "was": { "enum": ["error", "warning", "info"] },
+        "values": { "type": "array", "items": { "type": "number" }, "description": "What each measurement gave: ms, or a count." },
+        "spread": { "type": ["number", "null"], "description": "(max - min) / median of values." },
+        "environment": {
+          "type": "object",
+          "required": ["cpus", "load", "renderer"],
+          "additionalProperties": false,
+          "properties": {
+            "cpus": { "type": "integer" },
+            "renderer": { "type": ["string", "null"] },
+            "load": { "type": "object", "additionalProperties": false, "properties": { "before": { "type": ["number", "null"] }, "after": { "type": ["number", "null"] } } }
+          }
+        }
+      }
+    },
     "movingBackground": {
       "enum": [
         true

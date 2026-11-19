@@ -25,6 +25,7 @@
     "test:frozen": "node scripts/frozen-test.js",
     "test:sweep": "node scripts/sweep-test.js",
     "test:lock": "node scripts/lock-test.js",
+    "test:timing": "node scripts/timing-test.js",
     "fix": "node inspector/fix.js",
     "skill": "node scripts/skill.js"
   },

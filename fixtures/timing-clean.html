@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A timing finding and a layout finding</title>
+<style>
+  /* In px, so the 200% text pass adds no overflow of its own. */
+  body { margin: 0; padding: 32px; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+  .band { padding: 16px; margin: 0 0 32px; background: #eee;  }
+  .scroller { height: 96px; overflow-y: auto; background: #eee; }
+  .scroller-content { height: 2400px; }
+</style>
+</head>
+<body>
+  <!-- scripts/timing-test.js. Clean twin: no scroll handler, and the band fits. -->
+  <div class="band">The band</div>
+  <div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>
+</body>
+</html>

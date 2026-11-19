@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A timing finding and a layout finding</title>
+<style>
+  /* In px, so the 200% text pass adds no overflow of its own. */
+  body { margin: 0; padding: 32px; font: 16px/24px system-ui, sans-serif; color: #111; background: #fff; }
+  .band { padding: 16px; margin: 0 0 32px; background: #eee; width: 1400px; }
+  .scroller { height: 96px; overflow-y: auto; background: #eee; }
+  .scroller-content { height: 2400px; }
+</style>
+</head>
+<body>
+  <!-- scripts/timing-test.js. Planted: the box's scroll handler holds the main thread for 80 ms each time it fires (frame-timing, a timing finding), and the band is 1400 px wide (overflow, a layout finding). -->
+  <div class="band">The band</div>
+  <div class="scroller" tabindex="0" aria-label="A scrolling box"><div class="scroller-content"></div></div>
+  <script>
+    document.querySelector('.scroller').addEventListener('scroll', () => { const t = performance.now(); while (performance.now() - t < 80) { /* busy */ } });
+  </script>
+</body>
+</html>

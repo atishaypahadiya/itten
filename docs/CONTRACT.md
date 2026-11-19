@@ -93,12 +93,26 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Same page, same machine.** The same findings, with the same ids, order, fingerprints and messages, whatever `--workers` is, and from shards once merged. This is tested on the fixtures, on one worker and on six, field by field.
 - **Fields that always differ.** The ones each finding lists in `measured` (frame counts, durations), and the report's `started`, `date`, `environment` and schedule timings.
 - **Findings that can differ between two runs of the same page:**
-  - the timing checks (`motion-timing`, `motion-layout`, `reduced-motion`, `flash`, `frame-timing`) on a loaded machine;
+  - the timing checks (`motion-timing`, `motion-layout`, `reduced-motion`, `flash`, `frame-timing`) on a loaded machine; the ones that rest on a measured time are then reported as info, timing unreliable (see Timing findings);
   - contrast over a background that moves, which depends on the frame sampled;
   - anything the page itself varies.
 - **Different machines.** Fonts and text rendering differ by platform, so text measurements, and the findings that rest on them, can differ.
 - **Different width sets.** A fluid value's fingerprint includes its value at each measured width (`fp/1`), so another set of widths gives the same finding another fingerprint. Fingerprints without measured values (`fp/2`) are planned for 0.5.
 - **Pages that draw every frame (WebGL) on a machine without a GPU.** The browser draws them in software, so a screenshot waited on frames the CPU draws: on HundredLives on a 4-CPU GitHub runner, the screenshot steps ran out of their limits with 4 workers (compare-versions run 44198069706) and with 1 (runs 44206577844 and 44206770414; 17 and 18 November 2026). Since 0.5 every capture holds the page first (its animation frames, and CSS and Web Animations), and each crop names the frame it was held at (`crops[].frame`). The motion pass still runs the page live, so its timing on such a machine measures the renderer.
+
+## Timing findings
+
+Some findings rest on a measured time: long animation frames (`frame-timing`), a script's flashes counted over a second (`flash`, fingerprints ending `|script`), and from the watch load `page-load|late`, `page-load|never-still` and `page-load|busy`. The rule for them is shared with KERCKHOFFS and ERLANG.
+
+A timing finding counts only when all of these hold:
+
+- it was measured at least 3 times, and the relative spread of the measurements, (max − min) / median, is at most 10%;
+- the 1-minute load average was below half the CPU count before the timed phase and after it;
+- the browser was not drawing in software (the WebGL renderer, read from `WEBGL_debug_renderer_info`, names SwiftShader, llvmpipe or softpipe).
+
+Otherwise the finding is reported with severity `info`, and it never fails a run. In the `itten` extension it carries `timing`: `reliable: false`, `reason: "timing unreliable"`, `causes` (sentences: the renderer, the load, the count or the spread), `was` (the severity it would have had), `values` (each measurement, in ms or a count), `spread`, and `environment` (`cpus`, `load.before`, `load.after`, `renderer`). Its message ends with the causes. A timing finding that counts carries `timing` with `reliable: true`, its three values and their spread. The report's `environment.timing` gives the CPU count, the renderer, whether it is software, and the load before and after both timed phases; `notJudged` says how many findings were set aside.
+
+The inspector measures once. Where that one measurement raises a timing finding and the machine allows a verdict (the load and the renderer pass), the phase that timed it runs twice more, measuring only: the watch load for the `page-load` findings, the motion pass for the others. A run on a loaded machine or a software renderer does not repeat anything. Layout, type and colour findings are not affected.
 
 ## The timing lock
 

@@ -41,6 +41,8 @@
 //   finding between two breakpoints (scripts/sweep-test.js);
 // - the timing lock is held outside the timed phases or missing in one, is
 //   left after a run or a signal, or a live lock is deleted (scripts/lock-test.js);
+// - a timing finding counts on a loaded machine or a software renderer, or
+//   on fewer than three close measurements (scripts/timing-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -415,6 +417,15 @@ try {
   for (const f of await fixTest()) fail('Fix', f);
 } catch (e) {
   fail('Fix', `the fix test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ----------------------------------------------------------------- Timing
+// The timing rule (scripts/timing-test.js).
+try {
+  const { run: timingTest } = await import('./timing-test.js');
+  for (const f of await timingTest()) fail('Timing', f);
+} catch (e) {
+  fail('Timing', `the timing test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------- Lock

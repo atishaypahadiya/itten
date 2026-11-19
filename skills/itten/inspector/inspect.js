@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { platform, release, cpus, totalmem } from 'node:os';
+import { platform, release, cpus, totalmem, loadavg } from 'node:os';
 import { collect } from './collect.js';
 import { typography } from './typography.js';
 import { motionInit, motionReport, benchmarkIndex } from './motion.js';
@@ -26,6 +26,7 @@ import { container } from './group.js';
 import { toFinding, pagePath, REPORT } from './finding.js';
 import { readTimings, writeTimings, estimate, record as recordTime, makespan, duration, timingKey } from './timings.js';
 import { take as takeLock } from './lock.js';
+import { timedIn, judge, environmentCauses, isSoftware, RUNS } from './timing.js';
 import { validate } from '../scripts/lib/schema.js';
 import { versionLine } from './version.js';
 
@@ -680,6 +681,12 @@ export async function inspect(url, o = {}) {
   // The timing lock is held while anything is timed: here until the watch
   // load ends, and again for the motion pass (inspector/lock.js).
   let unlock = o.lock === false ? () => {} : takeLock('benchmark', estimate(timings, pageKey, 'bench').s + (o.mergeFrom ? 0 : estimate(timings, pageKey, 'watch').s));
+  // What the timing rule reads (inspector/timing.js): the 1-minute load
+  // average before and after each timed phase, the CPU count and the WebGL
+  // renderer. o.timingEnv ({ load: () => n, cpus }) stands in for the
+  // machine's, for tests.
+  const tenv = { cpus: o.timingEnv?.cpus ?? cpus().length, now: o.timingEnv?.load ?? (() => loadavg()[0]), renderer: null };
+  const loads = { benchmark: { before: tenv.now(), after: null }, motion: { before: null, after: null } };
   let t0 = Date.now();
   const benchDone = phase('benchmark');
   const bench = await within(TIMEOUTS.check * 1000, 'opening the benchmark page', () => browser.newPage());
@@ -693,6 +700,11 @@ export async function inspect(url, o = {}) {
     slowed = await calibrate(bench, cdp, o.slowTo);
   }
   const T = settleTiming(slowed ? slowed.slowedIndex : await within(TIMEOUTS.check * 1000, 'the benchmark', async () => Math.max(await bench.evaluate(benchmarkIndex), await bench.evaluate(benchmarkIndex))).catch((e) => { unlock(); throw e; }));
+  tenv.renderer = await bench.evaluate(() => {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const e = gl?.getExtension('WEBGL_debug_renderer_info');
+    return gl ? (e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : null;
+  }).catch(() => null);
   await bench.close();
   benchDone({ others: browser.contexts().length });
   took.push(['bench', (Date.now() - t0) / 1000]);
@@ -890,6 +902,11 @@ export async function inspect(url, o = {}) {
     if (merging) {
       unlock();
       ({ plan, results, shards, watched } = readShards(o.mergeFrom, url));
+      // Each shard watched the page load itself: its measurements, and the
+      // highest load any of them saw.
+      const ws = shards.map((x) => x.watched).filter(Boolean);
+      watched = { ...watched, values: ws.flatMap((w) => w.values ?? []) };
+      for (const k of ['before', 'after']) { const v = ws.map((w) => w.load?.[k]).filter((x) => typeof x === 'number'); loads.benchmark[k] = v.length ? Math.max(...v) : null; }
       widths = plan.widths;
       log(`Merging ${plural(shards.length, 'shard')}: ${plural(plan.jobs.length, 'job')}`);
     } else {
@@ -912,6 +929,27 @@ export async function inspect(url, o = {}) {
         log(`  ${widths[0]} px, the watch load: timed out after ${Math.round(e.ms / 1000)} s; the sweep goes on`);
       } finally { await closeQuietly(wctx); }
       watched.failed = [...watchFailed.values()];
+      // What the watch load timed, per finding it can raise. Where it timed
+      // anything and the machine allows a verdict, it is run twice more: a
+      // timing finding counts on three measurements (inspector/timing.js).
+      const timedBy = (w) => ({ late: w.late?.length ? Math.max(...w.late.map((e) => e.t)) : null, 'never-still': w.still === false ? w.watched : null, busy: w.networkIdle === false ? 1 : null });
+      watched.values = [timedBy(watched)];
+      if (!watched.timedOut && Object.values(watched.values[0]).some((v) => v !== null) && !environmentCauses({ cpus: tenv.cpus, load: { before: loads.benchmark.before, after: tenv.now() }, renderer: tenv.renderer }).length) {
+        for (let k = 1; k < RUNS; k++) {
+          let c = null;
+          try {
+            watched.values.push(timedBy(await within(TO.load + T.horizon + T.ceiling, 'the watch load, again', async () => {
+              c = await newContext(browser, { width: widths[0] });
+              const wpage = await c.newPage();
+              await slow(wpage);
+              return watchLoad(wpage, url, o, T);
+            })));
+          } catch (e) { if (!(e instanceof StepTimeout)) throw e; break; } finally { await closeQuietly(c); }
+        }
+        log(`  the watch load timed something: measured ${watched.values.length} times`);
+      }
+      loads.benchmark.after = tenv.now();
+      watched.load = loads.benchmark;
       watchDone();
       unlock();
       took.push(['watch', (Date.now() - t0) / 1000]);
@@ -1229,7 +1267,11 @@ export async function inspect(url, o = {}) {
     if (passes.has('motion') && o.lock !== false) unlock = takeLock('motion', estimate(timings, pageKey, 'motion').s);
     const motionDone = phase('motion');
     const othersAtMotion = browser.contexts().length;
+    const timedValues = new Map(); // fingerprint -> what each motion pass measured
+    const noteTimed = (raw) => { if (timedIn(raw) === 'motion' && typeof raw.timed === 'number') { const k = raw.check + '|' + raw.key; if (!timedValues.has(k)) timedValues.set(k, []); timedValues.get(k).push(raw.timed); } };
+    loads.motion.before = tenv.now();
     const motionMerge = async (page, raw, pass) => {
+      noteTimed(raw);
       const r = { events: [] };
       await keep(page, r, [raw], pass);
       const q = record(raw, pass);
@@ -1251,7 +1293,33 @@ export async function inspect(url, o = {}) {
       for (const c of browser.contexts()) await closeQuietly(c);
       motion = null;
     }
+    // Where the motion pass timed a finding and the machine allows a
+    // verdict, it runs twice more, measuring only.
+    if (motion && timedValues.size && !environmentCauses({ cpus: tenv.cpus, load: { before: loads.motion.before, after: tenv.now() }, renderer: tenv.renderer }).length) {
+      for (let k = 1; k < RUNS; k++) {
+        try { await within(TO.motion, 'the motion passes, again', () => motionPasses(browser, url, o, system, keyWidths.at(-1), async (page, raw) => noteTimed(raw), () => {}, T, watched.until)); }
+        catch (e) { if (!(e instanceof StepTimeout)) throw e; for (const c of browser.contexts()) await closeQuietly(c); break; }
+      }
+      log(`  motion timed ${plural(timedValues.size, 'finding')}: measured ${RUNS} times`);
+    }
+    if (passes.has('motion')) loads.motion.after = tenv.now();
     unlock();
+    // The timing rule: a finding that rests on a measured time counts only
+    // when it was measured three times within 10% on a machine that was not
+    // loaded and did not draw in software. Otherwise it is info.
+    for (const it of issues.values()) {
+      const ph = timedIn(it);
+      if (!ph) continue;
+      const values = ph === 'motion' ? timedValues.get(it.fingerprint) ?? [] : (watched.values ?? []).map((v) => v[it.fingerprint.split('|').at(-1)]);
+      const v = judge(values, { cpus: tenv.cpus, load: loads[ph], renderer: tenv.renderer });
+      it.timing = v;
+      if (!v.reliable) {
+        it.timing.was = it.severity;
+        it.severity = 'info';
+        it.message += ` Timing unreliable (${v.causes.join('; ')}): reported as info, and it does not fail a run.`;
+        const m = new Set([...(it.measured ?? []), 'message']); it.measured = [...m];
+      }
+    }
     motionDone({ others: othersAtMotion });
     clock.motion = (Date.now() - t0) / 1000;
     took.push(['motion', clock.motion]);
@@ -1311,12 +1379,13 @@ export async function inspect(url, o = {}) {
       status: gaps.length ? 'partial' : 'complete', ...(gaps.length ? { reason: gaps.join('; ') + '.' } : {}),
       subject: url, started: started.toISOString(),
       tool: 'itten-inspector', date: new Date().toISOString(),
-      environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}` },
+      environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}`, timing: { cpus: tenv.cpus, renderer: tenv.renderer, software: isSoftware(tenv.renderer), load: loads } },
       mode: system ? 'system' : 'distinct', system: o.systemPath ?? null,
       sweep: { tier, ...(passes.size < PASSES.length ? { passes: PASSES.filter((p) => passes.has(p)) } : {}), widths: rangeText(widths), keyWidths, height: VIEW_H, schemes: ['light', 'dark'], text: ['100%', '200% (browser default font size 32 px)'], dpr: [1, 2], engines: engines.widths, load: 'fresh at every width', resize, breakpoints: plan.breakpoints, added: plan.added },
       schedule: { workers, jobs: plan.jobs.length, shards: shards ? shards.length : null, phases, seconds: { total: Math.round((Date.now() - clock.start) / 100) / 10, jobs: clock.jobs ?? null, crops: clock.crops, motion: clock.motion } },
       coverage,
       notJudged: [
+        ...([...issues.values()].some((i) => i.timing?.reliable === false) ? [`Timing: ${plural([...issues.values()].filter((i) => i.timing?.reliable === false).length, 'finding')} that rest on a measured time are reported as info, timing unreliable (each says why; the machine is in environment.timing). A timing finding counts only when measured ${RUNS} times within 10%, with the load average below half the CPU count and no software renderer.`] : []),
         ...(fast ? ['The fast tier, after a change: Chromium only, light, 100% text, at ' + rangeText(widths) + ' px, layout and line checks only. Not run: contrast and fonts, 200% text, device pixel ratio 2, the resize pass, WebKit and Firefox, and motion. Run quick mode for those.']
           : passes.size < PASSES.length ? [`Only some passes ran (${[...passes].join(', ')}); not run: ${PASSES.filter((p) => !passes.has(p)).join(', ')}.`] : []),
         `Insides of drawn content: svg, canvas, img, video, picture, iframe, object, embed, math, audio, and role="img" (mark a diagram drawn with HTML elements role="img"). Their outer boxes are measured. A figure's tables, text and caption are measured like the rest of the page. Skipped on this page: ${coverage.graphics} graphics.`,
@@ -2140,7 +2209,7 @@ function judgeMotion(mode, rep, names, system, cpu) {
       }
       best = Math.max(best, n);
     }
-    if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
+    if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', timed: best, count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
       message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
   }
   // Long animation frames while hovering, focusing, clicking or scrolling,
@@ -2183,7 +2252,7 @@ function judgeMotion(mode, rep, names, system, cpu) {
     const total = g.ls.reduce((n, f) => n + f.duration, 0);
     const doing = { scroll: `scrolling ${g.who.sel === 'html' ? 'the page' : 'this container'}`, hover: 'hovering this element', focus: 'this element took focus', click: 'clicking this element' }[g.kind];
     const speed = g.slowed && cpu ? `, with the CPU slowed ${cpu.rate} times to the reference device (benchmark index ${cpu.slowedIndex}, reference ${cpu.reference}; this machine ${cpu.index})` : ', at full speed';
-    out.push({ check: 'frame-timing', severity: 'warning', key: k, count: g.ls.length, elements: [g.who], marks: [], crop: 'each',
+    out.push({ check: 'frame-timing', severity: 'warning', key: k, timed: st.longest, count: g.ls.length, elements: [g.who], marks: [], crop: 'each',
       message: `While ${doing}${speed}, ${g.ls.length} of ${g.frames} animation frames ran past the ${FRAME_BUDGET.toFixed(1)} ms budget of a 60 Hz display, taking ${shortest === st.longest ? `${st.longest} ms each` : `${shortest} to ${st.longest} ms`}: about ${st.missed} frames missed.${top ? ` Most of that time, ${Math.round(top[1])} of ${Math.round(total)} ms, was spent in ${top[0]}.` : ''} Move the work off the frame: debounce or schedule it, or do less per event.` });
   }
   return out;

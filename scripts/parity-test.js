@@ -28,6 +28,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shape = (i) => ({
   fingerprint: i.fingerprint, check: i.check, severity: i.severity, message: i.message, count: i.count, measured: i.measured ?? null,
   movingBackground: i.movingBackground ?? false,
+  unreliable: i.timing?.reliable === false,
   elements: i.elements.map((e) => ({ sel: e.sel, label: e.label, order: e.order ?? null, rect: e.rect ?? null })),
   seen: i.seen, first: i.first, resize: i.resize ?? null, resources: i.resources ?? null,
   crops: i.crops.map((c) => ({ at: c.at, region: c.region, zoom: c.zoom, engine: c.engine ?? null })),
@@ -47,6 +48,10 @@ const shape = (i) => ({
 // - every field of a finding over a moving background (`movingBackground`,
 //   from the contrast pass), including whether it is there at all: its value
 //   depends on the frame. 0.4 judges these across fixed frames.
+// - every field of a timing finding reported as unreliable in either run
+//   (`timing.reliable` false: a loaded machine, a software renderer, fewer
+//   than three measurements or too wide a spread), including whether it is
+//   there at all;
 // These are returned in notes, with both values. Everything else must match
 // exactly, including every finding that is not over a moving background on
 // the same page.
@@ -54,16 +59,20 @@ const PORT = /(127\.0\.0\.1|localhost):\d+/g;
 const steady = (f, v, measured) => {
   if (f === 'elements' && measured.includes('elements.rect')) v = v.map(({ rect, ...e }) => e);
   let s = JSON.stringify(v).replace(PORT, '$1:<port>');
-  if (f === 'message' && measured.includes('message')) s = s.replace(/\d+(\.\d+)?/g, '<n>');
+  // "97 ms each" and "83 to 97 ms" are the same sentence with other numbers.
+  if (f === 'message' && measured.includes('message')) s = s.replace(/\d+(\.\d+)? to \d+(\.\d+)? ms|\d+(\.\d+)? ms each/g, '<n> ms').replace(/\d+(\.\d+)?/g, '<n>');
   if (f !== 'message' && measured.includes(f)) s = '<measured>';
   return s;
 };
+const loose = (i) => i.movingBackground || i.unreliable || i.timing?.reliable === false;
+const why = (i) => (i.movingBackground ? MOVING : UNRELIABLE);
+const UNRELIABLE = ' (timing unreliable)';
 const MOVING = ' (over a moving background)', MEASURED = ' (measured)', PORTS = ' (a server port)';
 const glyphless = (v) => JSON.stringify(v ?? null).replace(/: \d+ glyphs/g, ': <n> glyphs');
 // The summary counted without the findings over a moving background.
 const steadySummary = (r) => {
   const by = {};
-  for (const i of findingsOf(r)) if (!i.movingBackground) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
+  for (const i of findingsOf(r)) if (!loose(i)) { const c = (by[i.check] ??= {}); c[i.severity] = (c[i.severity] ?? 0) + 1; }
   return JSON.stringify(Object.keys(by).sort().map((k) => [k, by[k]]));
 };
 
@@ -75,24 +84,24 @@ export function compare(a, b, name = 'page', notes = []) {
   const B = new Map(findingsOf(b).map((i) => [i.fingerprint, shape(i)]));
   for (const [k, x] of A) {
     const y = B.get(k);
-    if (!y) { (x.movingBackground ? notes : diffs).push(`${name}: ${k} (${x.severity}) only in the first run${x.movingBackground ? MOVING : ''}`); continue; }
-    const moving = x.movingBackground || y.movingBackground;
+    if (!y) { (loose(x) ? notes : diffs).push(`${name}: ${k} (${x.severity}) only in the first run${loose(x) ? why(x) : ''}`); continue; }
+    const moving = loose(x) || loose(y);
     for (const f of Object.keys(x)) {
       const s = JSON.stringify(x[f]), t = JSON.stringify(y[f]);
       if (s === t) continue;
       const line = `${name}: ${k}: ${f} differs: ${s.slice(0, 240)} against ${t.slice(0, 240)}`;
       const m = x.measured ?? measuredFields(x) ?? [];
-      if (moving) notes.push(line + MOVING);
+      if (moving) notes.push(line + (x.movingBackground || y.movingBackground ? MOVING : UNRELIABLE));
       else if (steady(f, x[f], m) === steady(f, y[f], m)) notes.push(line + (steady(f, x[f], []) === steady(f, y[f], []) ? PORTS : MEASURED));
       else diffs.push(line);
     }
   }
-  for (const [k, y] of B) if (!A.has(k)) (y.movingBackground ? notes : diffs).push(`${name}: ${k} (${y.severity}) only in the second run${y.movingBackground ? MOVING : ''}`);
+  for (const [k, y] of B) if (!A.has(k)) (loose(y) ? notes : diffs).push(`${name}: ${k} (${y.severity}) only in the second run${loose(y) ? why(y) : ''}`);
   for (const f of ['summary', 'distinct', 'textScaling', 'renderedFonts', 'pageErrors']) {
     const s = JSON.stringify(a[f]), t = JSON.stringify(b[f]);
     if (s === t) continue;
     const line = `${name}: report.${f} differs: ${s.slice(0, 240)} against ${t.slice(0, 240)}`;
-    if (f === 'summary' && steadySummary(a) === steadySummary(b)) notes.push(line + MOVING);
+    if (f === 'summary' && steadySummary(a) === steadySummary(b)) notes.push(line + ' (findings over a moving background, or with unreliable timing)');
     else if (f === 'renderedFonts' && glyphless(a[f]) === glyphless(b[f])) notes.push(line + MEASURED);
     else diffs.push(line);
   }
