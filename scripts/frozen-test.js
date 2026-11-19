@@ -7,9 +7,10 @@
 //   the frame it was held at (the document timeline's time and the number of
 //   animation frames run);
 // - inspected twice with the crops held at the same frame (atFrame), the
-//   crop of the spilling line, which shows the scene, is the same pixels;
-// - the control: with freezing off (freeze: false), two runs give different
-//   pixels in that crop, so the comparison above can fail.
+//   second time after waiting 2 s longer, the crop of the spilling line,
+//   which shows the scene, is the same pixels;
+// - the control: with freezing off (freeze: false), the same two runs give
+//   different pixels in that crop, so the comparison above can fail.
 // Usage: node scripts/frozen-test.js
 // Exports run() for scripts/check.js; it returns the failures.
 
@@ -42,7 +43,8 @@ export async function run({ quiet = true } = {}) {
       return c ? { c, png: readFileSync(join(outOf(name), c.path)) } : null;
     };
     const runs = {};
-    for (const [name, extra] of [['held-1', { atFrame: AT }], ['held-2', { atFrame: AT }], ['free-1', { freeze: false }], ['free-2', { freeze: false }]]) {
+    // The second run of each pair waits 2 s longer before it measures, so it reaches the capture many frames later.
+    for (const [name, extra] of [['held-1', { atFrame: AT }], ['held-2', { atFrame: AT, settle: 2000 }], ['free-1', { freeze: false }], ['free-2', { freeze: false, settle: 2000 }]]) {
       const r = await go(name, extra);
       runs[name] = r;
       if (r.status !== 'complete') fails.push(`${name}: the run is ${r.status} (${r.reason ?? 'no reason'})`);
