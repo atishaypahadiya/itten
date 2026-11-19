@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/atishaypahadiya/itten/schema/finding.schema.json",
+  "title": "finding/1",
+  "description": "One finding, in the format every specialist in the set writes (ITTEN, KERCKHOFFS, ERLANG). The core is the same for all of them; each keeps its own fields in an object named after itself, which this schema does not look inside. No field of a finding, its fingerprint and every extension included, holds secret material: a credential, token, key, password or session, or a hash of one. Name a secret by what it is (issuer, kind, prefix, length), never by its value. Adding an optional field keeps the format at finding/1; renaming or removing a field, or adding a required one, makes it finding/2. A report of findings is report/1 (report.schema.json). See protocol/04-inspect.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "specialist",
+    "check",
+    "severity",
+    "fingerprint",
+    "message",
+    "measured",
+    "floor",
+    "detection",
+    "where"
+  ],
+  "properties": {
+    "schema": {
+      "enum": [
+        "finding/1"
+      ]
+    },
+    "specialist": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "The specialist that wrote the finding, in lower case: itten, kerckhoffs, erlang."
+    },
+    "check": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The check, as the specialist names it."
+    },
+    "severity": {
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ]
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The same for the same finding in every run, and different for different findings: two runs are compared by fingerprint. By convention the check, then the parts of where that identify the finding, joined by |, as in contrast|#nav > a or n-plus-one|api|GET /orders|src/routes/orders.js#listOrders. Built only from what stays the same between runs: never a measured value, a report id, a host or port, a record id, or the element's text."
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "measured": {
+      "type": "array",
+      "description": "The paths of fields whose values differ between any two runs of the same subject (frame counts, durations, latencies, settle windows, benchmark figures). Dotted from the finding's root; [] means each item of a list; \"message\" means the numbers in the message. Everything not listed is compared exactly.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9-]*(\\[\\])?(\\.[A-Za-z][A-Za-z0-9-]*(\\[\\])?)*$"
+      }
+    },
+    "floor": {
+      "enum": [
+        "security",
+        "accessibility",
+        null
+      ],
+      "description": "The floor the check holds, if any. Where two specialists conflict, security floors come first, then accessibility floors, then craft (null)."
+    },
+    "detection": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "render",
+          "static",
+          "config",
+          "trace",
+          "live",
+          "load"
+        ]
+      },
+      "description": "How the finding was detected; one finding can rest on several. render: measured in a browser on a rendered page. static: read from source, history or build output without running it. config: read from configuration. trace: read from telemetry of a run at low rate (spans, query logs, process metrics). live: observed by sending requests to a running deployment of the owner's own app. load: measured under generated load. Not part of the fingerprint: the same defect found statically and then confirmed live is one finding. Compared as a set; the order carries no meaning."
+    },
+    "rules": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
+      },
+      "description": "Optional. The rules the finding comes from, as IDs from the specialist's own reference (LAY-03, AUZ-01, DAT-01). Citations of outside standards (WCAG, CWE, ASVS) stay in the specialist's extension."
+    },
+    "where": {
+      "type": "object",
+      "description": "What the finding is on: any of elements of a rendered page, places in code, endpoints of a service and named resources, at least one of them non-empty. A finding that shows in one place and is fixed in another lists both.",
+      "additionalProperties": false,
+      "properties": {
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/element"
+          }
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/location"
+          }
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/endpoint"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "elements"
+          ],
+          "properties": {
+            "elements": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "locations"
+          ],
+          "properties": {
+            "locations": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "endpoints"
+          ],
+          "properties": {
+            "endpoints": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "resources"
+          ],
+          "properties": {
+            "resources": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  },
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9-]*$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "description": "A specialist's own fields, in an object named after it. Not validated here."
+  },
+  "$defs": {
+    "element": {
+      "type": "object",
+      "required": [
+        "sel",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A CSS selector for the element."
+        },
+        "label": {
+          "type": "string",
+          "description": "Tag and first class. Never the element's text."
+        },
+        "text": {
+          "type": "string",
+          "description": "The element's opening text, about 60 characters, for the reader only. Never compared between runs."
+        },
+        "rect": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "x, y, width, height in CSS px, from the top left of the page."
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "description": "A place in code. line is left out when the finding is about the file as a whole; column matters in minified output, where everything is on line 1.",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative to the repository's root."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The function, method, class or variable, such as listOrders or DATABASE_URL. A fingerprint built from file and symbol survives edits that move the line."
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": [
+        "method",
+        "route"
+      ],
+      "additionalProperties": false,
+      "description": "An entry point of a running service.",
+      "properties": {
+        "method": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_-]*$",
+          "description": "For http, the HTTP method (GET, POST, ...). For other protocols, the operation in capitals, as the specialist names it."
+        },
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A route template, never a concrete path: /users/:id/events, not /users/42/events. For a queue, the queue or topic; for a job, its name."
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The service, where a repository holds more than one."
+        },
+        "protocol": {
+          "enum": [
+            "http",
+            "grpc",
+            "queue",
+            "job"
+          ],
+          "description": "http when left out."
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "A named thing in a running system or a site that is neither an element, a place in code nor an endpoint: a page as a whole, a table, a policy, a bucket, a queue, a pool, a whole service.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "page, table, policy, bucket, function, role, queue, cache, pool, service, ..."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable between runs: a page's path without host or port, a table's qualified name (public.orders)."
+        }
+      }
+    }
+  }
+}

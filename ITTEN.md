@@ -26,6 +26,30 @@ The brief decides taste, and the system decides values. Neither can take a floor
 
 ## Install
 
+Two ways, both supported: as an Agent Skill, for a coding agent that loads skills, or as a git submodule.
+
+### As an Agent Skill
+
+`skills/itten/` is ITTEN as an [Agent Skill](https://agentskills.io/specification): `SKILL.md`, the protocol, the inspector, the schemas, the lockfile, and `scripts/setup.sh`, the skill's own installer. One command installs it into a project, with the [GitHub CLI](https://cli.github.com/)'s `gh skill`, a preview command (tested with gh 2.103.3):
+
+```sh
+gh skill install atishaypahadiya/itten itten --pin <tag-or-commit>
+```
+
+It goes into `.agents/skills/itten/` by default, the folder several coding agents read; `--agent` or `--dir` puts it elsewhere. Pin it: without `--pin`, `gh` takes the latest release, and releases before 0.4 have no skill. The skill runs the version it was installed at; an update is a new install, when you choose.
+
+Once installed, the agent asks before setup and says what it installs: the npm packages the skill's `package-lock.json` pins (Playwright) into the skill's own `node_modules/`, and the Chromium and WebKit builds that Playwright version pins into Playwright's browser cache, about 600 MB. Then:
+
+```sh
+bash .agents/skills/itten/scripts/setup.sh --yes
+```
+
+Without `--yes` it prints that list and installs nothing. It installs nothing globally and nothing the lockfile does not pin, and it never pipes a downloaded script into a shell.
+
+The copies in `skills/itten/` are assembled from the repository (`node scripts/skill.js --write`), never edited by hand; the check and CI fail when they differ.
+
+### As a git submodule
+
 Add ITTEN to the project as a git submodule at `itten/`, pinned to a commit or tag:
 
 ```sh

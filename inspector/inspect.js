@@ -12,7 +12,7 @@
 //   node itten/inspector/inspect.js --validate itten.system.json
 //   node itten/inspector/inspect.js --version
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, renameSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platform, release, cpus, totalmem } from 'node:os';
@@ -2345,7 +2345,11 @@ const parseWidths = (s) => {
   return s.split(',').map(Number);
 };
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Run as a command, by any path: Node resolves this module's own URL through
+// symlinks, so the path it was started by is compared the same way (on macOS
+// /var is a link to /private/var, and an installed skill can sit behind one).
+const startedAsCommand = () => { try { return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); } catch { return false; } };
+if (startedAsCommand()) {
   const args = parseArgs(process.argv.slice(2));
   // Before anything else, and whatever follows it: --version runs nothing.
   if (args.version !== undefined) { console.log(versionLine()); process.exit(0); }

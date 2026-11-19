@@ -27,6 +27,7 @@ Where two of them conflict, security floors come first, then accessibility floor
 | `protocol/` | The four steps: `01-teardown.md` (read inspiration as measurements), `02-system.md` (turn them into `itten.system.json`), `03-craft.md` (20 up-close rules, each with how it is verified), `04-inspect.md` (run the inspector and fix in order). |
 | `schema/` | The schemas for a project's `itten.system.json` and `itten.overrides.json`, and for what a run writes: `report.schema.json` (report/1) and `finding.schema.json` (finding/1), shared by every specialist in the set, and `finding-itten.schema.json` (ITTEN's own finding fields). |
 | `docs/templates/` | Text the projects of the set share word for word: `part-of-a-set.md`, the README section above. |
+| `skills/itten/` | ITTEN as an Agent Skill: `SKILL.md`, the skill's `scripts/setup.sh`, and copies of the protocol, inspector, schemas and lockfile, assembled by `scripts/skill.js`. Installed with `gh skill install` (see `ITTEN.md`). |
 | `inspector/` | `inspect.js` and its parts. Opens a page in Chromium and measures it across widths, doubled text size, light and dark, and two pixel ratios, then checks the layout again in WebKit and Firefox. Writes `report.json`, `report.html` and zoomed crops. |
 | `fixtures/` | A test print with one planted defect per inspector check, and its clean twin. |
 | `reference/` | The rules corpus: 131 rules with IDs, strengths and evidence levels. The protocol cites it. |

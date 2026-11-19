@@ -1,0 +1,29 @@
+{
+  "name": "itten",
+  "version": "0.3.5",
+  "private": true,
+  "description": "A detail discipline and inspector: a protocol for reading a project's inspiration as measurements, and a tool that checks the rendered page up close.",
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check.js",
+    "check:full": "node scripts/check.js --full",
+    "inspect": "node inspector/inspect.js",
+    "fixtures": "node scripts/fixture-test.js",
+    "serve": "node scripts/serve.js",
+    "overrides": "node scripts/overrides.js",
+    "telemetry": "node scripts/telemetry.js",
+    "test:action": "node scripts/action-test.js",
+    "test:settle": "node scripts/settle-test.js",
+    "test:timeout": "node scripts/timeout-test.js",
+    "test:parity": "node scripts/parity-test.js",
+    "test:ignore": "node scripts/ignore-test.js",
+    "test:canvas": "node scripts/canvas-test.js",
+    "test:version": "node scripts/version-test.js",
+    "test:skill": "node scripts/skill-test.js",
+    "skill": "node scripts/skill.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  },
+  "license": "MIT"
+}

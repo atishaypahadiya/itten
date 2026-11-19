@@ -10,7 +10,7 @@ node <itten>/inspector/inspect.js --validate <system file>
 node <itten>/inspector/inspect.js --version
 ```
 
-`<itten>` is a checkout of this repository, a clone or a git submodule. Once per checkout:
+`<itten>` is a checkout of this repository, a clone, a git submodule, or the Agent Skill's folder (`skills/itten/`, installed into a project with `gh skill install`; see `ITTEN.md`). The skill carries copies of the inspector, schemas and lockfile, assembled from the repository, and its own `scripts/setup.sh` in place of the two commands below: without `--yes` it lists what it would install and installs nothing; with `--yes` it runs `npm ci` on the skill's lockfile and Playwright's installer for Chromium and WebKit; an unknown argument exits 64. Once per checkout:
 
 ```sh
 npm ci                                          # Playwright 1.65.1, pinned in package-lock.json

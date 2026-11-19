@@ -28,6 +28,10 @@
 //   does not stop a stalled process (scripts/timeout-test.js);
 // - --version does not print the version and ITTEN's own commit, or names
 //   another repository's commit for a copy of ITTEN (scripts/version-test.js);
+// - skills/itten does not match the repository's protocol, inspector,
+//   schemas and lockfile, its SKILL.md breaks the Agent Skills
+//   specification, or a copy of it does not run on its own
+//   (scripts/skill-test.js);
 // - an action or workflow uses a third-party action not pinned by a full
 //   commit SHA, or the action's own tests fail (scripts/action-test.js).
 
@@ -380,6 +384,16 @@ try {
   for (const f of await versionTest()) fail('Version', f);
 } catch (e) {
   fail('Version', `the version test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// ------------------------------------------------------------------ Skill
+// skills/itten is assembled from the repository and runs from a copy
+// (scripts/skill-test.js).
+try {
+  const { run: skillTest } = await import('./skill-test.js');
+  for (const f of await skillTest()) fail('Skill', f);
+} catch (e) {
+  fail('Skill', `the skill test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Licences

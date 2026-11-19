@@ -72,3 +72,5 @@ jobs:
           package-manager-cache: false
       - name: Action tests
         run: node scripts/action-test.js
+      - name: The skill matches the repository and runs from a copy
+        run: node scripts/skill-test.js

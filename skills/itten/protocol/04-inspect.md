@@ -1,0 +1,224 @@
+# Inspect
+
+The inspector opens the rendered page in Chromium, measures it at many widths, text sizes and colour schemes, checks the layout again in WebKit and Firefox, and lists what is wrong up close. It reads the page the way a careful reviewer with a loupe would: computed values, layout boxes, rendered fonts and the actual pixels. It does not read the source, so it judges what people see, whatever produced it.
+
+## Run it
+
+Install once, in the project:
+
+```sh
+npm install --save-dev playwright
+npx playwright install chromium webkit firefox
+```
+
+Then, with the page served locally or deployed:
+
+```sh
+node itten/inspector/inspect.js http://localhost:5173/ --system itten.system.json --out itten-report
+```
+
+| Option | Meaning |
+|---|---|
+| `<url>` | The page to inspect. Inspect each distinct template, not only the home page. |
+| `--system <path>` | The project's `itten.system.json`. It is validated first; the run stops if it is invalid. Without it the inspector runs in distinct-value mode: it reports how many font sizes, spacing values and radii the page uses instead of checking them against a scale. |
+| `--out <dir>` | Where the report goes. Default `itten-report`. Add it to `.gitignore`. |
+| `--full` | Sweep every 40 px from 320 to 1920 px (41 widths) instead of the default: 320, 768, 1440 and 1920 px and the width on each side of each breakpoint between them, in Chromium and in WebKit and Firefox. Use it before a release, and to find the widths where a finding starts and stops. |
+| `--widths a:b:step` or `a,b,c` | Any other set of widths, measured as given: no widths are added around breakpoints. |
+| `--no-breakpoint-widths` | Measure the four default widths only, without the widths around each breakpoint. |
+| `--workers <n>` | How many jobs run at once (see "How a run is scheduled"). Default: the CPU cores less two, and no more than one per GB of memory beyond 2 GB. `1` runs them one after another. The findings are the same for any number. |
+| `--shard <i>/<n>` | Measure every n-th job, starting with job i, and write `shard.json` to `--out` instead of a report. For splitting one page across CI jobs. |
+| `--merge <dir>,<dir>,...` | Combine the shards written with `--shard` into one report: the findings recorded in order, the crops, motion and the baseline comparison. Give the same URL and options as the shards had; the site must be served again for the crops and motion. It stops if a shard is missing, came from another ITTEN version, or planned other jobs. |
+| `--key-widths a,b,c` | Widths for the contrast and font passes. Default `320,768,1440`. |
+| `--engines webkit,firefox` | The engines for the second pass on layout. Default both. |
+| `--no-engines` | Skip the WebKit and Firefox pass. |
+| `--wait-for <selector>` | After the network goes quiet, wait up to 30 s for an element matching the selector before measuring, on every load. Use it for pages that draw from data or on a timer: name what appears last. |
+| `--settle <ms>` | Wait this much longer before measuring, on every load. |
+| `--slow-to <index>` | For testing: slow Chromium's CPU to this benchmark index (calibrated as for the reference device, below) before the settle window is set, and run every Chromium page of the sweep at that rate, so the inspector waits as it would on a machine that slow. `load.timing.slowed` in the report gives the measured index and the rate. |
+| `--watchdog <minutes>` | Stop the run, with exit code 124, when it makes no progress (no step begun, no line logged) for this long: 10 by default, `0` for never. It names the last step. It never fires before the longest single step limit has run out (below). |
+| `--fail-on error` or `warning` | Exit with code 1 when findings of that severity or worse exist, for CI. With `--baseline`, only findings that are new or more severe than in the baseline count. |
+| `--baseline <path>` | Compare with a baseline file, usually `itten-baseline.json`: the report lists findings that are new, fixed, or changed in severity. |
+| `--write-baseline [path]` | Write this page's findings into a baseline file (default `itten-baseline.json`), keeping the other pages' entries. Put the URL first, before this flag. |
+| `--page <key>` | The page's key in the baseline. Default the URL's path and query, so a local run and a deployed one share an entry. |
+| `--validate <path>` | Only validate a system file against `schema/system.schema.json`. |
+
+A run prints its plan before the jobs start: how many there are, on how many workers, and how long they and the motion pass should take, estimated from the times recorded on earlier runs (`dist/timings.json` in ITTEN's folder, which git ignores; `ITTEN_TIMINGS` names another file). On a first run the estimates are fixed guesses. `schedule` in the report gives the workers, the jobs and the time each phase took.
+
+### The baseline
+
+A project with findings it has accepted for now (each logged as an override) commits them as `itten-baseline.json`, so a change is judged by what it adds. Each finding is identified by its check and what it is grouped by: an element's selector, a value, or a fluid curve, not by its id or its wording, which change between runs. A finding is new when that pair is not in the baseline, and fixed when a pair in the baseline is not found. Renaming an element's id or classes therefore shows as one fix and one new finding. Write the baseline where the checks run (in CI, with the action's `write-baseline` input), since fonts and line breaks differ between platforms.
+
+## What a run does
+
+| Pass | Widths | Scheme | Text | Checks |
+|---|---|---|---|---|
+| Layout sweep | 320, 768, 1440, 1920 px and the width on each side of each breakpoint between them (`--full`: 320 to 1920 px in 40 px steps) | light | default | every layout check below |
+| Contrast and fonts | key widths | light, then dark | default | `contrast`, `font-fallback`; `optical-margin` in light |
+| Text doubled | the same widths | light | browser default font size 32 px instead of 16 px | `overflow`, `clipping`, `overlap`, `spacing-unit`; `text-resize` at the last key width |
+| Device pixels | first and last key width | light | default | `hairline-subpixel` at a device pixel ratio of 2 |
+| Motion | the last key width | light, with motion allowed and again with `prefers-reduced-motion: reduce`; with motion allowed, the interactions run twice, at full CPU speed and slowed to a reference device | default | `flash`, `reduced-motion`, `motion-timing`, `motion-layout`, `frame-timing` |
+| Other engines | 320, 768, 1440 and 1920 px and the widths around each breakpoint (`--full`: the whole sweep) | light | default | the layout checks except `spacing-scale` and `type-scale`, and `line-start`, in WebKit and Firefox |
+| Resize | pairs of widths: each two neighbouring widths of the sweep with a media or container query breakpoint between them, both ways, and the first width to the last key width and back | light | default | the layout checks, in Chromium, WebKit and Firefox, on a page loaded at the first width and resized to the second |
+
+Before anything is measured, the inspector times the machine with the benchmark the motion pass uses (`motion.js`, [Lighthouse's benchmark index](https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md)) and sets the settle window from it: 500 ms at an index of 1600, Lighthouse's high-end desktop, or faster; longer on a slower or busier machine, up to 1.5 s. A page is still once it has added no element for the settle window. Then it loads the page once to watch it, at the first width, without scrolling or measuring: until 5 s after the load event (on the same scale) and the page is still, at most 15 s. That watch decides what is late (see `page-load`) and how long every later load waits.
+
+Every width of every pass is a fresh load at that width, so each measures the layout a reader who opens the page at that size gets; contrast and fonts in dark run on the light load, as a reader switching the scheme does not reload. For each load the inspector waits for the load event, for the network to go quiet (up to 10 s), for `--wait-for` and `--settle` if given, then scrolls to the bottom and back, so lazy content and reveal-on-scroll elements render, waits for fonts and 500 ms, and then until the page is still and the late content seen in the watch has arrived, at most 15 s. Before each measurement it waits for the page to be still again; a measurement taken while the page added an element is taken again, up to three times. A page can also break only when the window changes size after it loaded: a script that sizes something once at load, or a layout the engine does not redo, as WebKit keeps a table's columns when cells hidden at one width come back at another. The resize pass loads the page at one width, resizes the window to another, and measures again. The pairs cross every breakpoint the sweep found. Before the sweep, the breakpoint scan loads the page once at the first width and resizes it across the range in 16 px steps, measuring nothing: at each step the inspector asks every media query on width, aspect ratio or orientation whether it matches, and every container query whether it holds in each container it can apply to (a probe in the container, styled by a copy of the rule, up to 20 containers per rule). Where the answers change between two steps, it halves the gap until it has the first width of the new layout. Two neighbouring widths of the sweep whose answers differ have a breakpoint between them. A layout changes most at a breakpoint, so without `--full` the sweep adds the width on each side of every breakpoint between 320 and 1920 px: the last width of the old layout and the first of the new. Breakpoints less than 16 px apart can be found as one. The narrowest width to the widest key width, and back, is always a pair. A finding the fresh load at the target width also has adds nothing; any other is reported as seen after that resize, and its message starts "After resize from 1440 to 320 px". `sweep.resize` in the report lists the pairs.
+
+No step can hold the run. Each has a limit: 180 s to load the page (the longest a load can legitimately take is 123 s: 60 s to the load event, 10 s for the network, 30 s for `--wait-for`, 8 s of scrolling and the 15 s settle ceiling), 120 s for each check and for recording its findings, 420 s for one width as a whole, 480 s for the motion passes, and 30 s to close or open a browser context. On a slower machine each is multiplied by the settle scale. A step past its limit is a `timed-out` error, and the sweep goes on with a fresh browser context. For what the limits do not catch, a watchdog stops the whole run, with exit code 124 and the last step named, when nothing has moved for 10 minutes (`--watchdog`).
+
+### How a run is scheduled
+
+A run is a set of jobs: each width of the layout sweep, of the text-doubled pass, of the device-pixel pass and of each other engine, and each resize. A job is a fresh load in a browser context of its own, so no job sees another's cookies, storage or cache, and a job that times out closes only its own context. Up to `--workers` jobs run at once. A job measures and keeps what it found; it records nothing. When every job is done, the findings are recorded in one fixed order, the order a serial run takes the passes in (the layout sweep, the text-doubled pass, the resizes, the device-pixel pass, then each engine and its resizes), so a finding's id, the pass it was first seen in, its elements and its message are the same on one worker or on twelve. `scripts/parity-test.js` checks this on the fixtures, and on any page given with `--url`.
+
+What measures time runs alone. The benchmark, the watch load and the breakpoint scan come first, with nothing beside them, since every job's settle window and wait come from them. The motion passes, which time frames at full speed and on a slowed CPU, come last, once every job and crop has finished and every other browser context is closed. `schedule.phases` in the report gives when each phase began and ended, and the check script fails a run in which a timed phase overlapped another.
+
+A finding is cropped at the pass it was first seen in, or became more severe in, or was first seen in in another engine: the crops are taken after the jobs, on a page loaded again as that pass loaded it, one load per pass, in parallel too.
+
+On CI, the jobs of one page can be split across machines: `--shard 1/3`, `2/3` and `3/3` each measure a third of them and write `shard.json`; `--merge` then combines them, crops, runs motion on its own machine and writes the one report. The action's `shard` and `merge` inputs do this (ITTEN.md).
+
+### What is recorded
+
+Every request that fails or answers 400 or more is recorded. The report gives the benchmark index, the scale, the settle window and how many measurements were taken again (`load.timing`, `load.remeasured`). The viewport is 900 px tall. Doubling the browser's default font size is the setting people change in their browser preferences; text set in `px` ignores it, and the report says how much of the page did. Browser zoom is covered by the width sweep, since 200% zoom at 1280 px lays out like 640 px.
+
+## The checks
+
+Severity follows the precedence in `ITTEN.md`. An **error** breaks an accessibility floor or the rendering itself. A **warning** departs from the project's system or from an up-close rule in `03-craft.md`. **Info** is worth knowing but is not a defect on its own.
+
+| Check | Severity | What it measures | Rule |
+|---|---|---|---|
+| `page-load` | error, or warning | Whether the page measured is the page people see. Error when a request failed or answered 400 or more (a page that catches the failure and shows a message raises no script error, so its error state would otherwise be measured as the page), or when the `--wait-for` selector never appeared. Warning when the network did not go quiet within 10 s of the load event, when the page never went still within 15 s, or when elements appeared after the page had gone still. Late is judged on the watch load by the page's own clock, so it does not depend on how fast the inspector or the machine runs: the page goes still once the settle window passes after the load event, or after the last element added, with nothing added; elements added after that, still drawn at the end of the watch, with a selector and text not drawn when the page went still, are late. Ids that differ only by a number (`arc-3`, `arc-15`) count as the same selector, so a chart drawn again with ids from a counter is not late. The finding gives when each appeared and when the page went still; every later load waits for them, so the measurements include them. Elements inside `data-itten-ignore="page-load"` are not counted. | CRF-15, FBK-04 |
+| `timed-out` | error | A step of the inspection that did not finish within its limit: loading the page, a check, recording and cropping its findings, one width as a whole, or the motion passes as a whole. The finding names the step, the width and the pass. The inspector closes that browser context, opens a fresh one and goes on to the next width, so nothing after that step was measured there. A page that blocks its main thread does this, and so does a renderer or a browser that stops answering; if the same step times out at the same width again, the page is the cause. | CRF-15 |
+| `contrast` | error, or warning | The text colour against the pixels rendered behind it. The page is screenshotted twice with all text made transparent, 400 ms apart; the background is sampled across each line of text, and the text colour (with its opacity) is composited over each sample. Error when the median sample is below 4.5:1 (3:1 for large text); warning when the worst tenth is. This sees images, video, gradients, canvas and WebGL behind text, which computed styles cannot. | CRF-14, COL-01 |
+| `font-fallback` | error, or warning | The font that actually drew each text run, from the browser's rendering engine, against the family requested. Error when a web font failed to load or when text renders in a fallback; warning when some glyphs come from another font, when a family is not in the system, or when a form control's computed family differs from the page's (the browser's control font), even if the control holds no text yet. | CRF-13 |
+| `overflow` | error | The page scrolling sideways (and the element or word that causes it), or text spilling out of the painted box that contains it. | CRF-16, LAY-03 |
+| `clipping` | error, or warning | Text partly cut off by an `overflow: hidden` box or by the viewport. Truncation with an ellipsis or a line clamp is a warning. | CRF-16, TYP-03 |
+| `overlap` | error | Text drawn over other text. | CRF-16 |
+| `broken-word` | warning | A word broken at a line end without a hyphen: the emergency break that `overflow-wrap: break-word` or `anywhere`, `word-break: break-all` or `break-word`, or `line-break: anywhere` make when a word does not fit its line. Words are read across inline children, so a name set in a span is one word with what follows it; a space between two elements, even in a text node of its own, still separates their words. A break between two letters or digits, or on either side of an apostrophe, counts unless hyphenation made it: where `hyphens: auto` is set, the wrapping properties are turned off for a moment and the word read again, and a hyphenated word still breaks there. Identifiers (as for `widow`) are not judged. Reported once per table, or per text block outside tables, with the words and the column width. Run in Chromium, WebKit and Firefox, since engines size table columns differently: WebKit lets `break-word` narrow an automatic table's column, Chromium does not. | CRF-22 |
+| `spacing-unit` | warning | Margins, paddings and gaps of 2 px or more that keep their value when the browser's default text size is doubled, compared with the same element and property at the same width: set in px, so they do not follow the text. Values that follow the viewport (three or more across the sweep) are left to `spacing-scale`. | CRF-30 |
+| `text-resize` | warning | Text elements whose font size grows by less than 5% when the browser's default text size is doubled, compared at the last key width. They are set in px, or in vw alone. One finding lists them all, with the sizes affected. | CRF-16, TYP-03 |
+| `target-size` | error, or info | Interactive targets below 24 px that do not meet the WCAG 2.5.8 spacing or inline exceptions; targets below the comfortable size (44 px) as info. | CRF-17, INT-02 |
+| `spacing-scale` | warning | Every margin, padding and flex or grid gap, against the system's scale and its declared fluid ranges (`spacing.fluid`: the value the range gives at each width, within 0.5 px, fractions included). Fractional values are reported in both modes. Without a system, a value that follows the viewport is listed once per range, as info, with the widths it spans. | CRF-01, CRF-07 |
+| `type-scale` | warning | Every font size against the type scale, and the line height of each step. Text is matched to a step on its size, its weight and the role of its family (text or display, from `families`); a step without a weight or family accepts any. Text at a step's size whose weight or family role matches none of the steps there is reported. A run (an inline element inside a paragraph, at the paragraph's size, such as `strong` or a link) takes the paragraph's step and is judged on size only. Where several steps give the same size at a width (two steps that share a size, or two fluid steps whose ranges cross), the text passes when any of them gives its line height, and a finding names them all. A fluid step accepts the size its declared range gives at each width, within 0.25 px; any other size that follows the viewport is reported as an undeclared fluid range. Without a system, nothing says which ranges are deliberate, so each one is listed once, as info, as fluid spacing is. Fractional fixed sizes are reported in both modes. | CRF-06, CRF-07 |
+| `near-miss-edge` | warning | Left, right, top and baseline edges of visible boxes and text blocks that are 0.5 to 3 px apart and within 96 px of each other. Visible boxes are those that paint something: a background, border, shadow, image or control. Text blocks contribute their first-line baseline and their aligned edge, measured over all their text, inline children (`span`, `a`, `em`) included: a block is a text block when it has text of its own, but a line that begins with an inline child begins where that child does. A baseline is measured, not estimated: a zero-size inline-block set in the block's font sits on the baseline, which gives where it falls in the line's box in the engine being measured. Font metrics from a canvas are not used, since WebKit rounds the ascent and descent it reports to whole pixels, which put text in two sizes on one baseline up to a pixel apart. Elements that share a centre are skipped, since different widths centred will never share edges. | CRF-04, LAY-09 |
+| `sibling-gaps` | warning | The gaps between three or more siblings of the same kind in one container, along each axis. | CRF-03 |
+| `radius` | warning | Corner radii outside the system's set (a concentric derivation is allowed when `nesting` is `concentric`). Without a system: more than four radii, or radii within 2 px of each other. | CRF-11, SHP-02 |
+| `radius-concentric` | warning | A rounded box nested near the corner of a rounded parent whose radius is not the parent's radius minus the inset. | CRF-12, SHP-01 |
+| `widow` | warning | A paragraph whose last line holds one word, which `text-wrap: pretty` does not move (it is set already, or was tried and left the word). A word broken across lines is not counted, nor a last line that is one identifier: a URL or DOI, as a citation ends, an id behind a prefix such as `arXiv:` or `isbn:`, or a file or repository path (a token with an underscore, two slashes, or a slash and a file extension). None of these can be reworded or hyphenated, and a no-break space before one makes a longer unbreakable run. Not judged where full lines average under 20 characters: in a measure that narrow every line is a fragment, and the fault is the measure. | CRF-21 |
+| `orphan` | warning | A paragraph split across columns with one line on either side of the break. Printed pages are not judged. | CRF-21 |
+| `rag` | warning | Ragged text with three or more lines in which a line other than the last, or one ended by a `<br>`, stops more than 25% of the measure short, and `hyphens: auto` would bring the deepest hole up by at least 10% of the measure. Text already hyphenated is not judged, nor text whose full lines average under 20 characters. | CRF-22 |
+| `hyphenation` | warning | Justified text without effective hyphenation (`hyphens: auto` and a `lang`) whose word spaces stretch past 1.5 times their natural width on some line. | CRF-22 |
+| `text-wrap-balance` | info | A heading of two or more lines, not balanced, whose shortest line is under 60% of its longest, where `text-wrap: balance` raises that ratio to 60% or more and by at least 30 points. | CRF-23 |
+| `text-wrap-pretty` | info | A plainly wrapped paragraph whose last line holds one word or fills under a third of the measure, where `text-wrap: pretty` moves a second word down or fills the line by at least 10% more. A one-word last line that `pretty` does not fix is a `widow` instead, so each paragraph is reported once. | CRF-23 |
+| `line-start` | warning | A line, after the first, that begins with a separator (`·`, `•`, `\|`, `/`) or with closing punctuation (`,` `.` `;` `:` `!` `?` `)` `]` `}` `”` `’`). A mark followed by a letter or a digit is not counted, since it opens a word of its own (an absolute value such as \|O − C\|, a path such as /usr, an elision such as ’90s, a number such as .5), nor is an ellipsis. A line after a `<br>` begins where the author put it, and one that begins inside a word is `broken-word`'s. Judged in Chromium at every width and in WebKit and Firefox at theirs, since each engine breaks lines by its own font metrics. | CRF-31 |
+| `hanging-punctuation` | warning | Only where the system sets `type.hangingPunctuation`: a block starting with an opening quote or bracket that sits less than half outside the text edge. | CRF-24 |
+| `optical-margin` | warning, or info | Display type (32 px and up), left-aligned, starting with a round or pointed letter, next to smaller text that shares its edge. The first glyph of each is screenshotted with the page's text drawn and again with all text transparent; the first column that differs is where the ink starts. Reported when the display letter's ink starts a whole pixel or more to the right of the other's: a warning at 2 px or more, info at 1 px, the smallest offset the screen can draw. Key widths, light. | CRF-25 |
+| `flash` | error | An animation, or an element whose class or style a script keeps changing, that reverses its luminance by 10% or more (with the darker state under 0.8) more than three times a second over 21,824 px² or more. Luminance comes from each keyframe's background colour and opacity over white. | CRF-29, WCAG 2.3.1 |
+| `reduced-motion` | warning | With `prefers-reduced-motion: reduce`, an animation or transition that still moves or resizes something, or loops without end. Colour and opacity changes are allowed unless `motion.reducedMotion` is `none-animated`. | CRF-18 |
+| `motion-timing` | warning | Each animation's duration and easing against `motion.durations` and `motion.easings`. Easings are compared as numbers, so `ease` matches `cubic-bezier(0.25, 0.1, 0.25, 1)`. A transition reversed before it finished runs shorter than declared; the declared duration is judged. Only with a system. | CRF-26 |
+| `motion-layout` | warning | An animation or transition of a layout property: width, height, top, left, margin, padding, border width, font size, line height and the like. | CRF-27 |
+| `frame-timing` | warning | Long animation frames ([`PerformanceLongAnimationFrameTiming`](https://w3c.github.io/long-animation-frames/)) while hovering each element that declares a transition, tabbing through up to 40 focus stops, clicking up to 15 buttons and toggles, and scrolling the page and up to five scroll containers by wheel; once at full speed and again on a reference device. Chromium reports a frame as long when it takes over 50 ms, three times the 16.7 ms budget of a 60 Hz display. Reported per element, interaction and speed when three or more frames are long; the message gives their durations, the frames missed, and the script the browser names for most of the time. For the reference device, the inspector first measures the main thread with a benchmark index in [Lighthouse's units](https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md) (a string-building loop and an array-copying loop, half a second each), then slows the CPU (Chrome DevTools Protocol `Emulation.setCPUThrottlingRate`) by the ratio of that index to the reference, 400 by default (`--reference-index`), and measures again; a rate that lands more than 10% off is corrected once. A machine at or below the reference is not slowed. So every machine is tested at about the same speed, instead of a fast one being slowed to a mid-range desktop and a slow one to a low-end phone. `report.json` has the index, the rate and the index under the slowdown under `motion.cpu`, and frame times and long frames at both speeds under `motion.frames`. | CRF-28 |
+| `hairline-subpixel` | warning, or info | Borders and rules up to 1.5 px thick whose position or width does not land on whole device pixels at 1× and 2×. The middle of each line (up to three per finding) is screenshotted in each engine and profiled across its thickness. Warning when an engine draws it blurred across two pixels; info when every engine snaps it to whole pixels, which browsers do for most borders placed by layout. Lines moved by a fractional transform blur in Chromium and WebKit. | CRF-08 |
+
+The typographic checks (`widow` to `optical-margin` above) judge the lines Chromium draws, at every width of the sweep. Where a check asks whether a property would help, it sets the property on the element for a moment, reads the lines again and puts the element back.
+
+### What it does not judge
+
+- **The insides of drawn content.** svg, canvas, img, video, picture, iframe, object, embed, math, audio and `role="img"` elements are measured as boxes; what is drawn inside them is not. A `<figure>` is not drawn content: its tables, text and caption are measured with every layout and typographic check, like the rest of the page. A diagram built from HTML elements says what it is with `role="img"` and a label, which keeps it from being held to the page's spacing scale. The report gives the count.
+- **States other than the default.** Hover, focus-visible, active, disabled, empty, loading and error states are not measured; hover is used only to start transitions for the motion checks. Build a state sheet (CRF-15) and inspect that page.
+- **Text the DOM does not expose as text:** `::before`, `::after` and `::marker` content, shadow DOM, and text drawn in canvas or WebGL.
+- **Icon optical centring and stroke weight, and text-box trim** (CRF-05, CRF-09, CRF-10). These are manual checks.
+- **Motion that only scripts, timers or untested interactions start.** The motion pass records what runs after load and what hovering, Tab and clicks start. It clicks buttons, `[role=button]`, switches, tabs, `[aria-expanded]` and `[aria-pressed]` toggles, `summary`, checkboxes and radios: each twice, then Escape. It does not click links or submit buttons, and it aborts any navigation of the page. Drags, long presses, typing and swipes are not tried. A CPU slowed to a benchmark index approximates a mid-range phone; it is not one (the index weighs two loops, and a phone's memory, GPU and thermal limits differ), so a clean run is not proof for a real device.
+- **The worst frame of a moving background.** Two frames are sampled.
+- **Other platforms' fonts.** Font results reflect the machine the inspector runs on. A stack that renders correctly on macOS can fall back on Windows or Linux; run it on the platforms that matter.
+- **Layout in dark mode.** Layout checks run in light only, on the assumption that the scheme changes colour and not geometry. If yours changes geometry, say so in the overrides and inspect a dark-only build.
+
+## Read the report
+
+`report.html` opens with a table of findings by check and severity, then lists every finding, errors first. Each one has:
+
+- the message, with the measured values;
+- the rule it comes from, the finding's ID, and where it was seen: the scheme or mode, and the widths, written as ranges (`320–600, 1440 px`);
+- the elements involved, as selectors and a short label;
+- one to three crops, zoomed 2 to 4 times with nearest-neighbour scaling so single pixels stay sharp. Magenta outlines the elements involved; blue marks the edges being compared.
+
+A finding is listed once however many widths it appears at. Its message comes from the first width where it was seen.
+
+In `report.json`, a finding from a timing-sensitive check names its measured fields in `measured`, as paths (see the finding format, below): `itten.count`, `message` and `where.elements[].rect` for `frame-timing` (frames over budget, their durations, the CPU slow-down, and the boxes taken while the page moved); `message` for the `never-still` and `late` page-load findings and for flashing driven by script; `where.elements[].rect` for the other motion checks. These values differ between any two runs of the same page, as do the glyph counts in `renderedFonts`.
+
+Where the page keeps drawing (a canvas, a video, an animation), the contrast pass sees the pixels behind the text change between its two frames, 400 ms apart. It reports those areas in `drawing`, per width and scheme: the count of moving 16 px tiles, how many of them are over nothing that should move (no running animation, canvas, video, iframe or image: `unexplained`), and the areas as rectangles. report.html and the pull-request comment give each page's count, so an exemption nothing accounts for is visible. It marks a contrast finding whose text lies over moving tiles `movingBackground`: its value depends on the frame it was measured in, so it can pass in one run and fail in the next. Its crop is made from that frame, with the text laid over it from a screenshot of the text alone, so the crop shows the background the message names. Such a crop is marked `composited` in `report.json`, and report.html captions it "composited: text over the measured frame".
+
+Two runs agree when they have the same findings, matched by fingerprint, with the same severity, elements, crops and other fields. `scripts/parity-test.js` lists differences in measured values, and every difference in a finding over a moving background, as notes with both values; anything else is a difference and fails. Element labels are the tag and first class, not the text, so a label stays the same while the text changes. An element's opening text, about 60 characters, is in `text`: report.html and the pull-request comment show it after the label, and parity never compares it.
+
+Information findings of one check that fall in one table or list are shown as one note: the sentence once, with `…` where the findings differ, then a line per cell or item (`row 5, cell 3`) with its own values, ID and widths. Errors and warnings are never grouped; each keeps its crops. The pull request comment groups them the same way in its new and fixed lists. `report.json` keeps every finding, so baselines and fingerprints do not change.
+
+Below the findings, "Values in use" counts the distinct font sizes and spacing values at any one width, which is what a reader meets on one screen, and across the sweep, where each fluid range counts as one value. It then lists every fixed value, with the most elements using each at any one width, and every fluid range, then the fonts that actually rendered for each requested stack. "Coverage" lists what was measured, what was skipped by `data-itten-ignore`, and what was not judged.
+
+"Engines" lists the findings that differ between Chromium, WebKit and Firefox at the widths all of them ran, and how each engine drew any hairline found. Spacing and type values are computed styles, the same in every engine, so they are compared in Chromium only. Engine differences come mostly from font rendering (text widths and line breaks), form controls, and how each engine rounds positions.
+
+`report.json` has the same content for scripts. Crops are in `crops/`.
+
+## The finding format: finding/1 and report/1
+
+Every `report.json` is a report/1, and every finding in it a finding/1. They are the contract between the specialists of the set (ITTEN, KERCKHOFFS, ERLANG; see the README): each writes its runs and findings in them, so one gate can read all of them the same way. The core is defined in [`schema/report.schema.json`](../schema/report.schema.json) and [`schema/finding.schema.json`](../schema/finding.schema.json); ITTEN's own finding fields in [`schema/finding-itten.schema.json`](../schema/finding-itten.schema.json).
+
+**No field holds secret material.** No field of a report or a finding, fingerprints and extensions included, holds a credential, token, key, password or session, or a hash of one: a hash of a guessable secret can be confirmed by hashing guesses. A secret is named by what it is (issuer, kind, prefix, length), never by its value.
+
+### The report: report/1
+
+| Field | What it holds |
+|---|---|
+| `schema` | `"report/1"`. |
+| `specialist`, `version` | Who wrote it (`itten`) and its version. |
+| `status` | `complete`: every check ran. `partial`: some did not; ITTEN's runs are partial when a step timed out or `--wait-for` never matched. `refused`: nothing was judged, because the subject could not be reached, the run failed or was stopped before judging, or a guard declined to run it. |
+| `reason` | Why, when `partial` or `refused`. |
+| `subject`, `started` | What was inspected (for ITTEN, the page's URL) and when the run began. |
+| `findings` | The finding/1 list. Empty when refused. |
+
+A gate reads `status` before `findings`. Only a complete run's findings say what is and is not wrong; a partial run's findings are real but do not cover everything; a refused run's empty list never means clean. The ITTEN action fails a refused page as a problem, whatever `fail-on` says, and states a partial one under its table. ITTEN writes a refused `report.json` as soon as a run starts and replaces it when the run ends, so a run that crashes, is stopped by the watchdog or is killed never leaves an earlier report, or none, to be read as its own. The core fields are reserved; a specialist keeps its own run data beside them (ITTEN's sweep, coverage, motion and the rest).
+
+### The finding: finding/1
+
+| Field | What it holds |
+|---|---|
+| `schema` | `"finding/1"`. |
+| `specialist` | Who wrote it, in lower case: `itten`. |
+| `check` | The check, as the specialist names it. |
+| `severity` | `error`, `warning` or `info`. |
+| `fingerprint` | The same for the same finding in every run, and different for different findings: runs are compared by fingerprint. By convention the check, then the parts of `where` that identify the finding, joined by `\|`. Built only from what stays the same between runs: never a measured value, a report id, a host or port, a record id or an element's text. |
+| `message` | The finding, in a sentence or two, with its measured values. |
+| `measured` | Paths of the fields whose values differ between any two runs: dotted from the finding's root, `[]` for each item of a list, `message` for the numbers in the message. Empty when none. Every field not listed is compared exactly. |
+| `floor` | `"security"`, `"accessibility"` or `null`. ITTEN's accessibility floors are `contrast` (WCAG 1.4.3), `overflow` (1.4.10), `clipping` and `text-resize` (1.4.4), `target-size` (2.5.8) and `flash` (2.3.1). Every other check is craft (`null`), `spacing-unit` included: it cites 1.4.4 as context, but spacing that keeps its size when text doubles does not by itself lose content. Where specialists conflict, security floors come first, then accessibility floors, then craft. |
+| `detection` | How it was detected, one or more of: `render` (measured in a browser on a rendered page), `static` (read from source, history or build output), `config` (read from configuration), `trace` (read from telemetry of a run at low rate), `live` (observed by sending requests to a running deployment of the owner's app), `load` (measured under generated load). Every ITTEN finding is `["render"]`. Not part of the fingerprint: a defect found statically and then confirmed live is one finding. |
+| `rules` | Optional. The rule IDs it comes from, from the specialist's reference (`CRF-16`, `LAY-03`). Citations of outside standards stay in the extension: ITTEN's `itten.rule` keeps the full line shown to the reader, WCAG criteria included. |
+| `where` | Any of four lists, at least one non-empty: `elements` (of a rendered page: `{ sel, label, text, rect }`), `locations` (in code: `{ file, line, column, symbol }`, only `file` required), `endpoints` (of a service: `{ method, route, service, protocol }`, `route` a template such as `/orders/:id`, never a concrete path) and `resources` (named things: `{ kind, name }`, such as a table or a whole service). A finding that shows in one place and is fixed in another lists both. ITTEN writes `elements`, or for a finding on the page as a whole (a failed request, a step that timed out) `resources: [{ "kind": "page", "name": "/path" }]`. |
+
+Each specialist keeps its own fields in an object named after itself. The core schema accepts any such object and never looks inside it; each specialist validates its own. ITTEN's, `itten`, holds the finding's `id` in this report (not stable between runs), `count`, `seen`, `first`, `title`, `rule`, `crops` (each marked `composited` where made from the measured frame), `elements` (per element of `where.elements`, in the same order: its document `order` and, from the motion checks, `pseudo`), and where they apply `movingBackground`, `resize`, `resources` and `render`.
+
+### Versions
+
+Adding an optional field, to the core or to an extension, keeps the formats at finding/1 and report/1. Renaming or removing a field, or adding a required one, makes finding/2 or report/2. A reader that knows version 1 refuses a version 2.
+
+Reports written before 0.3.5 have no envelope and keep flat findings in `issues` (`elements`, `crops`, `count` and the rest at the top level, no `schema`). ITTEN's tools read both (`findingsOf()` and `view()` in `inspector/finding.js`), so `scripts/parity-test.js --saved` and a committed baseline keep working. Every finding saved from 0.3.0 to 0.3.4 (6,173 of them, kept from HundredLives, neptune-fork and the fixtures) passes both schemas once written as finding/1 and reads back unchanged.
+
+## Fix in this order
+
+1. **Errors in `font-fallback`.** A fallback font changes every measurement after it: sizes, line breaks, edges, contrast. Fix it, then re-run before looking at anything else.
+2. **Errors in `overflow`, `clipping` and `overlap`.** These lose content. Start with the narrowest width and the 200% text pass, where most of them appear first.
+3. **Errors in `contrast` and `target-size`.** These are accessibility floors. A floor is never logged away as taste (see the precedence in `ITTEN.md`).
+4. **Warnings in `text-resize`, `type-scale` and `spacing-scale`.** One stray value usually comes from one rule in the stylesheet. Fixing the source rule often clears several `near-miss-edge` and `sibling-gaps` findings at once, so re-run before working through those.
+5. **Warnings in `near-miss-edge`, `sibling-gaps`, `radius`, `radius-concentric` and `hairline-subpixel`.** Work through the crops. Each one either becomes an exact match or a logged optical adjustment.
+6. **Info.** Read it; act on it when the brief cares.
+
+Within a severity, fix the findings seen at the most widths first: they are structural, not breakpoint accidents.
+
+## When a finding is intended
+
+Some findings are deliberate: an optical offset (LAY-10), a display headline that breaks the type scale on purpose, a carousel that clips its next slide as a hint (LAY-08). For each one:
+
+1. Add an entry to `itten.overrides.json` with the rule ID, the check, the selector or scope, the value, what is used instead, the reason, whether the floors still hold, the date and the ITTEN version (`schema/overrides.schema.json`). Then run `node itten/scripts/overrides.js render` to rewrite `docs/itten-overrides.md`, the page people read. The ITTEN action fails a run whose overrides file does not validate or whose page is out of date.
+2. Mark the element with `data-itten-ignore="<check>"` (several checks separated by spaces, or `all`). It applies to that element only. To reach everything inside it as well, a carousel or a live feed, add `data-itten-ignore-subtree`. Until 0.3.5 the attribute always reached the descendants; an ignore that relied on that needs `data-itten-ignore-subtree` now. `fixtures/ignore.html` and `scripts/ignore-test.js` hold the cases.
+
+The report counts ignored element and check pairs, so an ignore without an override entry shows up in review. Never ignore an error that breaks an accessibility floor for text people need to read or targets people need to use.
+
+## Known limits
+
+The inspector is tested against `fixtures/`: a test print with one planted defect per check and a clean twin. `node scripts/fixture-test.js` reports its precision and recall. The fixtures prove the checks work on known defects. They do not prove the absence of false positives on every real page. When a finding is wrong, reduce it to a fixture and fix the check rather than ignoring it.
