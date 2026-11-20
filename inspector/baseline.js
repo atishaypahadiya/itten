@@ -72,7 +72,12 @@ export function compare(report, baseline, file, page = pageKey(report.subject ??
   const read = (entry.findings ?? entry.issues ?? []).map(known);
   const kept = old && o.rekey !== false ? rekey(read) : read;
   const before = new Map(kept.map((f) => [f.fingerprint, f]));
-  const issues = findingsOf(report);
+  // A report from before fp/2 (two old versions compared) is re-keyed the same way.
+  let issues = findingsOf(report);
+  if (report.sweep?.fingerprints !== FP && o.rekey !== false) {
+    const keys = rekey(issues.map(known));
+    issues = issues.map((i, k) => (keys[k].fingerprint === i.fingerprint ? i : { ...i, fingerprint: keys[k].fingerprint }));
+  }
   const now = new Set(issues.map((i) => i.fingerprint));
   const out = { file, page, found: true, date: entry.date, widths: entry.widths, sameWidths: entry.widths === report.sweep?.widths, ...(old ? { rekeyed: kept.filter((f) => f.was && f.was !== f.fingerprint).length } : {}), new: [], fixed: [], worse: [], better: [] };
   // By fingerprint. One case more: a re-keyed scale finding whose elements

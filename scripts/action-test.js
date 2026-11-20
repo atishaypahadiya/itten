@@ -83,14 +83,15 @@ export async function run() {
     };
     const vr = (widths, issues) => ({ url: 'http://127.0.0.1:8080/runs/', version: 'x', sweep: { widths }, summary: { error: 0, warning: issues.length, info: 0 }, issues });
     const seen = (f, w, crop) => ({ ...f, seen: { light: w }, crops: crop ? [{ path: `crops/${crop}` }] : [] });
+    // Both versions' reports are from before fp/2: the gutter's fingerprint holds what each sweep measured.
     put('v1', 'quick', 'runs', vr('320, 768, 1440, 1920', [
       seen(issue('i001', 'widow', '#a', 'warning'), '768'),
-      seen(issue('i002', 'spacing-scale', 'fluid|16,21,40,40', 'warning', '#gutter'), '320, 768, 1440, 1920'),
+      seen({ ...issue('i002', 'spacing-scale', 'fluid|16,21,40,40', 'warning', '#gutter'), message: 'padding-left on 1 element scales between 16 and 40 px. More.' }, '320, 768, 1440, 1920'),
       seen(issue('i003', 'overflow', 'spill|#t', 'warning', '#t'), '320', 'i003-1.png'),
     ]), { version: '0.1', workers: 1, build: 'b1' });
     put('v2', 'quick', 'runs', vr('320, 768, 899, 900, 1440, 1920', [
       seen(issue('i001', 'widow', '#a', 'warning'), '768'),
-      seen(issue('i002', 'spacing-scale', 'fluid|16,21,36,37,40,40', 'warning', '#gutter'), '320, 768, 899, 900, 1440, 1920'),
+      seen({ ...issue('i002', 'spacing-scale', 'fluid|16,21,36,37,40,40', 'warning', '#gutter'), message: 'padding-left on 1 element scales between 16 and 40 px. More.' }, '320, 768, 899, 900, 1440, 1920'),
       seen(issue('i004', 'rag', '#caption', 'warning', '#caption'), '900', 'i004-1.png'),
       seen(issue('i005', 'frame-timing', 'loaf|#scene', 'warning', '#scene'), '1440'),
     ]), { version: '0.2', workers: 4, build: 'b1', timing: 'unreliable' });

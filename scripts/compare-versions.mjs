@@ -83,7 +83,7 @@ export function compareVersions(dir, { a, b }) {
       }
       if (c.fixed.length) {
         out.push(`| Gone | Severity | Check | Element | Message | Crops (${a}) |`, '|---|---|---|---|---|---|');
-        for (const f of c.fixed) out.push(`| ${aBy.get(f.fingerprint)?.id ?? ''} | ${f.severity} | ${f.check} | \`${cell(f.elements?.[0] ?? '')}\` | ${first(f.message)} | ${link(a, mode, page, aBy.get(f.fingerprint) ?? {})} |`);
+        for (const f of c.fixed) out.push(`| ${aBy.get(f.was ?? f.fingerprint)?.id ?? ''} | ${f.severity} | ${f.check} | \`${cell(f.elements?.[0] ?? '')}\` | ${first(f.message)} | ${link(a, mode, page, aBy.get(f.was ?? f.fingerprint) ?? {})} |`);
         out.push('');
       }
       for (const [k, xs] of [['More severe', c.worse], ['Less severe', c.better]]) if (xs.length) out.push(`${k} in ${b}: ${xs.map((x) => `${x.id} ${byId.get(x.id).check} (${x.was} to ${byId.get(x.id).severity})`).join('; ')}.`, '');
