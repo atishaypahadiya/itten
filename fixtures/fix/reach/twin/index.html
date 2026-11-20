@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reach</title>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Reach</h1>
+
+  <!-- Too wide: one of five ends on a short last line. -->
+  <section id="wide">
+    <div class="note">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+    <div class="note">One line.</div>
+    <div class="note">Two words.</div>
+    <div class="note">Three short words.</div>
+    <div class="note">Nothing to see.</div>
+  </section>
+
+  <!-- No rule of its own: only the universal rule matches the block. -->
+  <section id="bare" class="col">
+    <div>A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+  </section>
+
+  <!-- Within the allowance: one of two. -->
+  <section id="pair">
+    <div class="pair">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+    <div class="pair">One line.</div>
+  </section>
+
+  <!-- Seen only under the condition of its rule. -->
+  <section id="under">
+    <div class="under">A line whole on a wide page, wrapped.</div>
+  </section>
+
+  <!-- Seen at every width; its rule of highest precedence is inside a media query, and a base rule matches. -->
+  <section id="base">
+    <div class="based">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+  </section>
+
+  <!-- Seen at every width; its only rule is inside a media query. -->
+  <section id="only" class="col">
+    <div class="only">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+  </section>
+
+  <!-- Two findings, one rule; the second also has a narrower rule of its own. -->
+  <section id="twice">
+    <div class="dup">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+    <div class="dup narrow">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</div>
+  </section>
+
+  <!-- Cells: a sentence that ends on one word is a finding; a cell that is one number or one word is not. -->
+  <table id="cells">
+    <tbody>
+      <tr><td class="said">A paragraph of a few lines, set the plain way, can end on a last line far too short to sit beside the others.</td><td>16</td></tr>
+      <tr><td>$0.08</td><td>median</td></tr>
+      <tr><td>83%</td><td>66</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

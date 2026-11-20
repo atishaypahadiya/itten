@@ -23,13 +23,14 @@ Upgrading from 0.3.5, measured. Both versions inspected the same build of the sa
 
 So on these pages an upgrade brings no new finding. What changes is the exit code: with `--fail-on` now defaulting to `warning`, a page with warnings that passed under 0.3.5's default fails under 0.5.0 unless the workflow sets `fail-on`.
 
-`itten fix --dry-run` on neptune-fork's two pages proposed no edit: their five findings are `hairline-subpixel`, info, which has no fix class.
+`itten fix --dry-run` on neptune-fork's two pages proposed no edit: their five findings are `hairline-subpixel`, info, which has no fix class. On HundredLives' front page it planned 9 edits, all `text-wrap`, for 15 of the page's 38 text-wrap findings (6 of them covered by a rule another finding's fix writes), and left 23 guided because the only rules that match them reach too far (`p`, `td`, `.score .note`, `*`); its second page is build output, so everything there is guided. Nothing was applied to either site: `itten fix` has written files only on ITTEN's own fixtures and mutants.
 
 New:
 
 - ITTEN as an Agent Skill: `skills/itten/`, installed with `gh skill install`. `scripts/setup.sh` asks before it installs the lockfile's Playwright, Chromium and WebKit. The submodule and the Action stay supported.
 - The fast tier, `--fast`: the changed page at 320, 768 and 1440 px in one engine, layout and text checks only, in seconds.
 - `itten fix` (`inspector/fix.js`): six classes of finding fixed in the project's source and inspected again: px to rem, a compounded `em` size to its step, a value one step off the scale (within the system file's `tolerance`, 1 px by default), a no-break space before a separator, `text-wrap`, and the reduced-motion guard. A fix that leaves its finding or brings a new one is reverted. Anything else is guided: its place in the source and a note. Build output, files git ignores and `.git` are never edited. `--dry-run` plans without writing; `--apply` checks fixes given in a file.
+- `itten fix` edits a rule only when the edit reaches little else: at most 2 elements without the finding. Otherwise the fix is guided and says a narrower rule is needed, with the counts and the elements. A declaration goes inside a media query only when the finding is seen only under it, and one rule is written once for the findings it covers (`covered` in `fixes.json`). See "Fixes" in `docs/CONTRACT.md`.
 - Work packets (`inspector/packets.js`): a run's findings grouped by root cause, each with its files and owners (CODEOWNERS), marked mechanical or not, and marked when it shares no file with another packet.
 - Mutation testing (`scripts/mutation-test.js`): seeded defects planted in a clean page, recall reported per check against floors, and the fixable ones run through `itten fix`.
 - Contrast over a moving background is judged across twelve fixed frames on a frame clock, so it is the same in every run; the finding lists each frame's values (`itten.frames`).

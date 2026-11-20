@@ -97,6 +97,9 @@ async function nodeOf(src, selector) {
 export async function rulesOf(src, selector) {
   const nodeId = await nodeOf(src, selector);
   if (!nodeId) return null;
+  return rulesOfNode(src, nodeId);
+}
+async function rulesOfNode(src, nodeId) {
   const m = await src.cdp.send('CSS.getMatchedStylesForNode', { nodeId });
   return {
     inline: m.inlineStyle?.cssProperties?.some((p) => p.range) ? m.inlineStyle : null,
@@ -111,6 +114,41 @@ export async function rulesOf(src, selector) {
 export async function declarationOf(src, selector, property) {
   const m = await rulesOf(src, selector);
   if (!m) return { why: `no element matches ${selector} on the page as loaded` };
+  return winner(m, selector, property);
+}
+
+// The same declaration, in the same rule of the same stylesheet.
+export const sameDeclaration = (a, b) => a.rule.styleSheetId === b.rule.styleSheetId && JSON.stringify(a.prop.range) === JSON.stringify(b.prop.range);
+
+// The elements a rule's selector matches that take a property from one of
+// the rule's declarations (d, from declarationOf): the elements an edit of
+// that declaration changes. Each is described in the page by fn(args), called
+// with the element as `this`. Returns null when the selector matches more
+// than `cap` elements, or cannot be read.
+export async function takersOf(src, d, property, fn, args, cap = 400) {
+  const { root } = await src.cdp.send('DOM.getDocument', { depth: 0 });
+  const { nodeIds } = await src.cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: d.rule.selectorList.text }).catch(() => ({ nodeIds: null }));
+  if (!nodeIds || nodeIds.length > cap) return null;
+  const out = [];
+  for (const nodeId of nodeIds) {
+    const w = winner(await rulesOfNode(src, nodeId), 'the element', property);
+    if (w.why || !sameDeclaration(w, d)) continue;
+    const { object } = await src.cdp.send('DOM.resolveNode', { nodeId });
+    const r = await src.cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: fn, arguments: [{ value: args }], returnByValue: true });
+    out.push(r.result.value);
+  }
+  return out;
+}
+
+// The conditions a rule applies under: the text of each @media around it
+// (and of its stylesheet's media attribute or @import), and null for a
+// condition that is not a media query (@container).
+export const conditionsOf = (rule) => [
+  ...(rule.media ?? []).map((m) => m.text).filter((t) => t && t.trim() !== 'all'),
+  ...(rule.containerQueries ?? []).map(() => null),
+];
+
+function winner(m, selector, property) {
   const cands = [];
   m.rules.forEach((rule, order) => {
     for (const p of rule.style.cssProperties) {

@@ -1,0 +1,17 @@
+/* Planted: blocks set the plain way that end on a short last line. Where text-wrap may be written differs by block. */
+.note { max-width: 240px; }
+.col { max-width: 240px; }
+.pair { max-width: 240px; text-wrap: pretty; }
+.under { max-width: none; }
+.based { max-width: 240px; text-wrap: pretty; }
+.dup { max-width: 240px; text-wrap: pretty; }
+.dup.narrow { font-weight: 400; }
+table { border-collapse: collapse; }
+td { vertical-align: top; padding: 0; }
+.said { width: 240px; text-wrap: pretty; }
+
+@media (max-width: 480px) {
+  .under { max-width: 240px; text-wrap: pretty; }
+  .based { font-weight: 400; }
+  .only { font-weight: 400; }
+}

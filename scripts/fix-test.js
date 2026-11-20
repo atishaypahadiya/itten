@@ -122,6 +122,7 @@ export async function run({ quiet = true } = {}) {
   cpSync(FONT, join(site, 'fonts', 'atkinson-hyperlegible-next-latin-wght-normal.woff2'));
   for (const c of classes) cpSync(join(FIX, c, 'before'), join(site, c), { recursive: true });
   cpSync(join(FIX, 'planted'), join(site, 'planted'), { recursive: true });
+  cpSync(join(FIX, 'reach', 'page'), join(site, 'reach'), { recursive: true });
   // Decoys: the same page as built output, and in a folder git ignores.
   cpSync(join(FIX, 'px-to-rem', 'before'), join(site, 'build', 'px-to-rem'), { recursive: true });
   cpSync(join(FIX, 'px-to-rem', 'before'), join(site, 'generated'), { recursive: true });
@@ -174,6 +175,49 @@ export async function run({ quiet = true } = {}) {
     const off = own.fixes.find((x) => x.finding.check === 'spacing-scale');
     if (!off || off.kind !== 'guided' || off.class !== 'off-scale' || !/no step is within 1 px \(nearest 12 or 16 px\)/.test(off.note) || !off.locations?.some((l) => l.file === 'planted/style.css' && l.line === 2)) fails.push(`planted: the value off the scale is not a guided fix located at planted/style.css line 2 (${JSON.stringify(off?.locations)})`);
     if (!same(tree(join(site, 'planted')), planted)) fails.push('planted: a guided fix wrote to the page');
+
+    // How wide an edit may reach (fixtures/fix/reach): a declaration is added only to a rule that reaches at most
+    // ALLOWANCE elements without the finding and applies at every width the finding was seen at; one rule is
+    // written once for the findings it covers; a cell that is one number or one word is no finding.
+    {
+      const was = tree(join(site, 'reach')), baseWas = readFileSync(join(site, 'base.css'), 'utf8');
+      const css = was['style.css'].split('\n');
+      const dry = await fix(url('reach/index.html'), opts('reach-dry', { dryRun: true }));
+      const of = (sel) => dry.fixes.find((x) => x.finding.fingerprint === `text-wrap-pretty|${sel}`);
+      const want = [
+        ['#wide > div:nth-of-type(1)', 'guided', /a narrower rule is needed.*\.note matches 5 elements and 4 of them do not have this finding \(div\.note "One line\."/],
+        ['#bare > div', 'guided', /a narrower rule is needed.*\* matches \d+ elements and \d+ of them do not have this finding/],
+        ['#pair > div:nth-of-type(1)', 'planned', /^\.pair \{/],
+        ['#under > div', 'planned', /^  \.under \{/],
+        ['#base > div', 'planned', /^\.based \{/],
+        ['#only > div', 'guided', /\.only applies only under @media \(max-width: 480px\), and the finding is also seen outside it/],
+        ['#twice > div:nth-of-type(1)', 'planned', /^\.dup \{/],
+        ['#twice > div:nth-of-type(2)', 'covered', /already written for this element: \.dup \(the fix for i\d+\)/],
+        ['#cells > tbody > tr:nth-of-type(1) > td:nth-of-type(1)', 'planned', /^\.said \{/],
+      ];
+      for (const [sel, status, re] of want) {
+        const x = of(sel);
+        if (!x) { fails.push(`reach: no text-wrap-pretty finding on ${sel}`); continue; }
+        if (x.status !== status) fails.push(`reach: the fix for ${sel} is ${x.status}, not ${status} (${x.note})`);
+        else if (status === 'planned') {
+          if (x.edits.length !== 1 || x.edits[0].file !== 'reach/style.css' || !re.test(css[x.edits[0].line - 1])) fails.push(`reach: the fix for ${sel} edits ${x.edits.map((e) => `${e.file}:${e.line} (${css[e.line - 1]})`).join(', ')}, not the rule ${re}`);
+        } else if (x.edits.length || !re.test(x.note)) fails.push(`reach: the ${status} fix for ${sel} has ${x.edits.length} edits and says: ${x.note}`);
+      }
+      if (dry.fixes.length !== want.length) fails.push(`reach: ${dry.fixes.length} findings, not ${want.length}: ${dry.fixes.filter((x) => !want.some(([s]) => x.finding.fingerprint.endsWith(`|${s}`))).map((x) => x.finding.fingerprint).join('; ')}`);
+      if (dry.fixes.some((x) => /#cells/.test(x.finding.fingerprint) && !/tr:nth-of-type\(1\) > td:nth-of-type\(1\)$/.test(x.finding.fingerprint))) fails.push('reach: a cell that holds one number or one word is reported');
+      if (dry.summary.planned !== 5 || dry.summary.covered !== 1 || dry.summary.guided !== 3) fails.push(`reach: the dry run's summary is ${JSON.stringify(dry.summary)}`);
+      if (!same(tree(join(site, 'reach')), was)) fails.push('reach: a dry run wrote to the page');
+      // The control: with no allowance the block among five is planned (on the widest rule, which then covers the
+      // most findings), so the allowance is what holds it.
+      const loose = await fix(url('reach/index.html'), opts('reach-loose', { dryRun: true, allowance: Infinity }));
+      const wide = loose.fixes.find((x) => x.finding.fingerprint === 'text-wrap-pretty|#wide > div:nth-of-type(1)');
+      if (wide?.status !== 'planned' || wide.edits.length !== 1) fails.push(`reach: without an allowance the fix for the block among five is ${wide?.status}, not planned (the control)`);
+      const real = await fix(url('reach/index.html'), opts('reach'));
+      if (real.summary.kept !== 5 || real.summary.covered !== 1 || real.summary.guided !== 3 || real.summary.reverted) fails.push(`reach: the run's summary is ${JSON.stringify(real.summary)}: ${real.fixes.filter((x) => x.reason).map((x) => x.reason).join('; ')}`);
+      const now = tree(join(site, 'reach')), twin = tree(join(FIX, 'reach', 'twin'));
+      if (!same(now, twin)) fails.push(`reach: the fixed files differ from twin/ in ${differ(now, twin).join(', ')}`);
+      if (readFileSync(join(site, 'base.css'), 'utf8') !== baseWas) fails.push('reach: the shared stylesheet was edited, through the universal rule');
+    }
 
     // Never build output.
     for (const [path, dir] of [['build/px-to-rem/index.html', 'build/px-to-rem'], ['generated/index.html', 'generated']]) {

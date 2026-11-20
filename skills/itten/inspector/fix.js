@@ -27,6 +27,10 @@
 //                   or nothing animated
 // Guided only: a value off the scale with no step, or more than one, within
 // the tolerance; and durations and easings off the system.
+// Guided too, whatever the class: an edit of a rule that reaches more than
+// ALLOWANCE elements without the finding, and a declaration that could only
+// go inside a media query the finding is also seen outside of. A finding
+// that a rule already written in this run reaches is `covered`.
 //
 // Usage:
 //   node itten/inspector/fix.js <url> --root <dir> [--system itten.system.json] [--out itten-fix]
@@ -45,12 +49,27 @@ import { fileURLToPath } from 'node:url';
 import { inspect, loadSystem, VERSION, FAST_WIDTHS } from './inspect.js';
 import { findingsOf } from './finding.js';
 import { apply, revert, readIn, EditError } from './edits.js';
-import { attach, declarationOf, valuePlace, rulesOf, placeOf, notSource, fileOf } from './locate.js';
+import { attach, declarationOf, valuePlace, rulesOf, placeOf, notSource, fileOf, takersOf, conditionsOf } from './locate.js';
 
 export const AUTO = ['px-to-rem', 'em-to-step', 'to-step', 'nbsp-separator', 'text-wrap', 'reduced-motion'];
 // How far from a step a value may be and still have one right answer, in
 // px, where the system does not say (spacing.tolerance, type.tolerance).
 export const TOLERANCE = 1;
+// How many of the elements an edit of a rule changes may be without the
+// finding it fixes (docs/CONTRACT.md, "Fixes": how wide an edit may reach).
+export const ALLOWANCE = 2;
+// Described in the page, for one element (`this`) that takes its value from
+// the declaration a fix would edit: is it drawn, and does it carry the
+// finding? It does when a finding of the same check names it, or when it
+// holds the finding's value and no ignore mark for the check.
+const TAKER = `function (a) {
+  const listed = a.carriers.some((s) => { try { return this.matches(s); } catch { return false; } });
+  const px = Math.abs(parseFloat(getComputedStyle(this).getPropertyValue(a.prop)));
+  const marks = (this.getAttribute('data-itten-ignore') || '').split(/\\s+/);
+  const ignored = marks.includes(a.check) || marks.includes('all');
+  const cls = typeof this.className === 'string' && this.className.trim() ? '.' + this.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+  return { rendered: this.getClientRects().length > 0, carries: listed || (a.v !== null && Math.abs(px - a.v) <= 0.01 && !ignored), name: this.id ? '#' + this.id : this.tagName.toLowerCase() + cls };
+}`;
 // The steps within the tolerance of a value. An off-scale value is moved
 // mechanically only when there is exactly one.
 export const stepsWithin = (steps, v, tol = TOLERANCE) => [...new Set(steps)].sort((a, b) => a - b).filter((s) => Math.abs(s - v) <= tol + 1e-6);
@@ -124,6 +143,50 @@ export async function planFix(f, ctx) {
     return first;
   };
   const pxOf = (text) => { const m = text.match(/^(-?\d*\.?\d+)(px|rem)$/i); return m ? Math.abs(Number(m[1])) * (m[2].toLowerCase() === 'rem' ? rootPx : 1) : null; };
+  // How wide an edit reaches. The elements a finding of this check names:
+  const allow = ctx.allowance ?? ALLOWANCE;
+  const carriers = [...new Set((ctx.findings ?? [f]).filter((x) => x.check === f.check).flatMap(elementsOf))];
+  const tooWide = (selector, b) => `${selector} matches ${b.matches} element${b.matches === 1 ? '' : 's'} and ${b.without} of them ${b.without === 1 ? 'does' : 'do'} not have this finding (${b.examples.join(', ')}${b.without > b.examples.length ? ', …' : ''}); at most ${allow} may`;
+  // For a declaration the fixer adds: every drawn element the rule matches.
+  const reachOf = (selector) => ctx.page.evaluate(({ selector, carriers }) => {
+    const all = (s) => { try { return [...document.querySelectorAll(s)]; } catch { return []; } };
+    const name = (e) => { const cls = typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : ''; const t = (e.textContent || '').trim().replace(/\s+/g, ' '); return (e.id ? '#' + e.id : e.tagName.toLowerCase() + cls) + (t ? ` "${t.length > 24 ? t.slice(0, 23) + '…' : t}"` : ''); };
+    const els = all(selector).filter((e) => e.getClientRects().length);
+    const carry = new Set(carriers.flatMap(all));
+    const without = els.filter((e) => !carry.has(e));
+    return { matches: els.length, with: els.length - without.length, without: without.length, examples: without.slice(0, 4).map(name) };
+  }, { selector, carriers });
+  // For a value the fixer changes: the drawn elements that take it from that declaration.
+  const valueReach = async (places, v) => {
+    for (const { p, prop } of places) {
+      const selector = p.d.rule.selectorList.text;
+      const t = await takersOf(src, p.d, prop, TAKER, { carriers, prop, v: v ?? null, check: f.check });
+      if (!t) return `${selector} (${p.file}:${p.line}) matches more elements than a fix reads (400)`;
+      const drawn = t.filter((x) => x.rendered), without = drawn.filter((x) => !x.carries);
+      if (without.length > allow) return `${tooWide(selector, { matches: drawn.length, without: without.length, examples: without.slice(0, 4).map((x) => x.name) })} (${p.file}:${p.line})`;
+    }
+    return null;
+  };
+  // The condition a rule applies under that does not hold at every width the
+  // finding was seen at, or null. A container query is never known to hold.
+  const held = new Map();
+  const outside = async (rule) => {
+    for (const cond of conditionsOf(rule)) {
+      if (cond === null) return 'a container query';
+      if (!held.has(cond)) {
+        const size = ctx.page.viewportSize();
+        let all = true;
+        for (const w of seenWidths(f.seen)) {
+          await ctx.page.setViewportSize({ width: w, height: size?.height ?? 900 });
+          if (!(await ctx.page.evaluate((c) => matchMedia(c).matches, cond))) { all = false; break; }
+        }
+        if (size) await ctx.page.setViewportSize(size);
+        held.set(cond, all);
+      }
+      if (!held.get(cond)) return `@media ${cond}`;
+    }
+    return null;
+  };
   const where = async (prop) => {
     const out = [];
     for (const sel of sels.slice(0, 8)) { const v = await located(sel, prop); out.push(v.why ? { selector: sel, note: v.why } : { selector: sel, file: v.file, line: v.line, column: v.column }); }
@@ -175,21 +238,27 @@ export async function planFix(f, ctx) {
       const p = await located(sel, 'font-size', (x) => { const px = pxOf(x.text); return px !== null && Math.abs(px - v) <= 0.01; });
       const m = p.why ? null : p.text.match(/^(-?\d*\.?\d+)(px|rem)$/i);
       if (!m || Math.abs(Number(m[1]) * (m[2].toLowerCase() === 'rem' ? rootPx : 1) - v) > 0.01) { allFixed = false; break; }
-      stepEdits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px` });
+      stepEdits.set(`${p.file}:${p.offset}`, { p, prop: 'font-size', edit: { file: p.file, line: p.line, column: p.column, length: p.length, replace: m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px` } });
     }
-    if (allFixed && within.length === 1) return { class: 'to-step', kind: 'auto', edits: [...stepEdits.values()], targets: sels, note: `${v} px is off the type scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
+    if (allFixed && within.length === 1) {
+      const wide = await valueReach([...stepEdits.values()], v);
+      if (wide) return guided('off-scale', `${v} px is off the type scale and ${within[0]} px is the only step within ${tol} px, but a narrower rule is needed: ${wide}.`, await where('font-size'));
+    }
+    if (allFixed && within.length === 1) return { class: 'to-step', kind: 'auto', edits: [...stepEdits.values()].map((x) => x.edit), targets: sels, note: `${v} px is off the type scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
     for (const sel of sels) {
       const p = await located(sel, 'font-size');
       if (p.why) { why.push(`${sel}: ${p.why}`); continue; }
       const m = p.text.match(/^(-?\d*\.?\d+)(em|%)$/i);
       if (!m) { unit = unit ?? p.text; why.push(`${sel}: set as ${p.text}`); continue; }
-      edits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${num(nearest[0] / rootPx)}rem` });
+      edits.set(`${p.file}:${p.offset}`, { p, prop: 'font-size', edit: { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${num(nearest[0] / rootPx)}rem` } });
     }
     const locations = await where('font-size');
     if (why.length && !edits.size && unit) return guided('off-scale', `${v} px is off the type scale and is set in fixed units (${unit}). ${within.length === 1 ? `${within[0]} px is the only step within ${tol} px, but not every element's size could be found where it is written` : within.length ? `${within.join(' and ')} px are both within ${tol} px` : `No step is within ${tol} px (nearest ${nearestSteps(steps, v).join(' or ')} px)`}: which step it should be is a choice.`, locations);
     if (why.length) return guided('em-to-step', `Not every size can be moved to a step: ${why.join('; ')}.`, locations);
     if (nearest.length !== 1) return guided('em-to-step', `${v} px is as near ${nearest.join(' px as ')} px: which step is a choice.`, locations);
-    return { class: 'em-to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `A size compounded from em or %, ${v} px, to the nearest step, ${nearest[0]} px, in rem.` };
+    const wide = await valueReach([...edits.values()], v);
+    if (wide) return guided('em-to-step', `${v} px, compounded from em or %, is nearest the step ${nearest[0]} px, but a narrower rule is needed: ${wide}.`, locations);
+    return { class: 'em-to-step', kind: 'auto', edits: [...edits.values()].map((x) => x.edit), targets: sels, note: `A size compounded from em or %, ${v} px, to the nearest step, ${nearest[0]} px, in rem.` };
   }
 
   if (f.check === 'spacing-scale' && f.scale?.kind === 'fixed') {
@@ -209,10 +278,12 @@ export async function planFix(f, ctx) {
       if (!m) { why.push(`${sel} ${prop}: set as ${p.text}`); continue; }
       const px = Math.abs(Number(m[1])) * (m[2].toLowerCase() === 'rem' ? rootPx : 1);
       if (Math.abs(px - v) > 0.01) continue;   // this side holds another value
-      edits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${Number(m[1]) < 0 ? '-' : ''}${m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px`}` });
+      edits.set(`${p.file}:${p.offset}`, { p, prop, edit: { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${Number(m[1]) < 0 ? '-' : ''}${m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px`}` } });
     }
     if (why.length || !edits.size) return guided('off-scale', `${f.message} ${within[0]} px is the only step within ${tol} px, but not every place it is written can be moved: ${why.join('; ') || 'no px or rem value was found'}.`, await where(props[0]));
-    return { class: 'to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `${v} px is off the spacing scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
+    const wide = await valueReach([...edits.values()], v);
+    if (wide) return guided('off-scale', `${f.message} ${within[0]} px is the only step within ${tol} px, but a narrower rule is needed: ${wide}.`, await where(props[0]));
+    return { class: 'to-step', kind: 'auto', edits: [...edits.values()].map((x) => x.edit), targets: sels, note: `${v} px is off the spacing scale and ${within[0]} px is the only step within ${tol} px: moved to it.` };
   }
 
   if (f.check === 'motion-timing') return guided('motion-timing', `${f.message} Which system duration or easing it should use is a choice.`, sels.map((s) => ({ selector: s })));
@@ -224,23 +295,64 @@ export async function planFix(f, ctx) {
 
   if (f.check === 'text-wrap-balance' || f.check === 'text-wrap-pretty') {
     const value = f.check === 'text-wrap-balance' ? 'balance' : 'pretty';
-    const edits = [];
+    const edits = [], rules = [], coveredBy = [];
+    const narrower = (sel, why) => guided('text-wrap', `${sel}: a narrower rule is needed for text-wrap: ${value}. ${why.join('; ')}.`, sels.map((s) => ({ selector: s })));
     for (const sel of sels) {
       const d = await declarationOf(src, sel, 'text-wrap');
       if (!d.why) {
+        // A rule sets text-wrap already: its value is changed there, or nowhere.
         const v = await valuePlace(src, root, url, d);
         if (v.why) return guided('text-wrap', `${sel}: ${v.why}.`, [{ selector: sel }]);
+        if (v.text === value) { coveredBy.push(`${d.rule.selectorList.text} (${v.file}:${v.line})`); continue; }
+        const selector = d.rule.selectorList.text, out = await outside(d.rule), b = await reachOf(selector);
+        if (out) return narrower(sel, [`${selector} sets text-wrap only under ${out}, and the finding is also seen outside it`]);
+        if (b.without > allow) return narrower(sel, [tooWide(selector, b)]);
         edits.push({ file: v.file, line: v.line, column: v.column, length: v.length, replace: value });
+        rules.push({ selector, conditions: conditionsOf(d.rule), value });
         continue;
       }
       const m = await rulesOf(src, sel);
-      const rule = m?.rules.at(-1);
-      if (!rule) return guided('text-wrap', `${sel} matches no rule of the project's own to add text-wrap: ${value} to.`, [{ selector: sel }]);
-      const ins = await insertDeclaration(src, root, url, rule, `text-wrap: ${value}`);
-      if (ins.why) return guided('text-wrap', `${sel}: ${ins.why}.`, [{ selector: sel }]);
+      if (!m?.rules.length) return guided('text-wrap', `${sel} matches no rule of the project's own to add text-wrap: ${value} to.`, [{ selector: sel }]);
+      // A rule another fix of this run adds the same declaration to, which
+      // reaches this element at every width the finding was seen at: nothing more to write.
+      let by = null;
+      for (const r of ctx.planned ?? []) {
+        if (r.value !== value || !(await ctx.page.evaluate(({ sel, selector }) => { try { return !!document.querySelector(sel)?.matches(selector); } catch { return false; } }, { sel, selector: r.selector }))) continue;
+        if (await outside({ media: r.conditions.map((text) => ({ text })) })) continue;
+        by = r; break;
+      }
+      if (by) { coveredBy.push(`${by.selector} (the fix for ${by.id})`); continue; }
+      // Otherwise the declaration goes to a rule that applies wherever the
+      // finding was seen and reaches little else: of those, the one that
+      // reaches the most elements with the finding (so two findings one rule
+      // covers are fixed there, whichever is planned first), then the one of
+      // highest precedence.
+      const why = [];
+      let best = null;
+      for (const rule of [...m.rules].reverse()) {
+        const selector = rule.selectorList.text;
+        const out = await outside(rule);
+        if (out) { why.push(`${selector} applies only under ${out}, and the finding is also seen outside it`); continue; }
+        const b = await reachOf(selector);
+        if (b.without > allow) { why.push(tooWide(selector, b)); continue; }
+        if (!best || b.with > best.b.with) best = { rule, b };
+      }
+      let ins = null;
+      if (best) {
+        ins = await insertDeclaration(src, root, url, best.rule, `text-wrap: ${value}`);
+        if (ins.why) return guided('text-wrap', `${sel}: ${ins.why}.`, [{ selector: sel }]);
+        rules.push({ selector: best.rule.selectorList.text, conditions: conditionsOf(best.rule), value });
+      }
+      if (!ins) {
+        // Build output is said first: no rule there can be edited, narrow or not.
+        const top = await placeOf(src, root, url, m.rules.at(-1).header, m.rules.at(-1).style.range);
+        if (top.why) return guided('text-wrap', `${sel}: ${top.why}.`, [{ selector: sel }]);
+        return narrower(sel, why);
+      }
       edits.push(ins.edit);
     }
-    return { class: 'text-wrap', kind: 'auto', edits, targets: sels, note: `text-wrap: ${value}, where the check measured an improvement.` };
+    if (!edits.length) return { class: 'text-wrap', kind: 'auto', edits, targets: sels, covered: coveredBy, note: `text-wrap: ${value} is already written for this element: ${coveredBy.join('; ')}.` };
+    return { class: 'text-wrap', kind: 'auto', edits, targets: sels, rules, note: `text-wrap: ${value}, where the check measured an improvement.` };
   }
 
   if (f.check === 'reduced-motion') {
@@ -367,6 +479,8 @@ export async function fix(url, o = {}) {
   if (before.status === 'refused') { result.status = 'refused'; result.reason = before.reason; if (before.blocked) result.blocked = true; write(); return result; }
   const findings = findingsOf(before);
   const rootPx = 16;
+  // The rules this run's fixes add a declaration to, so a later finding the same rule reaches is not planned twice.
+  const planned = [];
 
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ channel: 'chromium' }).catch(() => chromium.launch());
@@ -429,13 +543,22 @@ export async function fix(url, o = {}) {
         let plan;
         try {
           const px = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)).catch(() => rootPx);
-          plan = await planFix(f, { page, src, root, url, system: o.system, rootPx: px || rootPx, next });
+          plan = await planFix(f, { page, src, root, url, system: o.system, rootPx: px || rootPx, next, findings, planned, allowance: o.allowance });
         } finally { for (const pg of opened) await pg.close().catch(() => {}); }
         const entry = { finding: { id: f.id, check: f.check, fingerprint: f.fingerprint, severity: f.severity, message: f.message }, class: plan.class, kind: plan.kind, note: plan.note, edits: plan.edits, ...(plan.locations?.length ? { locations: plan.locations } : {}) };
         result.fixes.push(entry);
         if (plan.kind === 'guided') { entry.status = 'guided'; result.summary.guided++; continue; }
-        if (o.dryRun) { entry.status = 'planned'; result.summary.planned++; continue; }
+        const reg = () => planned.push(...(plan.rules ?? []).map((r) => ({ ...r, id: f.id })));
+        if (plan.covered) {
+          // Another fix of this run already writes what this one would. In a real
+          // run the finding is looked for again, and is guided if it is still there.
+          const left = o.dryRun ? false : stillThere(findingsOf(await recheck(scopeOf(f))), f, plan.targets);
+          if (left) { entry.kind = 'guided'; entry.status = 'guided'; entry.note = `${plan.note} The finding is still there.`; result.summary.guided++; } else { entry.status = 'covered'; result.summary.covered = (result.summary.covered ?? 0) + 1; }
+          continue;
+        }
+        if (o.dryRun) { entry.status = 'planned'; result.summary.planned++; reg(); continue; }
         await check(entry, f, plan.edits, plan.targets);
+        if (entry.status === 'kept') reg();
       }
     }
   } finally { await browser.close(); write(); }
@@ -467,6 +590,6 @@ if (startedAsCommand()) {
   const r = await fix(args._[0], { root: args.root, system, systemPath: args.system ?? null, out: args.out, apply: args.apply, fast: !!args.fast, engines: args['no-engines'] ? [] : undefined, dryRun: !!args['dry-run'] })
     .catch((e) => { console.error(e.stack || String(e)); process.exit(70); });
   const s = r.summary;
-  console.log(`${s.kept} kept, ${s.reverted} reverted, ${s.guided} guided${s.planned ? `, ${s.planned} planned` : ''}. Fixes: ${join(args.out ?? 'itten-fix', 'fixes.json')}`);
+  console.log(`${s.kept} kept, ${s.reverted} reverted, ${s.guided} guided${s.planned ? `, ${s.planned} planned` : ''}${s.covered ? `, ${s.covered} covered` : ''}. Fixes: ${join(args.out ?? 'itten-fix', 'fixes.json')}`);
   process.exit(r.status === 'refused' ? (r.blocked ? 75 : 2) : s.reverted ? 1 : 0);
 }
