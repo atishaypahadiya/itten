@@ -1,0 +1,17 @@
+{
+  "note": "The lowest recall allowed per check: each check's recall in the run of 19 November 2026 (seed 100, 200 mutants per check), rounded down to 0.05. Raised only when a release catches more.",
+  "floors": {
+    "clipping": 1.0,
+    "contrast": 1.0,
+    "line-start": 1.0,
+    "motion-layout": 1.0,
+    "overflow": 1.0,
+    "radius": 1.0,
+    "reduced-motion": 1.0,
+    "spacing-scale": 1.0,
+    "spacing-unit": 1.0,
+    "target-size": 1.0,
+    "text-resize": 1.0,
+    "type-scale": 1.0
+  }
+}

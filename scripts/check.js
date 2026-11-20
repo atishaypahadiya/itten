@@ -54,6 +54,9 @@
 //   nothing fixed (scripts/fingerprint-test.js);
 // - a finding is in no work packet or in two, or packets marked conflict-free
 //   share a file (scripts/packets-test.js);
+// - the mutation sample's clean page reports something, a mutant that changes
+//   nothing counts as caught, a finding falls outside every mutated slot, or
+//   one of the sample's mutants is missed (scripts/mutation-test.js);
 // - skills/itten does not match the repository's protocol, inspector,
 //   schemas and lockfile, its SKILL.md breaks the Agent Skills
 //   specification, or a copy of it does not run on its own
@@ -466,6 +469,18 @@ try {
   for (const f of await packetsTest()) fail('Packets', f);
 } catch (e) {
   fail('Packets', `the packets test could not run: ${e.message.split('\n')[0]}`);
+}
+
+// --------------------------------------------------------------- Mutation
+// A sample of mutation testing: seed 1, one mutant per operator, and the
+// controls (scripts/mutation-test.js). The seed's mutants are all caught.
+try {
+  const { sample } = await import('./mutation-test.js');
+  const m = await sample();
+  for (const f of m.fails ?? []) fail('Mutation', f);
+  for (const x of m.missed ?? []) fail('Mutation', `the sample's mutant ${x.id} is missed: ${x.what}${x.media ? `, ${x.media}` : ''}`);
+} catch (e) {
+  fail('Mutation', `the mutation sample could not run: ${e.message.split('\n')[0]}`);
 }
 
 // --------------------------------------------------------------- Expected
