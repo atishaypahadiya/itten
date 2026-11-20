@@ -174,10 +174,55 @@ export function typography(opts) {
     const L = lines(el, fs);
     if (!L.length) continue;
     const box = content(el, s);
-    if (box.width < fs * 4) continue;
     const last = L.at(-1);
     const head = HEADING(el);
     const mark = (ln) => ({ x1: ln.left + sx, y1: ln.top + sy, x2: ln.right + sx, y2: ln.bottom + sy });
+    // Lines that begin with a separator or closing punctuation. A separator
+    // between items belongs to the item before it, as a comma does to its
+    // word; a line can end on one, never begin with one. Only the first
+    // character of a line after the first is read. A line after a forced
+    // break begins where the author put it; a line that begins inside a
+    // word is broken-word's. A mark followed by a letter or a digit opens a
+    // word of its own: an absolute value (|O − C|), a path (/usr), an
+    // elision (’90s, ’tis), a number (.5), an extension (.js). So does an
+    // ellipsis.
+    // Read at any width: a separator that begins a line is wrong in the
+    // narrowest box too (a byline as wide as its first item).
+    const lineStart = () => {
+      if (!(want.has('line-start') && L.length >= 2 && live(el, 'line-start'))) return;
+      {
+        const hits = [];
+        L.forEach((ln, i) => {
+          const w = ln.words[0];
+          if (i === 0 || L[i - 1].forced || w.piece !== 0) return;
+          const t = w.text;
+          if (/^(\.\.\.|…)/.test(t)) return;
+          // The character after the mark, read across elements: a mark alone
+          // in its text node may be glued to the next word (|<i>O</i>|).
+          let next = t[1];
+          if (next === undefined && ln.words[1]) {
+            const w2 = ln.words[1];
+            range.setStart(w.node, w.start + t.length); range.setEnd(w2.node, w2.start);
+            if (!/\s/.test(range.toString())) next = w2.text[0];
+          }
+          if (next && /[\p{L}\p{N}]/u.test(next)) return;
+          if (LINE_SEP.test(t)) hits.push({ i, w, ch: t[0], kind: 'sep' });
+          else if (LINE_CLOSE.test(t)) hits.push({ i, w, ch: t[0], kind: 'close' });
+        });
+        if (hits.length) {
+          const nums = hits.map((h) => h.i + 1);
+          const chars = [...new Set(hits.map((h) => `"${h.ch}"`))];
+          const which = hits.length === 1 ? `Line ${nums[0]} of ${L.length} begins` : `Lines ${nums.slice(0, -1).join(', ')} and ${nums.at(-1)} of ${L.length} begin`;
+          const advice = [];
+          const sep = hits.find((h) => h.kind === 'sep');
+          if (sep) advice.push(`A separator belongs to the item before it: put a no-break space before it (&nbsp;${sep.ch}) and an ordinary space after, so a line can end on it but not begin with it.`);
+          if (hits.some((h) => h.kind === 'close')) advice.push('Closing punctuation belongs to the word before it: remove the space before it, or make that space a no-break space.');
+          report('line-start', 'warning', el, `${which} with ${chars.join(' and ')}. ${advice.join(' ')}`, hits.map(({ w }) => ({ x1: w.left + sx, y1: w.top + sy, x2: w.right + sx, y2: w.bottom + sy })));
+        }
+      }
+    };
+    // The other line checks need a measure: under 4 em every line is a fragment.
+    if (box.width < fs * 4) { lineStart(); continue; }
 
     // Widows and short last lines. Where a paragraph wraps plainly, set
     // text-wrap: pretty on it for a moment: a last line that improves is
@@ -225,45 +270,7 @@ export function typography(opts) {
       }
     }
 
-    // Lines that begin with a separator or closing punctuation. A separator
-    // between items belongs to the item before it, as a comma does to its
-    // word; a line can end on one, never begin with one. Only the first
-    // character of a line after the first is read. A line after a forced
-    // break begins where the author put it; a line that begins inside a
-    // word is broken-word's. A mark followed by a letter or a digit opens a
-    // word of its own: an absolute value (|O − C|), a path (/usr), an
-    // elision (’90s, ’tis), a number (.5), an extension (.js). So does an
-    // ellipsis.
-    if (want.has('line-start') && L.length >= 2 && live(el, 'line-start')) {
-      const hits = [];
-      L.forEach((ln, i) => {
-        const w = ln.words[0];
-        if (i === 0 || L[i - 1].forced || w.piece !== 0) return;
-        const t = w.text;
-        if (/^(\.\.\.|…)/.test(t)) return;
-        // The character after the mark, read across elements: a mark alone
-        // in its text node may be glued to the next word (|<i>O</i>|).
-        let next = t[1];
-        if (next === undefined && ln.words[1]) {
-          const w2 = ln.words[1];
-          range.setStart(w.node, w.start + t.length); range.setEnd(w2.node, w2.start);
-          if (!/\s/.test(range.toString())) next = w2.text[0];
-        }
-        if (next && /[\p{L}\p{N}]/u.test(next)) return;
-        if (LINE_SEP.test(t)) hits.push({ i, w, ch: t[0], kind: 'sep' });
-        else if (LINE_CLOSE.test(t)) hits.push({ i, w, ch: t[0], kind: 'close' });
-      });
-      if (hits.length) {
-        const nums = hits.map((h) => h.i + 1);
-        const chars = [...new Set(hits.map((h) => `"${h.ch}"`))];
-        const which = hits.length === 1 ? `Line ${nums[0]} of ${L.length} begins` : `Lines ${nums.slice(0, -1).join(', ')} and ${nums.at(-1)} of ${L.length} begin`;
-        const advice = [];
-        const sep = hits.find((h) => h.kind === 'sep');
-        if (sep) advice.push(`A separator belongs to the item before it: put a no-break space before it (&nbsp;${sep.ch}) and an ordinary space after, so a line can end on it but not begin with it.`);
-        if (hits.some((h) => h.kind === 'close')) advice.push('Closing punctuation belongs to the word before it: remove the space before it, or make that space a no-break space.');
-        report('line-start', 'warning', el, `${which} with ${chars.join(' and ')}. ${advice.join(' ')}`, hits.map(({ w }) => ({ x1: w.left + sx, y1: w.top + sy, x2: w.right + sx, y2: w.bottom + sy })));
-      }
-    }
+    lineStart();
 
     if (tested >= 250) continue;
 
