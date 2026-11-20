@@ -16,7 +16,7 @@ import { notSource, fileOf } from '../inspector/locate.js';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, spawn } from 'node:child_process';
 import { start } from './serve.js';
 import { loadSystem, inspect } from '../inspector/inspect.js';
 import { fix, AUTO, stepsWithin } from '../inspector/fix.js';
@@ -163,7 +163,12 @@ export async function run({ quiet = true } = {}) {
     if (!given[0]?.recheck || given[0].recheck.cleared) fails.push('planted: the fix that leaves its finding was not reported as leaving it');
     if (!given[1]?.recheck?.new?.some((n) => n.check === 'overflow')) fails.push('planted: the fix that brings an overflow was not reported as bringing one');
     if (!same(tree(join(site, 'planted')), planted)) fails.push('planted: the page was not left as it was');
-    const cli = spawnSync(process.execPath, [join(ROOT, 'inspector', 'fix.js'), url('planted/index.html'), '--root', site, '--system', join(ROOT, 'fixtures', 'itten.system.json'), '--no-engines', '--apply', join(FIX, 'planted', 'fixes.json'), '--out', join(OUT, 'planted-cli')], { encoding: 'utf8', timeout: 600000 });
+    // Run without blocking this process, which serves the page: with spawnSync the command never got an answer,
+    // and its exit 1 was a crash, not two reverted fixes.
+    rmSync(join(OUT, 'planted-cli'), { recursive: true, force: true });   // so an earlier run's fixes.json cannot be read as this one's
+    const cli = await new Promise((ok) => { const c = spawn(process.execPath, [join(ROOT, 'inspector', 'fix.js'), url('planted/index.html'), '--root', site, '--system', join(ROOT, 'fixtures', 'itten.system.json'), '--no-engines', '--apply', join(FIX, 'planted', 'fixes.json'), '--out', join(OUT, 'planted-cli')], { stdio: 'ignore' }); const t = setTimeout(() => c.kill(), 600000); c.on('exit', (status) => { clearTimeout(t); ok({ status }); }); });
+    const cliOut = (() => { try { return JSON.parse(readFileSync(join(OUT, 'planted-cli', 'fixes.json'), 'utf8')); } catch { return null; } })();
+    if (cliOut?.status === 'refused' || cliOut?.summary?.reverted !== 2) fails.push(`planted: the command's fixes.json is ${cliOut?.status} with ${cliOut?.summary?.reverted} reverted, not 2 (${cliOut?.reason ?? ''})`);
     if (cli.status !== 1) fails.push(`planted: itten fix --apply exited ${cli.status}, not 1, with both fixes reverted`);
     const own = await fix(url('planted/index.html'), opts('planted-own'));
     const off = own.fixes.find((x) => x.finding.check === 'spacing-scale');

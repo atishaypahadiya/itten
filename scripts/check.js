@@ -672,8 +672,9 @@ try {
   for (const p of reports) {
     const rep = JSON.parse(readFileSync(p, 'utf8'));
     for (const e of rerr(rep).slice(0, 3)) fail('Finding format', `${p.slice(ROOT.length + 1)}: ${e}`);
-    // complete exactly when no step timed out and no job was dropped (no fixture uses --wait-for)
-    const stopped = (rep.findings ?? []).some((f) => f.check === 'timed-out') || rep.health?.dropped?.length > 0;
+    // complete exactly when no step timed out, no job was dropped and no repeat was blocked (no fixture uses --wait-for)
+    const stopped = (rep.findings ?? []).some((f) => f.check === 'timed-out') || rep.health?.dropped?.length > 0
+      || /could not be measured a second and third time/.test(rep.reason ?? '');   // a repeat of the first load the server blocked
     if (rep.status !== (stopped ? 'partial' : 'complete')) fail('Finding format', `${p.slice(ROOT.length + 1)}: status ${rep.status}, but ${stopped ? 'a step timed out or a job was dropped' : 'nothing timed out and no job was dropped'}`);
   }
   for (const p of reports) for (const f of JSON.parse(readFileSync(p, 'utf8')).findings ?? []) {
