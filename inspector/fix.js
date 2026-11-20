@@ -36,7 +36,8 @@
 //   --apply    check these fixes again instead of planning (a file of
 //              { fixes: [{ finding: { check, fingerprint }, note, edits }] })
 // Exit codes: 0 no fix reverted; 1 a fix was reverted; 2 the inspection was
-// refused; 64 bad usage.
+// refused; 64 bad usage or a system file that is not valid; 70 the run
+// failed inside the tool; 75 temporarily blocked (the server gave no answer).
 
 import { readFileSync, writeFileSync, mkdirSync, realpathSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -363,7 +364,7 @@ export async function fix(url, o = {}) {
   const before = await inspect(url, { ...base, out: join(out, 'before'), ...(o.fast ? { fast: true } : {}) });
   const result = { tool: 'itten-fix', version: VERSION, url, root, started: started.toISOString(), status: 'complete', fixes: [], summary: { kept: 0, reverted: 0, guided: 0, planned: 0 } };
   const write = () => writeFileSync(join(out, 'fixes.json'), JSON.stringify(result, null, 2) + '\n');
-  if (before.status === 'refused') { result.status = 'refused'; result.reason = before.reason; write(); return result; }
+  if (before.status === 'refused') { result.status = 'refused'; result.reason = before.reason; if (before.blocked) result.blocked = true; write(); return result; }
   const findings = findingsOf(before);
   const rootPx = 16;
 
@@ -462,9 +463,10 @@ if (startedAsCommand()) {
   if (args.root && (!existsSync(args.root) || !statSync(args.root).isDirectory())) bad.push(`--root ${args.root} is not a folder`);
   if (bad.length) { console.error(`fix: ${bad.join('; ')}\n${usage}`); process.exit(64); }
   let system = null;
-  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(2); } system = r.system; }
-  const r = await fix(args._[0], { root: args.root, system, systemPath: args.system ?? null, out: args.out, apply: args.apply, fast: !!args.fast, engines: args['no-engines'] ? [] : undefined, dryRun: !!args['dry-run'] });
+  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(64); } system = r.system; }
+  const r = await fix(args._[0], { root: args.root, system, systemPath: args.system ?? null, out: args.out, apply: args.apply, fast: !!args.fast, engines: args['no-engines'] ? [] : undefined, dryRun: !!args['dry-run'] })
+    .catch((e) => { console.error(e.stack || String(e)); process.exit(70); });
   const s = r.summary;
   console.log(`${s.kept} kept, ${s.reverted} reverted, ${s.guided} guided${s.planned ? `, ${s.planned} planned` : ''}. Fixes: ${join(args.out ?? 'itten-fix', 'fixes.json')}`);
-  process.exit(r.status === 'refused' ? 2 : s.reverted ? 1 : 0);
+  process.exit(r.status === 'refused' ? (r.blocked ? 75 : 2) : s.reverted ? 1 : 0);
 }

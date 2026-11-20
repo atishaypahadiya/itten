@@ -9,14 +9,18 @@
 // - The inspector, on real pages: a clean twin exits 0; a page with an error
 //   1; a page with only warnings 1, and 0 with --fail-on error or never; a
 //   page that never shows what --wait-for names is partial and exits 1 with
-//   its error counted, 3 with --fail-on never; an address nothing answers at
-//   and a system file that is not valid exit 2.
+//   its error counted, 3 with --fail-on never; an address nothing answers
+//   at and a page that answers 503 exit 75, with a refused report marked
+//   blocked and the error page never inspected; a system file that is not
+//   valid exits 64 and leaves no report; a run that fails inside the tool
+//   exits 70.
 // - exitCode() and failing() alone: info only is 0 when complete and 3 when
 //   partial.
 // Usage: node scripts/exit-test.js
 // Exports run() for scripts/check.js; it returns the failures.
 
 import { join, dirname } from 'node:path';
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync, spawn } from 'node:child_process';
@@ -37,6 +41,8 @@ export function commands() {
 export function unitTests() {
   const fails = [];
   const want = [['complete', 0, 0], ['complete', 2, 1], ['partial', 0, 3], ['partial', 1, 1], ['refused', 0, 2], ['refused', 5, 2]];
+  // Blocked: 75 when nothing failing was found, whatever the status; a failing finding still says 1.
+  for (const [status, n, code] of [['refused', 0, 75], ['partial', 0, 75], ['partial', 2, 1]]) if (exitCode(status, n, true) !== code) fails.push(`exitCode: a blocked ${status} run with ${n} failing gives ${exitCode(status, n, true)}, not ${code}`);
   for (const [status, n, code] of want) if (exitCode(status, n) !== code) fails.push(`exitCode: ${status} with ${n} failing gives ${exitCode(status, n)}, not ${code}`);
   const rep = (status, ...sev) => ({ schema: 'report/1', status, findings: sev.map((s, k) => toFinding({ id: `i00${k}`, fingerprint: `overflow|${k}`, check: 'overflow', severity: s, message: 'm', elements: [{ sel: 'p', label: 'p' }], seen: {}, crops: [] })) });
   const code = (r, level = 'warning') => exitCode(r.status, failing(r, level).length);
@@ -111,10 +117,23 @@ export async function run() {
     expect('warnings only, --fail-on never', await inspect('warning-never', 'fluid.html', '--fail-on', 'never'), 0, 'complete');
     expect('partial with an error', await inspect('partial', 'breakpoint-clean.html', '--wait-for', '.never-there'), 1, 'partial');
     expect('partial, --fail-on never', await inspect('partial-never', 'breakpoint-clean.html', '--wait-for', '.never-there', '--fail-on', 'never'), 3, 'partial');
-    expect('an address nothing answers at', await inspect('refused', 'http://127.0.0.1:9/'), 2, 'refused');
+    // Temporarily blocked: nothing answers, or the page answers 503. Exit 75; the report is refused and says blocked.
+    const nothing = await inspect('blocked', 'http://127.0.0.1:9/');
+    expect('an address nothing answers at', nothing, 75, 'refused');
+    if (nothing.report?.blocked !== true || nothing.report.findings?.length) fails.push('an address nothing answers at: the report is not marked blocked, or holds findings');
+    const busy = createServer((req, res) => { res.writeHead(503, { 'retry-after': '5' }); res.end('Service unavailable'); });
+    await new Promise((ok) => busy.listen(port + 1, '127.0.0.1', ok));
+    try {
+      const r503 = await inspect('blocked-503', `http://127.0.0.1:${port + 1}/`);
+      expect('a page that answers 503', r503, 75, 'refused');
+      if (!/HTTP 503/.test(r503.report?.reason ?? '') || r503.report?.findings?.length) fails.push(`a page that answers 503: the report does not name the answer, or judges the error page (${r503.report?.reason})`);
+    } finally { busy.close(); }
     writeFileSync(join(tmp, 'bad.system.json'), '{ "spacing": { "scale": "wide" } }');
     const badSystem = await node(['inspector/inspect.js', `http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--system', join(tmp, 'bad.system.json'), '--out', join(tmp, 'bad-system')], join(tmp, 'bad-system'));
-    if (badSystem.code !== 2) fails.push(`a system file that is not valid: exits ${badSystem.code}, not 2`);
+    if (badSystem.code !== 64 || badSystem.report) fails.push(`a system file that is not valid: exits ${badSystem.code}, not 64 (bad input), or leaves a report`);
+    // A run that fails inside the tool (here: a shard to merge that is not there): 70, and a refused report with the error.
+    const broke = await node(['inspector/inspect.js', `http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--merge', join(tmp, 'no-such-shard'), '--out', join(tmp, 'broke')], join(tmp, 'broke'));
+    if (broke.code !== 70 || broke.report?.status !== 'refused' || !/the run failed/.test(broke.report?.reason ?? '')) fails.push(`a run that fails inside the tool: exits ${broke.code}, not 70, or its report does not say the run failed`);
     const badValue = spawnSync(process.execPath, [join(ROOT, 'inspector/inspect.js'), `http://127.0.0.1:${port}/x`, '--fail-on', 'sometimes', '--out', join(tmp, 'bad-value')], { cwd: tmp, encoding: 'utf8', timeout: 20000 });
     if (badValue.status !== 64 || existsSync(join(tmp, 'bad-value'))) fails.push(`--fail-on with a value it does not know: exits ${badValue.status}, not 64, or leaves a report`);
   } finally {
@@ -128,6 +147,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   readArgs(process.argv.slice(2), { name: 'exit-test.js', usage: 'node scripts/exit-test.js' });
   const fails = await run();
   for (const f of fails) console.log(`FAIL  ${f}`);
-  console.log(fails.length ? `${fails.length} failure(s).` : 'Every command refuses an unknown flag with 64 and runs nothing; the inspector exits 0, 1, 2 and 3 as the shared codes say.');
+  console.log(fails.length ? `${fails.length} failure(s).` : 'Every command refuses an unknown flag with 64 and runs nothing; the inspector exits 0, 1, 3, 64, 70 and 75 as the shared codes say.');
   process.exit(fails.length ? 1 : 0);
 }

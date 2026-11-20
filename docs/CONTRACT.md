@@ -70,12 +70,16 @@ Every ITTEN command uses these, shared with KERCKHOFFS and ERLANG (`inspector/us
 |---|---|
 | 0 | `complete`, and no failing finding. Also `--version`, a valid `--validate`, and a shard. |
 | 1 | Failing findings, whether the run is `complete` or `partial`. For `--validate`, a file that is not valid; for `fix.js`, a fix that was reverted; for a test or the check, a failure. |
-| 2 | `refused`: nothing was judged. The page could not be reached, the run failed (`report.json` holds the error), or the system file is not valid. |
+| 2 | `refused`: a guard declined to run, and nothing was judged. |
 | 3 | `partial`, and no failing finding. |
-| 64 | Bad usage: an unknown flag, a flag without its value, an argument too many or missing, or a value a flag does not take. Nothing is run: no browser, no report. (`EX_USAGE` in `sysexits.h`.) |
+| 64 | Bad usage or bad input: an unknown flag, a flag without its value, an argument too many or missing, a value a flag does not take, or a system file that is not valid. Nothing is run: no browser, no report. (`EX_USAGE` in `sysexits.h`.) |
+| 70 | The run failed inside the tool; nothing was judged. `report.json` is `refused` and holds the error. (`EX_SOFTWARE`.) |
+| 75 | Temporarily blocked: nothing was judged, and trying again may work. The page gave no answer, the connection was reset, or the page answered 5xx, 408, 425 or 429 (an error page is never inspected as the page); `report.json` is `refused` with `blocked: true`. Also a run in which the server failed every job twice, so that only the first load was judged, when no finding from that load fails: its report is `partial` with `blocked: true`. (`EX_TEMPFAIL`.) |
 | 124 | The watchdog stopped a run that made no progress; `report.json` is `refused`. |
 
 **Severity.** Errors and warnings fail a run; info never does. An info-only run exits 0 when complete and 3 when partial. `--fail-on error` lets warnings pass, and `--fail-on never` lets everything pass; with a baseline, only new findings and findings that got worse count. The summary counts errors, warnings and info apart (`summary.error`, `summary.warning`, `summary.info`, and the last line the command prints).
+
+Before 0.5's shared table, a page that could not be reached, a failed run and a system file that is not valid all exited 2, and a page that answered 503 was inspected as if the error were the page.
 
 Read `status` in `report.json` as well as the exit code: 1 says a finding fails, not whether the run was whole.
 

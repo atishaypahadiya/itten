@@ -284,7 +284,7 @@ async function load(page, url, o = {}, T = null, until = 0) {
 // and then until the page has been still for the settle window, at most
 // the ceiling. Returns the late elements and when the last one came.
 async function watchLoad(page, url, o, T) {
-  await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+  await firstLoad(page, url, { waitUntil: 'load', timeout: 60000 });
   const networkIdle = await page.waitForLoadState('networkidle', { timeout: 10000 }).then(() => true, () => false);
   const waited = o.waitFor ? await page.waitForSelector(o.waitFor, { state: 'attached', timeout: 30000 }).then(() => true, () => false) : null;
   const st = await waitStill(page, T, T.horizon);
@@ -663,7 +663,33 @@ async function pool(jobs, order, n, work) {
 // 5. Alone again, on a quiet machine: motion and frame timing.
 // With o.shard ({ i, n }) a run does phases 1 and 2 for every n-th job and
 // writes shard.json; o.mergeFrom (shard directories) does phases 3 to 5.
+// The server gave no answer, reset the connection, or answered with an
+// error that may pass (5xx, 408, 425, 429): nothing can be judged now, and
+// trying again may work. The run is refused and blocked; the command exits 75.
+export class Blocked extends Error {}
+const TEMPORARY = (status) => status >= 500 || [408, 425, 429].includes(status);
+// page.goto for the run's first load, with those failures as Blocked.
+async function firstLoad(page, url, opts) {
+  let res;
+  try { res = await page.goto(url, opts); } catch (e) {
+    const m = String(e.message || e).split('\n')[0];
+    if (/net::ERR_|Timeout .* exceeded/.test(m)) throw new Blocked(`the page gave no answer (${(m.match(/net::ERR_[A-Z_]+/) || ['no response in time'])[0]})`);
+    throw e;
+  }
+  if (res && TEMPORARY(res.status())) throw new Blocked(`the page answered HTTP ${res.status()}`);
+  return res;
+}
+
 export async function inspect(url, o = {}) {
+  try { return await inspectRun(url, o); } catch (e) {
+    if (!(e instanceof Blocked)) throw e;
+    const report = { ...refusedReport(url, `temporarily blocked: ${e.message}; nothing was judged`), blocked: true };
+    if (o.out && !o.shard) { mkdirSync(resolve(o.out), { recursive: true }); writeFileSync(join(resolve(o.out), 'report.json'), JSON.stringify(report, null, 2)); }
+    return report;
+  }
+}
+
+async function inspectRun(url, o = {}) {
   // Four widths by default, with the widths around each breakpoint between
   // them; the full sweep, 320 to 1920 px in 40 px steps, with full.
   // The fast tier: three widths, light, Chromium, layout and line checks;
@@ -1514,6 +1540,8 @@ export async function inspect(url, o = {}) {
     const report = {
       schema: REPORT, specialist: 'itten', version: VERSION,
       status: gaps.length ? 'partial' : 'complete', ...(gaps.length ? { reason: gaps.join('; ') + '.' } : {}),
+      // Every job dropped for the server's failures: only the first load was judged, and trying again may work.
+      ...(plan.jobs.length && health.dropped.length === plan.jobs.length ? { blocked: true } : {}),
       subject: url, started: started.toISOString(),
       tool: 'itten-inspector', date: new Date().toISOString(),
       environment: { platform: `${platform()} ${release()}`, browser: `Chromium ${browser.version()}`, timing: { cpus: tenv.cpus, renderer: tenv.renderer, software: isSoftware(tenv.renderer), load: loads } },
@@ -2809,8 +2837,8 @@ if (startedAsCommand()) {
   let system = null;
   if (args.system) {
     const r = loadSystem(args.system);
-    // A system file that is not valid: nothing is judged, so the run is refused.
-    if (r.errors.length) { console.error(`${args.system} is not valid:\n  ` + r.errors.join('\n  ')); process.exit(EXIT.refused); }
+    // A system file that is not valid is bad input: nothing runs.
+    if (r.errors.length) { console.error(`${args.system} is not valid:\n  ` + r.errors.join('\n  ')); process.exit(EXIT.input); }
     system = r.system;
   }
   const out = args.out || 'itten-report';
@@ -2842,11 +2870,13 @@ if (startedAsCommand()) {
     page: typeof args.page === 'string' ? args.page : undefined,
     writeBaseline: args['write-baseline'] ? (typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json') : undefined,
   }).catch((e) => {
-    // The run judged nothing: say so in report.json, with the error, then fail.
+    // The run failed inside the tool and judged nothing: say so in report.json, with the error.
     if (!shard) { mkdirSync(resolve(out), { recursive: true }); writeFileSync(join(resolve(out), 'report.json'), JSON.stringify(refusedReport(url, `the run failed: ${String(e.message || e).split('\n')[0]}`), null, 2)); }
     console.error(e.stack || String(e));
-    process.exit(EXIT.refused);
+    process.exit(EXIT.internal);
   });
+  // Refused inside the run (blocked): nothing was judged and there is nothing more to print.
+  if (report.status === 'refused') { console.error(`Nothing was judged: ${report.reason}.`); process.exit(exitCode('refused', 0, report.blocked === true)); }
   if (report.shard) process.exit(0);
   const s = report.summary;
   console.log(`\n${s.error} errors, ${s.warning} warnings, ${s.info} info. Report: ${join(out, 'report.html')}`);
@@ -2854,10 +2884,11 @@ if (startedAsCommand()) {
   const b = report.baseline;
   if (b) console.log(b.found ? `Against ${b.file}: ${b.new.length} new, ${b.fixed.length} fixed.` : `${b.file} has no entry for ${b.page}.`);
   if (args['write-baseline']) console.log(`Baseline written for this page to ${typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json'}.`);
+  if (report.blocked) console.error(report.status === 'refused' ? `Nothing was judged: ${report.reason}.` : 'The server failed every job twice; only the first load was judged.');
   // The shared exit codes: 1 with a failing finding, complete or partial; 3
-  // for a partial run without one; 2 refused; 0 otherwise. With --baseline,
+  // for a partial run without one; 2 refused; 75 blocked; 0 otherwise. With --baseline,
   // only new findings and findings that got worse fail the run.
   const nFailing = failing(report, failOn).length;
   if (nFailing) console.log(`${nFailing} failing at --fail-on ${failOn}.`);
-  process.exit(exitCode(report.status, nFailing));
+  process.exit(exitCode(report.status, nFailing, report.blocked === true));
 }

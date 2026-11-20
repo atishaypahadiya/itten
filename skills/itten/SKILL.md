@@ -64,7 +64,8 @@ file, follow `protocol/01-teardown.md` and `protocol/02-system.md`.
 - Read `status` first. `complete` means every check ran. `partial` means some did not, and `reason` says which;
   a partial report is not a clean one. `refused` means nothing was judged.
 - The exit code says the same in one number: 0 complete with nothing failing, 1 a failing finding (an error or a
-  warning; info never fails), 2 refused, 3 partial with nothing failing, 64 a command line it could not read.
+  warning; info never fails), 2 refused, 3 partial with nothing failing, 64 a command line or a system file it could not read, 70 the tool
+  itself failed, 75 the server gave no answer or a 5xx (try again; nothing was judged).
 - Each finding has a `check`, a `severity` and a `message` that names the measured value and the rule it breaks
   (IDs such as `LAY-03` are defined in `protocol/`). `error` and `warning` fail a run; `info` never does.
 - Look at a finding's crops before changing anything: the crop shows what was measured.

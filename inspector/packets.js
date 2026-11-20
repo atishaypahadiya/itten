@@ -26,7 +26,8 @@
 //   --root    the folder the server serves at the URL's root
 //   --report  group this report's findings; without it the page is inspected
 // Writes <out>/packets.json (packets/1). Exit codes: 0 written; 2 the
-// inspection was refused; 64 bad usage.
+// inspection was refused; 64 bad usage or a system file that is not valid;
+// 70 the run failed inside the tool; 75 temporarily blocked.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync } from 'node:fs';
 import { join, resolve, relative, dirname } from 'node:path';
@@ -184,7 +185,7 @@ export async function packets(url, o = {}) {
   }
   const result = { schema: SCHEMA, tool: 'itten-packets', version: VERSION, url, root, started: new Date().toISOString(), status: report.status, ...(report.reason ? { reason: report.reason } : {}), packets: [], summary: { findings: 0, packets: 0, mechanical: 0, conflictFree: 0 } };
   const write = () => writeFileSync(join(out, 'packets.json'), JSON.stringify(result, null, 2) + '\n');
-  if (report.status === 'refused') { write(); return result; }
+  if (report.status === 'refused') { if (report.blocked) result.blocked = true; write(); return result; }
   const findings = findingsOf(report).map(view);
   const codeowners = findCodeowners(root, o.codeowners);
   if (codeowners) result.codeowners = relative(root, codeowners.file) || codeowners.file;
@@ -234,10 +235,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.a
   if (!existsSync(args.root) || !statSync(args.root).isDirectory()) bad(CLI, `--root ${args.root} is not a folder`);
   if (args.report && !existsSync(args.report)) bad(CLI, `--report ${args.report} does not exist`);
   let system = null;
-  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(EXIT.refused); } system = r.system; }
-  const r = await packets(args._[0], { root: args.root, system, systemPath: args.system ?? null, report: args.report, out: args.out, fast: !!args.fast, ...(args['no-engines'] ? { engines: [] } : {}), codeowners: args.codeowners });
+  if (args.system) { const r = loadSystem(args.system); if (r.errors.length) { console.error(`${args.system} is not valid:\n  ${r.errors.join('\n  ')}`); process.exit(EXIT.input); } system = r.system; }
+  const r = await packets(args._[0], { root: args.root, system, systemPath: args.system ?? null, report: args.report, out: args.out, fast: !!args.fast, ...(args['no-engines'] ? { engines: [] } : {}), codeowners: args.codeowners })
+    .catch((e) => { console.error(e.stack || String(e)); process.exit(EXIT.internal); });
   const s = r.summary;
-  if (r.status === 'refused') { console.error(`The inspection was refused: ${r.reason}`); process.exit(EXIT.refused); }
+  if (r.status === 'refused') { console.error(`The inspection was refused: ${r.reason}`); process.exit(r.blocked ? EXIT.blocked : EXIT.refused); }
   console.log(`${s.findings} findings in ${s.packets} packets: ${s.mechanical} mechanical, ${s.conflictFree} conflict-free. Packets: ${join(args.out ?? 'itten-packets', 'packets.json')}`);
   process.exit(EXIT.ok);
 }

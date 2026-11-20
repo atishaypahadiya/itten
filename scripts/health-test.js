@@ -98,11 +98,13 @@ export async function run({ quiet = true } = {}) {
     if (!/768 px, light/.test(r.reason ?? '') || !/health\.css/.test(r.reason ?? '')) fails.push(`${name}: the reason does not name the job and the request: ${r.reason}`);
     if (seenAt(r) !== '320, 1440') fails.push(`${name}: the overflow is seen at ${seenAt(r)}; nothing from the dropped job may be kept`);
     if (findingsOf(r).some((i) => i.check === 'timed-out')) fails.push(`${name}: a dropped job is reported as a timeout`);
+    if (r.blocked) fails.push(`${name}: one job of three dropped, and the report is marked blocked`);
   }
 
   const all = await go('all', (file, n) => (file === 'health.css' && n > 1 ? 'reset' : null));
   if (all) {
     if (all.status !== 'partial') fails.push(`every job failing: the run is ${all.status}`);
+    if (all.blocked !== true) fails.push('every job failing: the report is not marked blocked (the command would not exit 75)');
     if (all.health.dropped.length !== 3) fails.push(`every job failing: ${all.health.dropped.length} jobs dropped, not 3`);
     const kept = findingsOf(all).filter((i) => i.check !== 'page-load');
     if (kept.length) fails.push(`every job failing: findings from dropped jobs: ${kept.map((i) => i.fingerprint).join('; ')}`);

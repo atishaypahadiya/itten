@@ -6,15 +6,22 @@
 // The exit codes every ITTEN command shares with KERCKHOFFS and ERLANG:
 //   0   complete, and no failing finding
 //   1   failing findings, whether the run is complete or partial
-//   2   refused: nothing was judged
+//   2   refused: a guard declined to run, and nothing was judged
 //   3   partial, and no failing finding
-//   64  bad usage
+//   64  bad usage or bad input (a system file that is not valid)
+//   70  the run failed inside the tool; nothing was judged
+//   75  temporarily blocked: nothing was judged, and trying again may work
+//       (the server gave no answer, reset, or answered 5xx)
 // Errors and warnings fail a run; info never does.
 
-export const EXIT = { ok: 0, failing: 1, refused: 2, partial: 3, usage: 64 };
+export const EXIT = { ok: 0, failing: 1, refused: 2, partial: 3, usage: 64, input: 64, internal: 70, blocked: 75 };
 
-// The code for a report/1 and the number of its failing findings.
-export const exitCode = (status, failing) => (status === 'refused' ? EXIT.refused : failing > 0 ? EXIT.failing : status === 'partial' ? EXIT.partial : EXIT.ok);
+// The code for a report/1, the number of its failing findings, and whether
+// the report says the run was blocked (report.blocked).
+export const exitCode = (status, failing, blocked = false) => (
+  blocked && !(failing > 0) ? EXIT.blocked
+    : status === 'refused' ? EXIT.refused
+      : failing > 0 ? EXIT.failing : status === 'partial' ? EXIT.partial : EXIT.ok);
 
 export class UsageError extends Error {}
 
