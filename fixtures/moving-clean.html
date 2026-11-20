@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text over moving grounds, each always readable</title>
+<style>
+  body { margin: 0; font: 1rem/1.5rem system-ui, sans-serif; color: #111; background: #fff; }
+  .band { position: relative; }
+  .band canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .band p, .pulse { position: relative; margin: 0; padding: 2rem; color: #fff; text-wrap: pretty; }
+  .pulse { background: #555; animation: fade 4000ms linear infinite alternate; }
+  @keyframes fade { from { background: #555; } to { background: #6a6a6a; } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+</style>
+</head>
+<body>
+  <!-- scripts/moving-test.js. White text over grounds that change with time, each from another clock.
+       The clean twin: the same clocks and movement, and every ground stays dark enough for the text in every frame. -->
+  <main>
+    <div class="band"><canvas></canvas><p>This ground follows the clock of the page</p></div>
+    <div class="band"><canvas></canvas><p>This ground follows the time each frame is given</p></div>
+    <div class="band"><canvas></canvas><p>This ground follows the date and the time</p></div>
+    <p class="pulse">This ground is faded by an animation</p>
+  </main>
+  <script>
+    const CLEAN = true;
+    const canvases = [...document.querySelectorAll('canvas')];
+    const wave = (ms) => Math.sin((2 * Math.PI * ms) / 4000);
+    const p0 = performance.now(), d0 = Date.now();
+    let f0 = null;
+    const draw = (ts) => {
+      if (f0 === null) f0 = ts;
+      const p = performance.now() - p0, f = ts - f0, d = Date.now() - d0;
+      const greys = [
+        CLEAN ? 70 + 30 * wave(p) : 125 + 40 * wave(p),   // under 4.5:1 for most of each 4 s, except in the clean twin
+        70 + 30 * wave(f),                                // never under 4.5:1
+        !CLEAN && d > 300 && d < 400 ? 160 : 90,          // under 4.5:1 for a tenth of a second, once
+      ];
+      canvases.forEach((c, i) => {
+        if (c.width !== c.clientWidth || c.height !== c.clientHeight) { c.width = c.clientWidth; c.height = c.clientHeight; }
+        const v = Math.round(greys[i]), g = c.getContext('2d');
+        g.fillStyle = `rgb(${v}, ${v}, ${v})`;
+        g.fillRect(0, 0, c.width, c.height);
+      });
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

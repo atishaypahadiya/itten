@@ -159,6 +159,20 @@ A load that runs out of its limit after the server answered for the page is the 
 
 `refused` stays for a run that judged nothing: the page could not be reached for the first load, or a guard declined to run.
 
+## Contrast over a moving background
+
+Behind text on a page that keeps drawing (a canvas or WebGL scene, a video, an animation) the pixels change from frame to frame, so one sample can pass in one run and fail in the next. Where the contrast pass finds moving pixels at a width, it loads the page once more at that width and judges contrast across a fixed set of frames, the same set every run.
+
+- **The frame clock.** The second load has a clock that moves only when the inspector steps it. `requestAnimationFrame` callbacks wait; `performance.now()`, `Date` and the time handed to a frame's callbacks all read n frames of 1/60 s, n being the frames stepped so far; `Math.random` is seeded. Nothing is drawn while the page loads. A scene that draws from any of those clocks, or from a count of its own frames, draws the same pixels at frame n on every load.
+- **The frames.** 12 frames, 20 animation frames apart: frames 20, 40, ... 240, a third of a second apart on the frame clock, four seconds in all. At each, every running CSS and Web Animation is set to the frame clock's time, and a video to that time in its own length. The page is captured with its text hidden, in light and in dark; after the scheme changes, the frame is drawn once more at the same time, so a scene that reads the scheme shows it.
+- **The judgement.** In each frame a text has two values, as on a still page: the median contrast against the pixels behind it, and the contrast over the worst tenth of them. Across the frames each is taken at its 10th percentile by nearest rank: of 12 frames, the second lowest. A median under the floor there is an error; a tenth under it, a warning. One unreadable frame of twelve is therefore left out, and two are reported.
+- **The finding.** `itten.frames` holds `count`, `every`, the value `judged`, and each frame's `median` and `tenth`, in order; the message lists the frames' values. `itten.movingBackground` is true. The crop is the frame the judged value was measured in, with the text laid over it, and names that frame (`crops[].frame`).
+- **Which texts.** A text over moving pixels, or whose values differ between the frames, is judged this way. Every other text keeps the value the first load measured.
+- **The report.** Each entry of `drawing` (a width and scheme where the page draws) says `frames: { count, every, at }`, or `frames: { failed }` with the reason when the second load could not be used (it is not laid out as the first was, or it ran out of time). Then the two-frame values stand, and a finding over moving pixels has `movingBackground` without `frames`: it depends on the frame, and `scripts/parity-test.js` takes its differences as notes. With `frames`, a finding must match between runs like any other.
+- **What it cannot hold.** An animated image, and a scene that draws from something other than those clocks (the network, a worker's own timer).
+
+`scripts/moving-test.js` holds this on `fixtures/moving.html`: four grounds, each following another clock; two runs at different times and on different numbers of workers report the same values frame by frame; with the fixed frames off they do not.
+
 ## Timing findings
 
 Some findings rest on a measured time: long animation frames (`frame-timing`), a script's flashes counted over a second (`flash`, fingerprints ending `|script`), and from the watch load `page-load|late`, `page-load|never-still` and `page-load|busy`. The rule for them is shared with KERCKHOFFS and ERLANG.

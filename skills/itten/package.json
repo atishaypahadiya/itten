@@ -18,6 +18,7 @@
     "test:parity": "node scripts/parity-test.js",
     "test:ignore": "node scripts/ignore-test.js",
     "test:canvas": "node scripts/canvas-test.js",
+    "test:moving": "node scripts/moving-test.js",
     "test:version": "node scripts/version-test.js",
     "test:skill": "node scripts/skill-test.js",
     "test:fast": "node scripts/fast-test.js",

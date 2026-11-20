@@ -3,11 +3,11 @@
 // and a line that spills out of its box. The contrast finding over the
 // canvas must be marked movingBackground and the other two must not; the
 // moving tiles must be reported over the canvas. The page is inspected on
-// one worker and on two, and the reports compared: a difference in the
-// finding over the canvas is a note, and the other findings must match
-// exactly. Then, on the same reports: removing the finding over the canvas,
-// or changing it, is a note; removing the overflow finding, or changing its
-// severity, is a difference. A box a script recolours every frame, with no
+// one worker and on two, and the reports compared: every finding must match
+// exactly, the one over the canvas too, since it is judged across fixed
+// frames. Then, on the same reports: removing the finding over the canvas,
+// or changing it, is a difference, and a note only when it has no `frames`;
+// removing the overflow finding, or changing its severity, is a difference. A box a script recolours every frame, with no
 // animation, must be counted as unexplained moving tiles; the canvas's tiles
 // are explained.
 // The crop of the finding over the canvas must show the frame it was
@@ -79,17 +79,24 @@ export async function run({ quiet = true } = {}) {
     const regions = a.drawing.flatMap((d) => d.regions);
     if (!regions.length) fails.push('no moving regions reported');
     else if (regions.filter(([x, y, w, h]) => x + w <= 32 || x >= 608 || y + h <= 32 || y >= 224).some(([x, , w]) => x < 32 || x + w > 128)) fails.push(`a moving region lies off the canvas and off the recoloured box: ${JSON.stringify(regions)}`);
-    // The two runs: anything over the canvas is a note; the rest must match.
+    // The two runs must match, the finding over the canvas too: it is judged
+    // across the fixed frames, the same every run.
     const notes = [];
     const d = compare(A, B, 'canvas', notes);
     if (d.length) fails.push(`one worker against two: ${d.length} difference(s): ${d.join('; ')}`);
     if (moving && spill && still) {
       const without = (r, it) => ({ ...r, issues: r.issues.filter((i) => i.fingerprint !== it.fingerprint) });
       const swap = (r, it, ch) => ({ ...r, issues: r.issues.map((i) => (i.fingerprint === it.fingerprint ? { ...i, ...ch } : i)) });
+      if (!moving.frames) fails.push('the finding over the canvas was not judged across the fixed frames');
+      // Judged across fixed frames, it must match like any other finding.
+      if (!compare(a, without(a, moving), 'c', []).some((x) => x.includes(moving.fingerprint))) fails.push('a finding judged across fixed frames, missing from one run, is not a difference');
+      if (!compare(a, swap(a, moving, { severity: 'warning', message: 'other' }), 'c', []).some((x) => x.includes(moving.fingerprint))) fails.push('a change in a finding judged across fixed frames is not a difference');
+      // One that could not be (no frames) depends on the frame: a note, as before.
+      const loose = swap(a, moving, { frames: undefined });
       const n1 = [];
-      if (compare(a, without(a, moving), 'c', n1).some((x) => x.includes(moving.fingerprint)) || !n1.some((x) => x.includes(moving.fingerprint))) fails.push('a finding over a moving background missing from one run is not a note');
+      if (compare(loose, without(a, moving), 'c', n1).some((x) => x.includes(moving.fingerprint)) || !n1.some((x) => x.includes(moving.fingerprint))) fails.push('a finding over a moving background missing from one run is not a note');
       const n2 = [];
-      if (compare(a, swap(a, moving, { severity: 'warning', message: 'other' }), 'c', n2).some((x) => x.includes(moving.fingerprint)) || n2.filter((x) => x.includes(moving.fingerprint)).length !== 2) fails.push('a change in a finding over a moving background is not a note');
+      if (compare(loose, swap(loose, moving, { severity: 'warning', message: 'other' }), 'c', n2).some((x) => x.includes(moving.fingerprint)) || n2.filter((x) => x.includes(moving.fingerprint)).length !== 2) fails.push('a change in a finding over a moving background is not a note');
       if (!compare(a, without(a, spill), 'c').some((x) => x.includes(spill.fingerprint) && x.includes('only in the first run'))) fails.push('the overflow finding missing from one run does not fail parity');
       if (!compare(a, swap(a, spill, { severity: 'warning' }), 'c').some((x) => x.includes(spill.fingerprint) && x.includes('severity'))) fails.push("the overflow finding's severity changing does not fail parity");
       if (!compare(a, without(a, still), 'c').some((x) => x.includes(still.fingerprint))) fails.push('the contrast finding over the still box missing from one run does not fail parity');

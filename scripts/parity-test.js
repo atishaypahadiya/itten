@@ -29,6 +29,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shape = (i) => ({
   fingerprint: i.fingerprint, check: i.check, severity: i.severity, message: i.message, count: i.count, measured: i.measured ?? null,
   movingBackground: i.movingBackground ?? false,
+  frames: i.frames ?? null,
   unreliable: i.timing?.reliable === false,
   elements: i.elements.map((e) => ({ sel: e.sel, label: e.label, order: e.order ?? null, rect: e.rect ?? null })),
   seen: i.seen, first: i.first, resize: i.resize ?? null, resources: i.resources ?? null,
@@ -65,8 +66,10 @@ const steady = (f, v, measured) => {
   if (f !== 'message' && measured.includes(f)) s = '<measured>';
   return s;
 };
-const loose = (i) => i.movingBackground || i.unreliable || i.timing?.reliable === false;
-const why = (i) => (i.movingBackground ? MOVING : UNRELIABLE);
+// A finding over a moving background that was judged across the fixed frames
+// (it has `frames`) is the same every run, and must match like any other.
+const loose = (i) => (i.movingBackground && !i.frames) || i.unreliable || i.timing?.reliable === false;
+const why = (i) => (i.movingBackground && !i.frames ? MOVING : UNRELIABLE);
 const UNRELIABLE = ' (timing unreliable)';
 const MOVING = ' (over a moving background)', MEASURED = ' (measured)', PORTS = ' (a server port)';
 const glyphless = (v) => JSON.stringify(v ?? null).replace(/: \d+ glyphs/g, ': <n> glyphs');

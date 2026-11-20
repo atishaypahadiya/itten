@@ -396,14 +396,23 @@ try {
 }
 
 // -------------------------------------------------------- Moving background
-// A contrast finding over a canvas that keeps drawing is marked, and parity
-// takes its differences as notes; the page's other findings still gate
-// (fixtures/canvas.html, scripts/canvas-test.js).
+// A contrast finding over a canvas that keeps drawing is marked and judged
+// across fixed frames, so it matches between runs like any other; one that
+// could not be is a note in parity (fixtures/canvas.html,
+// scripts/canvas-test.js). On four grounds that follow four clocks, two runs
+// at different times report the same values frame by frame, and with the
+// fixed frames off they do not (fixtures/moving.html, scripts/moving-test.js).
 try {
   const { run: canvasTest } = await import('./canvas-test.js');
   for (const f of await canvasTest()) fail('Moving background', f);
 } catch (e) {
   fail('Moving background', `the canvas test could not run: ${e.message.split('\n')[0]}`);
+}
+try {
+  const { run: movingTest } = await import('./moving-test.js');
+  for (const f of await movingTest()) fail('Moving background', f);
+} catch (e) {
+  fail('Moving background', `the moving-ground test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ---------------------------------------------------------------- Timeouts

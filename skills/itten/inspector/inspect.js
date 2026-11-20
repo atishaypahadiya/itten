@@ -335,6 +335,56 @@ function frameInit(stop) {
   } });
 }
 
+// Frames that repeat (contrast over a moving background). A page loaded with
+// this script has a frame clock: its requestAnimationFrame callbacks never
+// run on their own, and performance.now(), Date and the time handed to a
+// frame's callbacks all read n frames of 1/60 s, n being how many frames
+// step() has run. Math.random is seeded. So a scene that draws from any of
+// those clocks, or from a count of its frames, draws the same pixels at
+// frame n on every load. What it cannot hold: an animated image, and a
+// scene that draws from something else (the network, another worker).
+export const FRAMES = { count: 12, every: 20, ms: 1000 / 60 };
+function fixedFramesInit(seed) {
+  const raf = window.requestAnimationFrame.bind(window);
+  let n = 0, held = [], next = 1;
+  const now = () => n * (1000 / 60);
+  window.requestAnimationFrame = (cb) => { const id = next++; held.push([id, cb]); return id; };
+  window.cancelAnimationFrame = (id) => { held = held.filter(([i]) => i !== id); };
+  try { Object.defineProperty(window.performance, 'now', { value: () => now(), configurable: true }); } catch { /* left as it is */ }
+  const RealDate = Date, epoch = 1767225600000;   // 1 January 2026, UTC
+  function FixedDate(...a) {
+    if (!new.target) return new RealDate(epoch + now()).toString();
+    return Reflect.construct(RealDate, a.length ? a : [epoch + now()], new.target);
+  }
+  Object.setPrototypeOf(FixedDate, RealDate);
+  FixedDate.prototype = RealDate.prototype;
+  FixedDate.now = () => epoch + now();
+  window.Date = FixedDate;
+  let a = (seed >>> 0) || 1;
+  Math.random = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  Object.defineProperty(window, '__ittenFrames', { value: {
+    raf,
+    fixed: true,
+    stopAt: () => 0,
+    count: () => n,
+    held: () => true,
+    freeze: () => {},
+    thaw: () => {},
+    // Runs k frames: each calls the callbacks waiting for it with the frame
+    // clock's time. With advance false the clock stays (a frame drawn again,
+    // after the colour scheme changed).
+    step: (k, advance = true) => {
+      for (let i = 0; i < k; i++) {
+        if (advance) n++;
+        const h = held; held = [];
+        const t = now();
+        for (const [, cb] of h) { try { cb(t); } catch (e) { setTimeout(() => { throw e; }); } }
+      }
+      return n;
+    },
+  } });
+}
+
 // Holds the page for a capture: its animation frames, and every CSS and Web
 // Animation at playback rate 0. Returns the frame captured (the document
 // timeline's time and how many animation frames had run) and thaw().
@@ -732,9 +782,11 @@ export async function inspect(url, o = {}) {
   // response, a reset, a 5xx, or a 4xx on something the first load was
   // sent: the page's own missing file fails on every load and is the page's.
   const firstOk = new Set(), firstFailed = new Set();
-  const newContext = async (b, { dpr = 1, width, failed = null, init = [], stop = 0, health = null, okUrls = null } = {}) => {
+  const newContext = async (b, { dpr = 1, width, failed = null, init = [], stop = 0, health = null, okUrls = null, fixed = false } = {}) => {
     const c = await b.newContext({ viewport: { width, height: VIEW_H }, deviceScaleFactor: dpr, colorScheme: 'light' });
     for (const s of init) await c.addInitScript(s);
+    // A frame-clock context (fixedFramesInit) is stepped by hand and watches nothing.
+    if (fixed) { await c.addInitScript(fixedFramesInit, 1); return c; }
     if (o.freeze !== false) await c.addInitScript(frameInit, stop);
     await c.addInitScript(lateInit, T.window);
     if (health || okUrls) {
@@ -815,6 +867,19 @@ export async function inspect(url, o = {}) {
     raw.severity = blurred ? 'warning' : 'info';
   };
 
+  // The page loaded again with a frame clock, at this pass's width, and its
+  // contrast findings judged across FRAMES.count frames in each scheme.
+  const acrossFrames = async (page, pass, states) => {
+    const ctx = await newContext(page.context().browser(), { dpr: pass.dpr ?? 1, width: pass.w, fixed: true });
+    try {
+      const p2 = await ctx.newPage();
+      await slow(p2);
+      await p2.setViewportSize({ width: pass.w, height: VIEW_H });
+      await load(p2, url, o, null);
+      await contrastAcrossFrames(p2, states);
+    } finally { await ctx.close().catch(() => {}); }
+  };
+
   // What each kind of job does once its page is loaded. r collects the
   // findings (r.events) and the values judged across the sweep (r.data).
   const BODY = {
@@ -832,6 +897,7 @@ export async function inspect(url, o = {}) {
       if (passes.has('contrast') && keyWidths.includes(w)) {
         const cdp = await page.context().newCDPSession(page);
         await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+        const states = [];
         for (const scheme of ['light', 'dark']) await within(TO.check, `contrast and fonts in ${scheme}`, async () => {
           await page.emulateMedia({ colorScheme: scheme });
           const sp = { w, mode: scheme, ...(scheme === 'dark' ? { scheme } : {}), label: `${w} px, ${scheme}`, dpr: 1, checks: [] };
@@ -839,9 +905,7 @@ export async function inspect(url, o = {}) {
           await keep(page, r, cr.issues, sp);
           await keep(page, r, await fontIssues(cdp, page, cr, system, r.fonts), sp);
           r.fontGroups = Math.max(r.fontGroups, new Set(cr.data.fontReps.map((x) => x.group)).size);
-          const ci = await contrastIssues(page, cr, r.coverage, { freeze: o.freeze });
-          if (ci.drawing?.tiles) (r.drawing ??= []).push({ at: sp.label, ...ci.drawing });
-          await keep(page, r, ci, sp);
+          states.push({ sp, cr, ci: await contrastIssues(page, cr, r.coverage, { freeze: o.freeze }) });
           if (scheme === 'light') {
             const oy = await page.evaluate(typography, { checks: ['optical-margin'], system, identifier: IDENTIFIER });
             await keep(page, r, await opticalIssues(page, oy.optical), sp);
@@ -849,6 +913,17 @@ export async function inspect(url, o = {}) {
         });
         await page.emulateMedia({ colorScheme: 'light' });
         await cdp.detach().catch(() => {});
+        // Where the page draws, contrast is judged across a fixed set of
+        // frames, the same set every run (contrastAcrossFrames). If that
+        // pass cannot run, the two-frame result stands and says why.
+        if (o.freeze !== false && o.fixedFrames !== false && states.some((st) => st.ci.drawing?.tiles)) {
+          try { await within(TO.check, 'contrast across fixed frames', () => acrossFrames(page, pass, states)); }
+          catch (e) { for (const st of states) if (st.ci.drawing) st.ci.drawing.frames = { failed: String(e.message || e).split('\n')[0] }; }
+        }
+        for (const { sp, ci } of states) {
+          if (ci.drawing?.tiles) (r.drawing ??= []).push({ at: sp.label, ...ci.drawing });
+          await keep(page, r, ci, sp);
+        }
       }
       r.log = `  ${pass.label}: ${plural(n, 'finding')}${passes.has('contrast') && keyWidths.includes(w) ? ', contrast and fonts in light and dark' : ''}`;
     },
@@ -1089,6 +1164,7 @@ export async function inspect(url, o = {}) {
         issues.set(k, it);
       }
       if (raw.movingBackground) it.movingBackground = true;
+      if (raw.frames && !it.frames) it.frames = raw.frames;
       const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
       // The words broken at this pass, for the message (brokenWordMessage).
       if (raw.broken) {
@@ -1119,6 +1195,7 @@ export async function inspect(url, o = {}) {
       const it = { id: nextId(), fingerprint: f.check + '|' + f.key, check: f.check, severity: f.severity, message: f.message, count: f.count, elements: f.elements.slice(0, 8).map((e) => ({ ...e, rect: [0, 0, 0, 0] })), seen: { [mode]: f.widths }, crops: [], first: `${w} px, ${mode}`, ...(f.resources ? { resources: f.resources } : {}) };
       const m = measuredFields(it); if (m) it.measured = m;
       if (f.movingBackground) it.movingBackground = true;
+      if (f.frames) it.frames = f.frames;
       if (f.scale) it.scale = f.scale;
       issues.set(it.fingerprint, it);
       cropQueue.push({ it, pass: { ...at, w, label: it.first }, find: true });
@@ -2419,17 +2496,170 @@ function cropRegion(boxes, dims, given = null) {
 }
 
 // ---------------------------------------------------------------- contrast
+const HIDE_TEXT_CSS = '*, *::before, *::after, *::marker, *::placeholder { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; text-decoration-color: transparent !important; caret-color: transparent !important; }';
+const TEXT_ONLY_CSS = 'html, body, *, *::before, *::after { background: transparent !important; border-color: transparent !important; box-shadow: none !important; outline-color: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } img, svg, canvas, video, picture, iframe, object, embed { visibility: hidden !important; }';
+
+// The contrast of a text against the pixels behind it, sampled over its
+// lines in each frame given: sorted, lowest first.
+function samplesOf(t, a, frames) {
+  const samples = [];
+  for (const [x, y, w, h] of t.lines) {
+    const nx = Math.min(40, Math.max(2, Math.ceil(w / 4))), ny = Math.min(8, Math.max(2, Math.ceil(h / 4)));
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const px = Math.round(x + 1 + ((w - 2) * (i + 0.5)) / nx), py = Math.round(y + 1 + ((h - 2) * (j + 0.5)) / ny);
+      frames.forEach((f, fi) => {
+        if (px < 0 || py < 0 || px >= f.width || py >= f.height) return;
+        const o = (py * f.width + px) * f.channels;
+        const bg = [f.data[o], f.data[o + 1], f.data[o + 2]];
+        samples.push({ r: ratio(blend(t.color, a, bg), bg), bg, fi });
+      });
+    }
+  }
+  return samples.sort((p, q) => p.r - q.r);
+}
+const floorOf = (t) => { const large = t.size >= 24 || (t.size >= 18.66 && t.weight >= 700); return { large, min: large ? 3 : 4.5 }; };
+
+// What a set of samples says of a text: an error when the median is under
+// the floor, a warning when a tenth of the ground is. `of` is the sample
+// the message quotes.
+function verdict(t, a, samples, min, large) {
+  const med = samples[Math.floor(samples.length / 2)], p10 = samples[Math.floor(samples.length * 0.1)];
+  const fg = blend(t.color, a, med.bg);
+  const f2 = (v) => v.r.toFixed(2);
+  if (med.r < min) return { severity: 'error', of: med, message: `Text measures ${f2(med)}:1 against the pixels behind it (needs ${min}:1${large ? ', large text' : ''}). Text ${hex(fg)} over about ${hex(med.bg)}; worst sample ${f2(samples[0])}:1.` };
+  if (p10.r < min) return { severity: 'warning', of: p10, message: `Text drops to ${f2(p10)}:1 over a tenth of the background behind it (median ${f2(med)}:1, needs ${min}:1). Text ${hex(fg)}, darkest-contrast background ${hex(p10.bg)}.` };
+  return null;
+}
+
+// The value a set of frames is judged on: the 10th percentile, by nearest
+// rank (of 12 frames, the second lowest; of fewer than 11, the lowest).
+export const tenthOf = (values) => [...values].sort((x, y) => x - y)[Math.max(0, Math.ceil(values.length * 0.1) - 1)];
+
+// A text's verdict across frames, from its median and tenth in each
+// (docs/CONTRACT.md, "Contrast over a moving background"). Null when it
+// passes; `frame` is the index of the frame the judged value was measured in.
+export function verdictAcross(per, min, large, text = {}) {
+  const meds = per.map((x) => x.med), tenths = per.map((x) => x.p10);
+  const M = tenthOf(meds), P = tenthOf(tenths);
+  const f2 = (v) => v.toFixed(2);
+  const tail = (vs, k, word) => `${text.fg ? `Text ${text.fg}${per[k].bg ? ` ${word} ${hex(word === 'over about' ? per[k].bg : per[k].bg10 ?? per[k].bg)} in that frame` : ''}; f` : 'F'}rame by frame ${vs.map(f2).join(', ')}.`;
+  const n = per.length, floor = `needs ${min}:1${large ? ', large text' : ''}`;
+  if (M < min) return { severity: 'error', frame: meds.indexOf(M), judged: M, message: `Text measures ${f2(M)}:1 against the moving ground behind it, at the 10th percentile of ${n} frames (${floor}). ${tail(meds, meds.indexOf(M), 'over about')}` };
+  if (P < min) return { severity: 'warning', frame: tenths.indexOf(P), judged: P, message: `Text drops to ${f2(P)}:1 over a tenth of the moving ground behind it, at the 10th percentile of ${n} frames (${floor}). ${tail(tenths, tenths.indexOf(P), 'over, at its lowest,')}` };
+  return null;
+}
+
+// A frame's pixels with the text layer over them, cropped to the elements.
+function composite(fr, text, rects) {
+  const [x, y, w, h] = cropRegion(rects, [fr.width, Math.min(fr.height, text.height)]);
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    const o = ((y + yy) * fr.width + x + xx) * fr.channels, ot = ((y + yy) * text.width + x + xx) * 4, oi = (yy * w + xx) * 4;
+    const al = text.data[ot + 3] / 255;
+    for (let k = 0; k < 3; k++) rgba[oi + k] = Math.round(text.data[ot + k] * al + fr.data[o + k] * (1 - al));
+    rgba[oi + 3] = 255;
+  }
+  return { region: [x, y, w, h], png: encodePng(w, h, rgba).toString('base64') };
+}
+
+// Contrast across a fixed set of frames. p2 is the page loaded with a frame
+// clock (fixedFramesInit); states are the schemes measured on the first
+// page, each { sp, cr, ci }. The scene is stepped FRAMES.every frames at a
+// time; at each stop every running animation is set to the frame clock's
+// time, and the page is captured, text hidden, in each scheme. A text over
+// a moving tile, or whose values differ between the frames, is judged on
+// the 10th percentile across them, and its finding (if any) replaces the
+// two-frame one and lists each frame's value. Other texts keep what the
+// first page measured. Throws when the second page is not laid out as the
+// first was; the caller then keeps the two-frame result.
+async function contrastAcrossFrames(p2, states) {
+  const dims = await p2.evaluate(() => [document.documentElement.clientWidth, Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)]);
+  for (const { cr } of states) if (Math.abs(dims[0] - cr.vw) > 1 || Math.abs(dims[1] - cr.docHeight) > 1) throw new Error(`the page loaded for the fixed frames is ${dims[0]} by ${dims[1]} px, not ${cr.vw} by ${cr.docHeight}`);
+  if (!(await p2.evaluate(() => window.__ittenFrames?.fixed === true))) throw new Error('the page has no frame clock');
+  const style = (id, css) => p2.evaluate(([i, c]) => { const s = document.createElement('style'); s.id = i; s.textContent = c; document.head.append(s); }, [id, css]);
+  const unstyle = (id) => p2.evaluate((i) => document.getElementById(i)?.remove(), id);
+  const painted = () => p2.evaluate(() => new Promise((r) => { const raf = window.__ittenFrames.raf; raf(() => raf(r)); }));
+  const shot = (cr, extra = {}) => p2.screenshot({ fullPage: true, clip: { x: 0, y: 0, width: cr.vw, height: Math.min(cr.docHeight, 16000) }, ...extra });
+  const scheme = (sp) => p2.emulateMedia({ colorScheme: sp.mode === 'dark' ? 'dark' : 'light' });
+  const shots = states.map(() => []), at = [];
+  await style('itten-hide-text', HIDE_TEXT_CSS);
+  for (let k = 0; k < FRAMES.count; k++) {
+    const n = await p2.evaluate((every) => window.__ittenFrames.step(every), FRAMES.every);
+    await p2.evaluate(async (t) => {
+      for (const a of document.getAnimations()) { try { if (a.playState === 'running' || a.playState === 'paused') { a.pause(); a.currentTime = t; } } catch { /* not seekable */ } }
+      await Promise.all([...document.querySelectorAll('video')].map((v) => new Promise((r) => {
+        if (!(v.duration > 0)) return r();
+        v.pause(); v.addEventListener('seeked', r, { once: true }); setTimeout(r, 500);
+        v.currentTime = (t / 1000) % v.duration;
+      })));
+    }, n * FRAMES.ms);
+    for (let i = 0; i < states.length; i++) {
+      await scheme(states[i].sp);
+      await p2.evaluate(() => window.__ittenFrames.step(1, false));
+      await painted();
+      shots[i].push(await shot(states[i].cr));
+    }
+    at.push(n);
+  }
+  await unstyle('itten-hide-text');
+  for (let i = 0; i < states.length; i++) {
+    const { cr, ci } = states[i];
+    const texts = cr.data.text, per = texts.map(() => []);
+    shots[i].forEach((png) => {
+      const f = decodePng(png);
+      texts.forEach((t, ti) => {
+        const a = t.color[3] * t.opacity;
+        if (t.clipText || a < 0.1) return;
+        const sm = samplesOf(t, a, [f]);
+        if (sm.length) per[ti].push({ med: sm[Math.floor(sm.length / 2)].r, p10: sm[Math.floor(sm.length * 0.1)].r, bg: sm[Math.floor(sm.length / 2)].bg, bg10: sm[Math.floor(sm.length * 0.1)].bg });
+      });
+    });
+    const out = ci.filter((f) => f.check !== 'contrast');
+    const kept = new Map(ci.filter((f) => f.check === 'contrast').map((f) => [f.key, f]));
+    const moved = [];
+    texts.forEach((t, ti) => {
+      const p = per[ti];
+      if (p.length !== FRAMES.count) { if (kept.has(t.el.sel)) out.push(kept.get(t.el.sel)); return; }
+      const varies = p.some((x) => x.med !== p[0].med || x.p10 !== p[0].p10);
+      if (!varies && !ci.moving?.has(t)) { if (kept.has(t.el.sel)) out.push(kept.get(t.el.sel)); return; }
+      const { large, min } = floorOf(t), a = t.color[3] * t.opacity;
+      const v = verdictAcross(p, min, large, { fg: hex(blend(t.color, a, p[0].bg)) });
+      if (!v) return;
+      const f = { check: 'contrast', severity: v.severity, key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', movingBackground: true, message: v.message,
+        frames: { count: FRAMES.count, every: FRAMES.every, judged: Number(v.judged.toFixed(2)), median: p.map((x) => Number(x.med.toFixed(2))), tenth: p.map((x) => Number(x.p10.toFixed(2))) } };
+      out.push(f); moved.push([f, v.frame]);
+    });
+    if (moved.length) {
+      // The crops: the judged frame's ground with the text laid over it.
+      await scheme(states[i].sp);
+      await style('itten-text-only', TEXT_ONLY_CSS);
+      await painted();
+      const text = decodePng(await shot(cr, { omitBackground: true }));
+      await unstyle('itten-text-only');
+      const frames = new Map();
+      for (const [f, k] of moved) {
+        if (!frames.has(k)) frames.set(k, decodePng(shots[i][k]));
+        const fr = frames.get(k);
+        if (text.width === fr.width && text.channels === 4) f.frame = { ...composite(fr, text, f.elements.map((e) => e.rect)), at: { frames: at[k], time: Math.round(at[k] * FRAMES.ms * 10) / 10 } };
+      }
+    }
+    out.drawing = { ...ci.drawing, frames: { count: FRAMES.count, every: FRAMES.every, at } };
+    out.moving = ci.moving;
+    states[i].ci = out;
+  }
+}
+
 async function contrastIssues(page, res, coverage, opts = {}) {
   const held = [];
   const texts = res.data.text;
   if (!texts.length) return [];
   const H = Math.min(res.docHeight, 16000);
-  await page.evaluate(() => {
+  await page.evaluate((css) => {
     const s = document.createElement('style');
     s.id = 'itten-hide-text';
-    s.textContent = '*, *::before, *::after, *::marker, *::placeholder { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; text-decoration-color: transparent !important; caret-color: transparent !important; }';
+    s.textContent = css;
     document.head.append(s);
-  });
+  }, HIDE_TEXT_CSS);
   const frames = [];
   try {
     await settle(page);
@@ -2495,37 +2725,18 @@ async function contrastIssues(page, res, coverage, opts = {}) {
   }
   const out = [];
   out.drawing = { tiles, unexplained, regions: drawing.slice(0, 40) };
+  out.moving = new Set();   // the texts over a moving tile, found or not
   for (const t of texts) {
     const a = t.color[3] * t.opacity;
     if (t.clipText || a < 0.1) { coverage.contrastSkipped++; continue; }
-    const large = t.size >= 24 || (t.size >= 18.66 && t.weight >= 700);
-    const min = large ? 3 : 4.5;
-    const samples = [];
-    for (const [x, y, w, h] of t.lines) {
-      const nx = Math.min(40, Math.max(2, Math.ceil(w / 4))), ny = Math.min(8, Math.max(2, Math.ceil(h / 4)));
-      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
-        const px = Math.round(x + 1 + ((w - 2) * (i + 0.5)) / nx), py = Math.round(y + 1 + ((h - 2) * (j + 0.5)) / ny);
-        frames.forEach((f, fi) => {
-          if (px < 0 || py < 0 || px >= f.width || py >= f.height) return;
-          const o = (py * f.width + px) * f.channels;
-          const bg = [f.data[o], f.data[o + 1], f.data[o + 2]];
-          samples.push({ r: ratio(blend(t.color, a, bg), bg), bg, fi });
-        });
-      }
-    }
+    const { large, min } = floorOf(t);
+    const samples = samplesOf(t, a, frames);
     if (!samples.length) continue;
     coverage.contrastSamples += samples.length;
-    samples.sort((p, q) => p.r - q.r);
-    const med = samples[Math.floor(samples.length / 2)], p10 = samples[Math.floor(samples.length * 0.1)];
-    const fg = blend(t.color, a, med.bg);
-    const f2 = (v) => v.r.toFixed(2);
-    if (med.r < min) {
-      out.push({ check: 'contrast', severity: 'error', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', ...(t.lines.some(over) ? { movingBackground: true, frameOf: med.fi } : {}),
-        message: `Text measures ${f2(med)}:1 against the pixels behind it (needs ${min}:1${large ? ', large text' : ''}). Text ${hex(fg)} over about ${hex(med.bg)}; worst sample ${f2(samples[0])}:1.` });
-    } else if (p10.r < min) {
-      out.push({ check: 'contrast', severity: 'warning', key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', ...(t.lines.some(over) ? { movingBackground: true, frameOf: p10.fi } : {}),
-        message: `Text drops to ${f2(p10)}:1 over a tenth of the background behind it (median ${f2(med)}:1, needs ${min}:1). Text ${hex(fg)}, darkest-contrast background ${hex(p10.bg)}.` });
-    }
+    const isMoving = t.lines.some(over);
+    if (isMoving) out.moving.add(t);
+    const v = verdict(t, a, samples, min, large);
+    if (v) out.push({ check: 'contrast', severity: v.severity, key: t.el.sel, count: 1, elements: [t.el], marks: [], crop: 'union', ...(isMoving ? { movingBackground: true, frameOf: v.of.fi } : {}), message: v.message });
   }
   // The crop of a finding over a moving background is made here, from the
   // frame its message was measured in: the background of that frame, with
@@ -2535,12 +2746,12 @@ async function contrastIssues(page, res, coverage, opts = {}) {
   const moved = out.filter((f) => f.movingBackground);
   if (moved.length) {
     let text = null;
-    await page.evaluate(() => {
+    await page.evaluate((css) => {
       const s = document.createElement('style');
       s.id = 'itten-text-only';
-      s.textContent = 'html, body, *, *::before, *::after { background: transparent !important; border-color: transparent !important; box-shadow: none !important; outline-color: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } img, svg, canvas, video, picture, iframe, object, embed { visibility: hidden !important; }';
+      s.textContent = css;
       document.head.append(s);
-    });
+    }, TEXT_ONLY_CSS);
     try {
       await settle(page);
       const hold = opts.freeze !== false ? await freeze(page) : null;
@@ -2553,15 +2764,7 @@ async function contrastIssues(page, res, coverage, opts = {}) {
     for (const f of moved) {
       const fr = frames[f.frameOf];
       if (!text || !fr || text.width !== fr.width || text.channels !== 4) continue;
-      const [x, y, w, h] = cropRegion(f.elements.map((e) => e.rect), [fr.width, Math.min(fr.height, text.height)]);
-      const rgba = Buffer.alloc(w * h * 4);
-      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
-        const o = ((y + yy) * fr.width + x + xx) * fr.channels, ot = ((y + yy) * text.width + x + xx) * 4, oi = (yy * w + xx) * 4;
-        const al = text.data[ot + 3] / 255;
-        for (let k = 0; k < 3; k++) rgba[oi + k] = Math.round(text.data[ot + k] * al + fr.data[o + k] * (1 - al));
-        rgba[oi + 3] = 255;
-      }
-      f.frame = { region: [x, y, w, h], png: encodePng(w, h, rgba).toString('base64'), ...(held[f.frameOf] ? { at: held[f.frameOf] } : {}) };
+      f.frame = { ...composite(fr, text, f.elements.map((e) => e.rect)), ...(held[f.frameOf] ? { at: held[f.frameOf] } : {}) };
     }
     for (const f of moved) delete f.frameOf;
   }

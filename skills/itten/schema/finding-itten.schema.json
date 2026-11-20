@@ -88,11 +88,24 @@
           "frame": {
             "type": "object",
             "description": "The frame the page was held at for this crop: the document timeline's time in ms, and how many animation frames the page had run. Absent where the page could not be held.",
-            "required": ["time"],
+            "required": [
+              "time"
+            ],
             "additionalProperties": false,
             "properties": {
-              "time": { "type": ["number", "null"] },
-              "frames": { "type": ["integer", "null"], "minimum": 0 }
+              "time": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "frames": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
             }
           }
         }
@@ -127,23 +140,84 @@
     "timing": {
       "type": "object",
       "description": "On a finding that rests on a measured time: whether it counts. It counts only when measured at least 3 times with a relative spread of at most 10%, with the 1-minute load average below half the CPU count before and after, and no software renderer. Otherwise the finding is info, reason is \"timing unreliable\", causes say why, and was is the severity it would have had.",
-      "required": ["reliable", "values", "environment"],
+      "required": [
+        "reliable",
+        "values",
+        "environment"
+      ],
       "additionalProperties": false,
       "properties": {
-        "reliable": { "type": "boolean" },
-        "reason": { "enum": ["timing unreliable"] },
-        "causes": { "type": "array", "items": { "type": "string" } },
-        "was": { "enum": ["error", "warning", "info"] },
-        "values": { "type": "array", "items": { "type": "number" }, "description": "What each measurement gave: ms, or a count." },
-        "spread": { "type": ["number", "null"], "description": "(max - min) / median of values." },
+        "reliable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            "timing unreliable"
+          ]
+        },
+        "causes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "was": {
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "What each measurement gave: ms, or a count."
+        },
+        "spread": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "(max - min) / median of values."
+        },
         "environment": {
           "type": "object",
-          "required": ["cpus", "load", "renderer"],
+          "required": [
+            "cpus",
+            "load",
+            "renderer"
+          ],
           "additionalProperties": false,
           "properties": {
-            "cpus": { "type": "integer" },
-            "renderer": { "type": ["string", "null"] },
-            "load": { "type": "object", "additionalProperties": false, "properties": { "before": { "type": ["number", "null"] }, "after": { "type": ["number", "null"] } } }
+            "cpus": {
+              "type": "integer"
+            },
+            "renderer": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "load": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "before": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "after": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -151,19 +225,76 @@
     "scale": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "properties"],
+      "required": [
+        "kind",
+        "properties"
+      ],
       "description": "On a scale finding (spacing-scale, type-scale's sizes and line heights, spacing-unit): what the fingerprint no longer holds. Its fingerprint names the properties and the elements only (fp/2).",
       "properties": {
-        "kind": { "enum": ["fixed", "fluid", "line-height", "unit"], "description": "fixed: one value off the scale. fluid: a value that follows the viewport. line-height: a line height no step sets. unit: spacing set in px." },
-        "value": { "type": "number", "description": "The value in px, for fixed and unit." },
-        "properties": { "type": "array", "items": { "type": "string" }, "description": "The CSS properties measured, sides and axes named (padding-top, row-gap, font-size)." }
+        "kind": {
+          "enum": [
+            "fixed",
+            "fluid",
+            "line-height",
+            "unit"
+          ],
+          "description": "fixed: one value off the scale. fluid: a value that follows the viewport. line-height: a line height no step sets. unit: spacing set in px."
+        },
+        "value": {
+          "type": "number",
+          "description": "The value in px, for fixed and unit."
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The CSS properties measured, sides and axes named (padding-top, row-gap, font-size)."
+        }
       }
     },
     "movingBackground": {
       "enum": [
         true
       ],
-      "description": "A contrast finding over pixels that changed between two frames: its value depends on the frame."
+      "description": "A contrast finding over pixels that changed between two frames. With `frames`, it was judged across the fixed frames and is the same every run; without, its value depends on the frame it was measured in."
+    },
+    "frames": {
+      "type": "object",
+      "description": "A contrast finding judged across a fixed set of frames: how many, how many animation frames apart, the value judged (the 10th percentile across the frames), and each frame's median and tenth-of-the-ground contrast, in order.",
+      "required": [
+        "count",
+        "every",
+        "judged",
+        "median",
+        "tenth"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "every": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "judged": {
+          "type": "number"
+        },
+        "median": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "tenth": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      }
     },
     "resize": {
       "type": "array",
