@@ -2664,10 +2664,11 @@ async function contrastAcrossFrames(p2, states) {
       await painted();
       const text = decodePng(await shot(cr, { omitBackground: true }));
       await unstyle('itten-text-only');
-      const frames = new Map();
-      for (const [f, k] of moved) {
-        if (!frames.has(k)) frames.set(k, decodePng(shots[i][k]));
-        const fr = frames.get(k);
+      // One decoded frame at a time: a full-page frame is large, and a page chooses how many differ.
+      let held = null;
+      for (const [f, k] of [...moved].sort((x, y) => x[1] - y[1])) {
+        if (held?.k !== k) held = { k, fr: decodePng(shots[i][k]) };
+        const fr = held.fr;
         if (text.width === fr.width && text.channels === 4) f.frame = { ...composite(fr, text, f.elements.map((e) => e.rect)), at: { frames: at[k], time: Math.round(at[k] * FRAMES.ms * 10) / 10 } };
       }
     }
@@ -2884,7 +2885,7 @@ if (startedAsCommand()) {
   const b = report.baseline;
   if (b) console.log(b.found ? `Against ${b.file}: ${b.new.length} new, ${b.fixed.length} fixed.` : `${b.file} has no entry for ${b.page}.`);
   if (args['write-baseline']) console.log(`Baseline written for this page to ${typeof args['write-baseline'] === 'string' ? args['write-baseline'] : 'itten-baseline.json'}.`);
-  if (report.blocked) console.error(report.status === 'refused' ? `Nothing was judged: ${report.reason}.` : 'The server failed every job twice; only the first load was judged.');
+  if (report.blocked) console.error('The server failed every job twice; only the first load was judged. Trying again may work.');
   // The shared exit codes: 1 with a failing finding, complete or partial; 3
   // for a partial run without one; 2 refused; 75 blocked; 0 otherwise. With --baseline,
   // only new findings and findings that got worse fail the run.
