@@ -13,7 +13,11 @@
 //   at and a page that answers 503 exit 75, with a refused report marked
 //   blocked and the error page never inspected; a system file that is not
 //   valid exits 64 and leaves no report; a run that fails inside the tool
-//   exits 70.
+//   exits 70. Precedence: 1 before 75, and 75 only when nothing was judged.
+//   Behind a server that serves the first load and then fails every job,
+//   fixtures/health.html (its own failing request, an error) exits 1 and
+//   fixtures/health-quiet.html exits 3; both reports are partial and marked
+//   blocked.
 // - exitCode() and failing() alone: info only is 0 when complete and 3 when
 //   partial.
 // Usage: node scripts/exit-test.js
@@ -41,8 +45,8 @@ export function commands() {
 export function unitTests() {
   const fails = [];
   const want = [['complete', 0, 0], ['complete', 2, 1], ['partial', 0, 3], ['partial', 1, 1], ['refused', 0, 2], ['refused', 5, 2]];
-  // Blocked: 75 when nothing failing was found, whatever the status; a failing finding still says 1.
-  for (const [status, n, code] of [['refused', 0, 75], ['partial', 0, 75], ['partial', 2, 1]]) if (exitCode(status, n, true) !== code) fails.push(`exitCode: a blocked ${status} run with ${n} failing gives ${exitCode(status, n, true)}, not ${code}`);
+  // Precedence: 1 before 75, and 75 only when nothing was judged; a blocked partial run with nothing failing is 3.
+  for (const [status, n, code] of [['refused', 0, 75], ['partial', 0, 3], ['partial', 2, 1]]) if (exitCode(status, n, true) !== code) fails.push(`exitCode: a blocked ${status} run with ${n} failing gives ${exitCode(status, n, true)}, not ${code}`);
   for (const [status, n, code] of want) if (exitCode(status, n) !== code) fails.push(`exitCode: ${status} with ${n} failing gives ${exitCode(status, n)}, not ${code}`);
   const rep = (status, ...sev) => ({ schema: 'report/1', status, findings: sev.map((s, k) => toFinding({ id: `i00${k}`, fingerprint: `overflow|${k}`, check: 'overflow', severity: s, message: 'm', elements: [{ sel: 'p', label: 'p' }], seen: {}, crops: [] })) });
   const code = (r, level = 'warning') => exitCode(r.status, failing(r, level).length);
@@ -128,6 +132,26 @@ export async function run() {
       expect('a page that answers 503', r503, 75, 'refused');
       if (!/HTTP 503/.test(r503.report?.reason ?? '') || r503.report?.findings?.length) fails.push(`a page that answers 503: the report does not name the answer, or judges the error page (${r503.report?.reason})`);
     } finally { busy.close(); }
+    // The first load is served, then the stylesheet is reset for every job: all are dropped, the report is partial and
+    // marked blocked. With the page's own failing request (an error from the first load) the run exits 1; without it, 3.
+    const counts = new Map(), open = new Set();
+    const flaky = createServer((req, res) => {
+      const file = new URL(req.url, 'http://x').pathname.split('/').pop();
+      const key = `${file}|${req.headers.referer ?? ''}`;
+      const n = (counts.get(key) ?? 0) + 1; counts.set(key, n);
+      if (file === 'health.css' && n > 1) return req.socket.destroy();
+      try { const body = readFileSync(join(ROOT, 'fixtures', file)); res.writeHead(200, { 'Content-Type': file.endsWith('.css') ? 'text/css' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' }); res.end(body); } catch { res.writeHead(404); res.end('Not found'); }
+    });
+    flaky.on('connection', (s) => { open.add(s); s.on('close', () => open.delete(s)); });
+    await new Promise((ok) => flaky.listen(port + 2, '127.0.0.1', ok));
+    try {
+      for (const [what, page, code, n] of [['every job dropped after a first load with an error', 'health.html', 1, 1], ['every job dropped after a clean first load', 'health-quiet.html', 3, 0]]) {
+        const r = await inspect(`dropped-${code}`, `http://127.0.0.1:${port + 2}/${page}`, '--no-engines', '--widths', '320,768,1440');
+        expect(what, r, code, 'partial');
+        if (r.report?.blocked !== true) fails.push(`${what}: the report is not marked blocked`);
+        if ((r.report?.findings ?? []).length !== n) fails.push(`${what}: ${(r.report?.findings ?? []).length} findings, not ${n} (${(r.report?.findings ?? []).map((f) => f.message.slice(0, 60)).join(' | ')})`);
+      }
+    } finally { for (const s of open) s.destroy(); flaky.close(); }
     writeFileSync(join(tmp, 'bad.system.json'), '{ "spacing": { "scale": "wide" } }');
     const badSystem = await node(['inspector/inspect.js', `http://127.0.0.1:${port}/fixtures/breakpoint-clean.html`, '--system', join(tmp, 'bad.system.json'), '--out', join(tmp, 'bad-system')], join(tmp, 'bad-system'));
     if (badSystem.code !== 64 || badSystem.report) fails.push(`a system file that is not valid: exits ${badSystem.code}, not 64 (bad input), or leaves a report`);

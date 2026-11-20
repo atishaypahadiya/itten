@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A page whose server fails, with no failing request of its own</title>
+<link rel="stylesheet" href="health.css">
+</head>
+<body>
+  <!-- scripts/exit-test.js. fixtures/health.html without its box and its missing request: the first load finds
+       nothing, so a run whose every later job is dropped exits 3. -->
+  <div class="band">The band</div>
+</body>
+</html>

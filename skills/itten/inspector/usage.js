@@ -12,16 +12,19 @@
 //   70  the run failed inside the tool; nothing was judged
 //   75  temporarily blocked: nothing was judged, and trying again may work
 //       (the server gave no answer, reset, or answered 5xx)
+// Precedence: 70, then 1, then 75, then 3.
 // Errors and warnings fail a run; info never does.
 
 export const EXIT = { ok: 0, failing: 1, refused: 2, partial: 3, usage: 64, input: 64, internal: 70, blocked: 75 };
 
 // The code for a report/1, the number of its failing findings, and whether
-// the report says the run was blocked (report.blocked).
+// the report says the run was blocked (report.blocked). In order: 70 for a
+// failure inside the tool (the command's own catch); 1 when a finding
+// fails; 75 only when nothing was judged; 3 for a partial run, also one
+// whose every job after the first load was dropped.
 export const exitCode = (status, failing, blocked = false) => (
-  blocked && !(failing > 0) ? EXIT.blocked
-    : status === 'refused' ? EXIT.refused
-      : failing > 0 ? EXIT.failing : status === 'partial' ? EXIT.partial : EXIT.ok);
+  status === 'refused' ? (blocked ? EXIT.blocked : EXIT.refused)
+    : failing > 0 ? EXIT.failing : status === 'partial' ? EXIT.partial : EXIT.ok);
 
 export class UsageError extends Error {}
 

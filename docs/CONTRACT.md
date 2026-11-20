@@ -74,10 +74,12 @@ Every ITTEN command uses these, shared with KERCKHOFFS and ERLANG (`inspector/us
 | 3 | `partial`, and no failing finding. |
 | 64 | Bad usage or bad input: an unknown flag, a flag without its value, an argument too many or missing, a value a flag does not take, or a system file that is not valid. Nothing is run: no browser, no report. (`EX_USAGE` in `sysexits.h`.) |
 | 70 | The run failed inside the tool; nothing was judged. `report.json` is `refused` and holds the error. (`EX_SOFTWARE`.) |
-| 75 | Temporarily blocked: nothing was judged, and trying again may work. The page gave no answer, the connection was reset, or the page answered 5xx, 408, 425 or 429 (an error page is never inspected as the page); `report.json` is `refused` with `blocked: true`. Also a run in which the server failed every job twice, so that only the first load was judged, when no finding from that load fails: its report is `partial` with `blocked: true`. (`EX_TEMPFAIL`.) |
+| 75 | Temporarily blocked: nothing was judged, and trying again may work. The page gave no answer, the connection was reset, or the page answered 5xx, 408, 425 or 429 (an error page is never inspected as the page); `report.json` is `refused` with `blocked: true`. (`EX_TEMPFAIL`.) |
 | 124 | The watchdog stopped a run that made no progress; `report.json` is `refused`. |
 
 **Severity.** Errors and warnings fail a run; info never does. An info-only run exits 0 when complete and 3 when partial. `--fail-on error` lets warnings pass, and `--fail-on never` lets everything pass; with a baseline, only new findings and findings that got worse count. The summary counts errors, warnings and info apart (`summary.error`, `summary.warning`, `summary.info`, and the last line the command prints).
+
+**Precedence.** 70, then 1, then 75, then 3. A failure inside the tool is 70 whatever else happened. A failing finding is 1, also when the server then failed every later job. 75 is only for a run that judged nothing. A run whose first load was judged and whose every later job the server failed twice is `partial` with `blocked: true`: it exits 1 when a finding from the first load fails and 3 when none does, and the mark says that trying again may measure the rest.
 
 Before 0.5's shared table, a page that could not be reached, a failed run and a system file that is not valid all exited 2, and a page that answered 503 was inspected as if the error were the page.
 
