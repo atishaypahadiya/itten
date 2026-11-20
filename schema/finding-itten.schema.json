@@ -263,6 +263,16 @@
       ],
       "description": "A contrast finding over pixels that changed between two frames. With `frames`, it was judged across the fixed frames and is the same every run; without, its value depends on the frame it was measured in."
     },
+    "abandoned": {
+      "type": "object",
+      "description": "On a timed-out finding of severity info: a step that ran out of a time limit of its own and was abandoned, where the rest of its width was still measured. The step and its limit in seconds.",
+      "required": ["step", "limit"],
+      "additionalProperties": false,
+      "properties": {
+        "step": { "type": "string" },
+        "limit": { "type": "number" }
+      }
+    },
     "counted": {
       "type": "object",
       "description": "A script's flashes counted on the controlled clock, where timers and animation frames follow page time and not the machine's: the seconds of page time counted, the frames stepped, and the most colour changes in any one second. A count, the same on any machine; the timing rule does not apply.",

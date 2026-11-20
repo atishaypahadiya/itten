@@ -26,6 +26,8 @@
 // - a page that blocks its main thread at one width holds the run, or is
 //   not reported as timed out at that width in every pass, or the watchdog
 //   does not stop a stalled process (scripts/timeout-test.js);
+// - a frame callback that never returns on the frame clock holds its width,
+//   or is abandoned without a word (scripts/frame-limit-test.js);
 // - --version does not print the version and ITTEN's own commit, or names
 //   another repository's commit for a copy of ITTEN (scripts/version-test.js);
 // - the fast tier (--fast) misses a planted layout or line defect on the
@@ -426,6 +428,15 @@ try {
   for (const f of await timeoutTest()) fail('Timeouts', f);
 } catch (e) {
   fail('Timeouts', `the timeout test could not run: ${e.message.split('\n')[0]}`);
+}
+// A frame callback that never returns on the frame clock: the step is
+// abandoned at its own limit, the run is partial with an info finding, and
+// the rest is measured (fixtures/frame-wait.html, scripts/frame-limit-test.js).
+try {
+  const { run: frameLimitTest } = await import('./frame-limit-test.js');
+  for (const f of await frameLimitTest()) fail('Timeouts', f);
+} catch (e) {
+  fail('Timeouts', `the frame-limit test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ---------------------------------------------------------------- Version

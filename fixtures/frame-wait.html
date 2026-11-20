@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A frame callback that waits on the clock</title>
+<style>
+  body { margin: 0; font: 1rem/1.5rem system-ui, sans-serif; color: #111; background: #fff; }
+  .band { position: relative; }
+  .band canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .band p { position: relative; margin: 0; padding: 2rem; color: #fff; text-wrap: pretty; }
+  /* In px, so the 200% text pass adds no overflow of its own. */
+  .wide { width: 2400px; height: 24px; background: #ccc; }
+</style>
+</head>
+<body>
+  <!-- scripts/frame-limit-test.js. White text over a ground that is redrawn every frame and never lighter than
+       rgb(100, 100, 100), so its contrast passes in every frame. Planted: a box 2400 px wide (overflow) at every width.
+       Also planted: each frame waits 4 ms on performance.now() before it draws. In a browser that is 4 ms; on the frame
+       clock, where the time does not move within a frame, the callback never returns. -->
+  <main>
+    <div class="band"><canvas></canvas><p>This ground is drawn again every frame</p></div>
+    <div class="wide"></div>
+  </main>
+  <script>
+    const WAIT = 4;   // ms each frame waits on the clock before it draws
+    const c = document.querySelector('canvas');
+    const draw = (ts) => {
+      const t = performance.now();
+      while (performance.now() - t < WAIT) { /* wait on the clock */ }
+      if (c.width !== c.clientWidth || c.height !== c.clientHeight) { c.width = c.clientWidth; c.height = c.clientHeight; }
+      const v = Math.round(70 + 30 * Math.sin((2 * Math.PI * ts) / 4000)), g = c.getContext('2d');
+      g.fillStyle = `rgb(${v}, ${v}, ${v})`;
+      g.fillRect(0, 0, c.width, c.height);
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

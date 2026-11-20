@@ -201,6 +201,8 @@ const loose = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === 
 // a browser that stops answering. within() races the work against a timer;
 // the work is abandoned, not stopped, so the caller closes the browser
 // context it ran in, which ends it.
+// The step of the frame clock that has a limit of its own (TIMEOUTS.frame).
+export const FRAME_STEP = 'a frame callback of the page';
 export class StepTimeout extends Error {
   constructor(step, ms) {
     super(`${step} did not finish within ${Math.round(ms / 1000)} s`);
@@ -219,7 +221,10 @@ export function within(ms, step, work) {
 // multiplied by the settle scale (settleTiming) on a slower one. A load is
 // at most 60 s to the load event, 10 s for the network, 30 s for
 // --wait-for, 8 s of scrolling and the 15 s settle ceiling: 123 s.
-export const TIMEOUTS = { load: 180, check: 120, width: 420, motion: 480, close: 30 };
+// frame: one step of the frame clock (contrastAcrossFrames). On that clock
+// performance.now() and Date.now() do not move within a frame, so a callback
+// that waits on them never returns; the step is abandoned, not the width.
+export const TIMEOUTS = { load: 180, check: 120, width: 420, motion: 480, close: 30, frame: 10 };
 
 // The watchdog, for what the limits do not catch: a run that makes no
 // progress (no step begun, no line logged) for `minutes` prints the last
@@ -902,8 +907,8 @@ async function inspectRun(url, o = {}) {
       await slow(p2);
       await p2.setViewportSize({ width: pass.w, height: VIEW_H });
       await load(p2, url, o, null);
-      await contrastAcrossFrames(p2, states);
-    } finally { await ctx.close().catch(() => {}); }
+      await contrastAcrossFrames(p2, states, TO.frame);
+    } finally { await closeQuietly(ctx); }   // also when a step was abandoned: its page is still inside a callback
   };
 
   // What each kind of job does once its page is loaded. r collects the
@@ -944,7 +949,11 @@ async function inspectRun(url, o = {}) {
         // pass cannot run, the two-frame result stands and says why.
         if (o.freeze !== false && o.fixedFrames !== false && states.some((st) => st.ci.drawing?.tiles)) {
           try { await within(TO.check, 'contrast across fixed frames', () => acrossFrames(page, pass, states)); }
-          catch (e) { for (const st of states) if (st.ci.drawing) st.ci.drawing.frames = { failed: String(e.message || e).split('\n')[0] }; }
+          catch (e) {
+            for (const st of states) if (st.ci.drawing) st.ci.drawing.frames = { failed: String(e.message || e).split('\n')[0] };
+            // Out of time: this step is abandoned and said so (info, and the run is partial); the rest of the width goes on.
+            if (e instanceof StepTimeout) r.abandoned.push({ step: 'contrast across fixed frames', why: e.step, ms: e.ms });
+          }
         }
         for (const { sp, ci } of states) {
           if (ci.drawing?.tiles) (r.drawing ??= []).push({ at: sp.label, ...ci.drawing });
@@ -981,7 +990,7 @@ async function inspectRun(url, o = {}) {
   // is kept, and the timeout is recorded with the job's width and step.
   const runJob = async (job) => {
     const { pass } = job;
-    const r = { events: [], data: null, timedOut: null, errors: [], failed: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: new Map(), fontGroups: 0, log: null, s: 0 };
+    const r = { events: [], data: null, timedOut: null, abandoned: [], errors: [], failed: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: new Map(), fontGroups: 0, log: null, s: 0 };
     let b = browser;
     if (pass.engine) {
       const e = await engineBrowser(pass.engine);
@@ -1040,7 +1049,7 @@ async function inspectRun(url, o = {}) {
     const still = serverFaults(again);
     if (!still.length) return { ...again, s: first.s + again.s, retried: { failed: bad } };
     log(`  ${job.pass.label}: failed again; the job is dropped`);
-    return { events: [], data: null, timedOut: null, errors: [], failed: [], requests: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: [], fontGroups: 0, log: null, s: first.s + again.s, dropped: { failed: still } };
+    return { events: [], data: null, timedOut: null, abandoned: [], errors: [], failed: [], requests: [], remeasured: 0, coverage: { contrastSamples: 0, contrastSkipped: 0 }, fonts: [], fontGroups: 0, log: null, s: first.s + again.s, dropped: { failed: still } };
   };
 
   try {
@@ -1244,6 +1253,15 @@ async function inspectRun(url, o = {}) {
           message: `${e.step[0].toUpperCase() + e.step.slice(1)} did not finish within ${Math.round(e.ms / 1000)} s (${label}). The inspector closed the browser context and went on to the next width, so nothing after that step was measured there. A page that blocks its main thread does this, and so does a renderer or a browser that stops answering. Inspect again: if the same step times out at the same width, the page is the cause.` });
       }
     };
+    // A step that ran out of its own limit and was abandoned, where the rest
+    // of the width was still measured: info, and the run is partial.
+    const abandoned = (mode, w, a, label) => {
+      const fingerprint = `timed-out|${mode}|${w}|${a.step}`;
+      if (issues.has(fingerprint)) return;
+      const frame = a.why === FRAME_STEP;
+      issues.set(fingerprint, { id: nextId(), fingerprint, check: 'timed-out', severity: 'info', count: 1, elements: [], seen: { [mode]: [w] }, crops: [], first: label, abandoned: { step: a.step, limit: Math.round(a.ms / 1000) },
+        message: `${a.step[0].toUpperCase() + a.step.slice(1)} was abandoned (${label}): ${frame ? `a frame callback of the page did not return within ${Math.round(a.ms / 1000)} s. On the frame clock performance.now() and Date.now() do not move within a frame, so a callback that waits on them never ends` : `it did not finish within ${Math.round(a.ms / 1000)} s`}. Contrast over the moving background keeps its two-frame result there, which can differ between runs; everything else at that width was measured.` });
+    };
     const jobsOf = (kind) => plan.jobs.filter((j) => j.kind === kind || (kind === 'light' && j.kind === 'light-key'));
     // Each job's findings in order; skip(raw, pass) leaves out a sighting.
     const take = (job, skip = null) => {
@@ -1253,6 +1271,7 @@ async function inspectRun(url, o = {}) {
       let n = 0;
       for (const [raw, pass] of r.events) { if (skip?.(raw, pass)) continue; record(raw, pass); n++; }
       if (r.timedOut) timedOut(job.pass.mode, job.pass.w, r.timedOut, job.pass.label, job.pass.resize);
+      for (const a of r.abandoned ?? []) abandoned(job.pass.mode, job.pass.w, a, job.pass.label);
       return n;
     };
 
@@ -1460,7 +1479,7 @@ async function inspectRun(url, o = {}) {
       flashClock = await within(TO.check, 'the script flash count', () => scriptFlashes(browser, url, w, async (page, raw) => {
         countedFlash.add(raw.check + '|' + raw.key);
         await motionMerge(page, raw, { w, mode: 'motion', label: `${w} px, motion`, dpr: 1 });
-      }));
+      }, TO.frame));
       log(`  ${w} px, script flashes: ${flashClock.seconds} s of page time on the controlled clock, ${plural(flashClock.findings, 'finding')}`);
     } catch (e) {
       flashClock = { counted: false, why: String(e.message || e).split('\n')[0] };
@@ -1553,14 +1572,16 @@ async function inspectRun(url, o = {}) {
     const resize = { pairs: plan.pairs.map(([a, b]) => `${a}→${b}`), breakpoints: plan.pairs.filter(([a, b]) => Math.abs(widths.indexOf(a) - widths.indexOf(b)) === 1).length / 2 };
     // report/1: complete unless a step timed out or the page never showed
     // what --wait-for named; then partial, saying which.
-    const nTimedOut = list.filter((i) => i.check === 'timed-out').length;
+    const nAbandoned = list.filter((i) => i.check === 'timed-out' && i.abandoned).length;
+    const nStopped = list.filter((i) => i.check === 'timed-out' && !i.abandoned).length;
     // The server's health: the jobs run again, and the jobs dropped.
     const health = { retried: [], dropped: [] };
     for (const job of plan.jobs) for (const k of ['retried', 'dropped']) if (results[job.i]?.[k]) health[k].push({ job: job.pass.label, failed: results[job.i][k].failed });
     const nameJobs = (js) => js.map((j) => `${j.job} (${j.failed.slice(0, 3).map((q) => `${q.method} ${q.url}, ${q.why}`).join('; ')}${j.failed.length > 3 ? `; and ${j.failed.length - 3} more` : ''})`).join('; ');
     const gaps = [
       health.dropped.length ? `the server failed ${plural(health.dropped.length, 'job')} twice, and ${health.dropped.length === 1 ? 'it was' : 'they were'} dropped with nothing measured: ${nameJobs(health.dropped)}` : '',
-      nTimedOut ? `${nTimedOut} ${nTimedOut === 1 ? 'step' : 'steps'} timed out, and nothing after ${nTimedOut === 1 ? 'it' : 'them'} was measured at ${nTimedOut === 1 ? 'that width' : 'those widths'}` : '',
+      nStopped ? `${nStopped} ${nStopped === 1 ? 'step' : 'steps'} timed out, and nothing after ${nStopped === 1 ? 'it' : 'them'} was measured at ${nStopped === 1 ? 'that width' : 'those widths'}` : '',
+      nAbandoned ? `${nAbandoned} ${nAbandoned === 1 ? 'step was' : 'steps were'} abandoned at ${nAbandoned === 1 ? 'its' : 'their'} time limit, and the rest of ${nAbandoned === 1 ? 'that width' : 'those widths'} was measured: ${list.filter((i) => i.abandoned).map((i) => `${i.abandoned.step} (${i.first})`).join('; ')}` : '',
       watched.waited === false ? `no element matched --wait-for ${o.waitFor}, so the page was measured without it` : '',
       watched.repeatBlocked ? `the first load could not be measured a second and third time (${watched.repeatBlocked}), so its timing findings are info` : '',
     ].filter(Boolean);
@@ -2180,7 +2201,7 @@ function flashClockInit() {
   window.cancelAnimationFrame = (id) => { held = held.filter(([i]) => i !== id); };
   Object.defineProperty(window, '__ittenFlashClock', { value: { raf, step: () => { const h = held; held = []; const t = performance.now(); for (const [, cb] of h) { try { cb(t); } catch (e) { setTimeout(() => { throw e; }); } } } } });
 }
-async function scriptFlashes(browser, url, w, each) {
+async function scriptFlashes(browser, url, w, each, limit = TIMEOUTS.frame * 1000) {
   const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'no-preference' });
   try {
     await ctx.addInitScript(flashClockInit);
@@ -2198,7 +2219,9 @@ async function scriptFlashes(browser, url, w, each) {
         await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'pauseIfNetworkFetchesPending', budget: 1000 / FLASH_CLOCK.fps });
         await done;
       } finally { clearTimeout(timer); }
-      await page.evaluate(() => window.__ittenFlashClock?.step());
+      // Page time is paused while a callback runs, so one that waits on the clock never returns: the count ends, and
+      // the motion pass reads the flashes off its own clock.
+      await within(limit, FRAME_STEP, () => page.evaluate(() => window.__ittenFlashClock?.step()));
     };
     let loaded = false;
     const nav = page.goto(url, { waitUntil: 'load', timeout: 60000 }).then(() => { loaded = true; });
@@ -2690,7 +2713,9 @@ function composite(fr, text, rects) {
 // two-frame one and lists each frame's value. Other texts keep what the
 // first page measured. Throws when the second page is not laid out as the
 // first was; the caller then keeps the two-frame result.
-async function contrastAcrossFrames(p2, states) {
+async function contrastAcrossFrames(p2, states, limit = TIMEOUTS.frame * 1000) {
+  // The page's held callbacks run inside these calls; one that never returns must not hold the width.
+  const stepFrames = (n, run) => within(limit, FRAME_STEP, () => (run === undefined ? p2.evaluate((k) => window.__ittenFrames.step(k), n) : p2.evaluate(([k, x]) => window.__ittenFrames.step(k, x), [n, run])));
   const dims = await p2.evaluate(() => [document.documentElement.clientWidth, Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)]);
   for (const { cr } of states) if (Math.abs(dims[0] - cr.vw) > 1 || Math.abs(dims[1] - cr.docHeight) > 1) throw new Error(`the page loaded for the fixed frames is ${dims[0]} by ${dims[1]} px, not ${cr.vw} by ${cr.docHeight}`);
   if (!(await p2.evaluate(() => window.__ittenFrames?.fixed === true))) throw new Error('the page has no frame clock');
@@ -2702,7 +2727,7 @@ async function contrastAcrossFrames(p2, states) {
   const shots = states.map(() => []), at = [];
   await style('itten-hide-text', HIDE_TEXT_CSS);
   for (let k = 0; k < FRAMES.count; k++) {
-    const n = await p2.evaluate((every) => window.__ittenFrames.step(every), FRAMES.every);
+    const n = await stepFrames(FRAMES.every);
     await p2.evaluate(async (t) => {
       for (const a of document.getAnimations()) { try { if (a.playState === 'running' || a.playState === 'paused') { a.pause(); a.currentTime = t; } } catch { /* not seekable */ } }
       await Promise.all([...document.querySelectorAll('video')].map((v) => new Promise((r) => {
@@ -2713,7 +2738,7 @@ async function contrastAcrossFrames(p2, states) {
     }, n * FRAMES.ms);
     for (let i = 0; i < states.length; i++) {
       await scheme(states[i].sp);
-      await p2.evaluate(() => window.__ittenFrames.step(1, false));
+      await stepFrames(1, false);
       await painted();
       shots[i].push(await shot(states[i].cr));
     }
