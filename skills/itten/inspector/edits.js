@@ -13,7 +13,9 @@
 // last character of its line. A byte-order mark at the start of the file is
 // not counted: line 1, column 1 is the character after it. A path that is
 // absolute, leaves the root, or reaches outside it through a symbolic link
-// is refused. (The edit-unit rule, shared with KERCKHOFFS and ERLANG.)
+// is refused, and so is a path into git's own folder (.git): its config can
+// name commands git runs, and no diff shows a change there. (The edit-unit
+// rule, shared with KERCKHOFFS and ERLANG.)
 //
 // apply() writes a set of edits all or none: edits that overlap, point past
 // the end of a line or the file, or create a file that exists are refused
@@ -56,6 +58,9 @@ export function inside(root, file) {
   const full = resolve(root, file);
   const rel = relative(resolve(root), full);
   if (rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..')) throw new EditError(`"${file}" is outside the project root`);
+  // Never git's own folder, however the name is cased (macOS and Windows fold case).
+  const inGit = (p) => p.split(/[\\/]/).some((part) => part.toLowerCase() === '.git');
+  if (inGit(rel)) throw new EditError(`"${file}" is in .git, which no edit touches`);
   // Through symbolic links too. Each part of the path that exists is looked
   // at itself (lstat, which does not follow a link): a link must resolve to
   // somewhere inside the resolved root, and a link that points at nothing is
@@ -71,6 +76,7 @@ export function inside(root, file) {
     let target;
     try { target = realpathSync(p); } catch { throw new EditError(`"${file}" goes through a symbolic link that points at nothing`); }
     if (!within(target)) throw new EditError(`"${file}" reaches outside the project root through a symbolic link`);
+    if (inGit(relative(realRoot, target))) throw new EditError(`"${file}" reaches .git through a symbolic link`);
     cur = target;
   }
   return full;

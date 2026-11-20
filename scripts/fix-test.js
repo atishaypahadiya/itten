@@ -12,7 +12,7 @@
 // Usage: node scripts/fix-test.js. Exports run() for scripts/check.js.
 
 import { mkdtempSync, mkdirSync, cpSync, readFileSync, readdirSync, statSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
-import { notSource } from '../inspector/locate.js';
+import { notSource, fileOf } from '../inspector/locate.js';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +50,18 @@ export function editTests() {
     refused('a line past the end of the file', [{ file: 'a.css', line: 9, column: 1, length: 0, replace: 'x' }]);
     refused('a file outside the root', [{ file: '../a.css', line: 1, column: 1, length: 0, replace: 'x' }]);
     refused('an absolute path', [{ file: join(dir, 'a.css'), line: 1, column: 1, length: 0, replace: 'x' }]);
+    // git's own folder: its config names commands git runs, and no diff shows a change there.
+    mkdirSync(join(dir, '.git'), { recursive: true });
+    writeFileSync(join(dir, '.git', 'config'), '[core]\n');
+    refused('an edit of .git/config', [{ file: '.git/config', line: 1, column: 1, length: 0, replace: 'x' }]);
+    refused('an edit of .GIT/config', [{ file: '.GIT/config', line: 1, column: 1, length: 0, replace: 'x' }]);
+    refused('creating a file in .git', [{ create: '.git/hooks/pre-commit', content: 'x' }]);
+    refused('creating a file in a nested .git', [{ create: 'sub/.git/config', content: 'x' }]);
+    refused('removing a file in .git', [{ remove: '.git/config' }]);
+    try { symlinkSync(join(dir, '.git'), join(dir, 'vcs')); refused('an edit of .git through a symbolic link', [{ file: 'vcs/config', line: 1, column: 1, length: 0, replace: 'x' }]); rmSync(join(dir, 'vcs')); } catch (e) { fails.push(`edits: the .git link case could not run: ${e.message}`); }
+    if (readFileSync(join(dir, '.git', 'config'), 'utf8') !== '[core]\n' || existsSync(join(dir, '.git', 'hooks')) || existsSync(join(dir, 'sub'))) fails.push('edits: something in .git was changed');
+    rmSync(join(dir, '.git'), { recursive: true });
+    if (fileOf(dir, 'http://h/a/..%2f..%2fx.css', 'http://h/') !== null || fileOf(dir, 'http://h/a/b.css', 'http://h/') !== 'a/b.css') fails.push('locate: an encoded ".." in a URL names a file outside the root, or a plain path is refused');
     // Through a symbolic link: a folder in the root that points outside it.
     const outside = mkdtempSync(join(tmpdir(), 'itten-outside-'));
     try {

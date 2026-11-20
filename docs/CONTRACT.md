@@ -238,6 +238,7 @@ An edit is one of:
 **The edit-unit rule, shared with KERCKHOFFS and ERLANG.**
 
 - `file` is relative to the root (`--root`), with `/` between its parts. A path that is absolute, that leaves the root (`..`), or that reaches outside it through a symbolic link is refused.
+- A path into git's own folder (a part named `.git`, in any case, or reached through a symbolic link) is refused: its configuration names commands git runs, and no diff shows a change there.
 - `line` and `column` are 1-based.
 - `column` and `length` count UTF-16 code units, as JavaScript strings do.
 - A line ends at `\n` and nowhere else. The `\r` of a `\r\n` pair is the last character of its line.

@@ -68,7 +68,9 @@ export function fileOf(root, url, pageUrl) {
   if (u.origin !== p.origin) return null;
   let path = decodeURIComponent(u.pathname);
   if (path.endsWith('/')) path += 'index.html';
-  return relative(root, join(root, path)).split('\\').join('/');
+  const file = relative(root, join(root, path)).split('\\').join('/');
+  // An encoded ".." (%2e%2e, ..%2f) survives the URL's own normalising: such a path names no file of the project.
+  return file.startsWith('..') || file.split('/').includes('..') ? null : file;
 }
 
 // A CDP session on a page with the DOM and CSS domains on, and every
