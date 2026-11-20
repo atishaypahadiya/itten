@@ -2,6 +2,14 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
+## 0.5 · not released
+
+Behaviour changes:
+
+- The inspector's `--fail-on` defaults to `warning`: a run with an error or a warning exits 1, and info never fails a run. Before, the default was `never`. Exit codes are shared across the set: 0, 1, 2 (refused), 3 (partial), 64 (bad usage); see `docs/CONTRACT.md`, "Exit codes".
+- The action's `fail-on` defaults to `warnings`, to match. Before, it was `errors`. A workflow that should fail on errors only sets `fail-on: errors`.
+- Fingerprints are `fp/2`: a spacing, type or radius finding is named by its property and elements, never by a measured value. A baseline written before is re-keyed as it is compared; nothing needs regenerating.
+
 ## 0.3.5 · 17 November 2026
 
 The inspector runs its widths in parallel, finds the same things on one worker as on many, and measures around every breakpoint in quick mode.

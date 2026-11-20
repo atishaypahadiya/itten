@@ -28,9 +28,9 @@ inputs:
     required: false
     default: quick
   fail-on:
-    description: errors, warnings or never. With a baseline, only findings that are new or more severe count.
+    description: errors, warnings or never. With a baseline, only findings that are new or more severe count. Before 0.5 the default was errors.
     required: false
-    default: errors
+    default: warnings
   baseline:
     description: The committed list of known findings.
     required: false

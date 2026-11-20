@@ -133,6 +133,8 @@ A rule taken from these enters as a craft rule, a floor or a pattern, never as a
 
 Approved-look snapshots: once the owner approves a look, screenshots at the key widths are stored with the project, and a later run reports where the rendered page differs from them, as information with crops, so a change in look is seen and approved rather than slipped in.
 
+**Also an idea: a fix that names the token.** Where a declaration's value equals a system value that a custom property of the project defines, `itten fix` could write `var(--that-property)` in its place. Considered for 0.4 and dropped (19 November 2026): no check reports a raw value that is on the system, so the fix has no finding to start from, and a check added only to feed it would report pages that render correctly. It fits here, where lint reads the source.
+
 **Needs.** 0.4, for the system-to-rule mapping it shares with the fixer.
 
 **Acceptance test.** On the fixtures, `itten lint` reports every planted defect that is visible in the source (spacing, type, radius, motion values) and nothing on the clean twin; `--changed` reports only the files changed. `itten decode` on a fixture element with known styles drafts a pattern file with those values, and names correctly which scale with the font size. A new check enforces the first pattern's craft rule: an underline whose thickness or offset stays fixed while its text grows is reported, with a planted defect and a clean twin. A snapshot run on an unchanged page reports nothing; on a page with one planted change, it reports that change with a crop.
