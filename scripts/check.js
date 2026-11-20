@@ -338,7 +338,7 @@ try {
 
 // --------------------------------------------------------------- Fixtures
 // Run on one worker and on six; scored on the six, and the two compared.
-let fixtureLine = '', parityLine = '';
+let fixtureLine = '', parityLine = '', enginesText = 'engines: the fixtures were not inspected';
 try {
   const { run } = await import('./fixture-test.js');
   const { compare } = await import('./parity-test.js');
@@ -356,6 +356,7 @@ try {
   for (const [k, rep] of [...Object.entries(one.reports), ...Object.entries(r.reports)]) for (const p of phaseOverlaps(rep.schedule.phases)) fail('Schedule', `${k}: ${p}`);
   parityLine = `Parity: one worker ${Math.round(s1)} s, six workers ${Math.round(s6)} s, ${diffs.length ? `${diffs.length} difference(s)` : 'identical findings'}.`;
   fixtureLine = `Fixtures: recall ${r.caught}/${r.defects}, precision ${r.truePositives}/${r.truePositives + r.falsePositives.length}, clean twins ${r.findingsOnTwin} findings.`;
+  { const { enginesOf } = await import('./fixture-test.js'); enginesText = enginesOf({ ...one.reports, ...r.reports }).text; }
   for (const id of r.missed) fail('Fixtures', `planted defect ${id} was not caught`);
   for (const s of [...one.still, ...r.still]) fail('Moving tiles', s);
   const tiles = (rep) => Math.max(0, ...(rep.drawing ?? []).map((d) => d.tiles));
@@ -714,8 +715,10 @@ if (parityLine) console.log(parityLine);
 if (findingLine) console.log(findingLine);
 for (const w of warnings) console.log(`warn  ${w}`);
 for (const f of failures) console.log(`FAIL  ${f}`);
+// The last line always says which engines the fixtures ran in and which did
+// not, with the reason: a check with an engine missing never ends on a bare "Passed".
 if (failures.length) {
-  console.log(`\n${failures.length} failure(s).`);
+  console.log(`\n${failures.length} failure(s) (${enginesText}).`);
   process.exit(1);
 }
-console.log(warnings.length ? `\nPassed with ${warnings.length} warning(s).` : '\nPassed.');
+console.log(`\nPassed${warnings.length ? ` with ${warnings.length} warning(s)` : ''} (${enginesText}).`);

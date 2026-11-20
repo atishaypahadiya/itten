@@ -21,8 +21,8 @@ concurrency:
 jobs:
   fixtures:
     runs-on: ubuntu-24.04
-    # The default sweep, as the action's quick mode (ITTEN.md).
-    timeout-minutes: 30
+    # The default sweep, as the action's quick mode (ITTEN.md), then the fixtures once more with Firefox.
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write
@@ -62,6 +62,25 @@ jobs:
           SYSTEM_REPORTS: ${{ steps.system.outputs.report-dir }}
           DISTINCT_REPORTS: ${{ steps.distinct.outputs.report-dir }}
         run: node scripts/fixture-test.js --from "$SYSTEM_REPORTS" --from "$DISTINCT_REPORTS"
+
+      # Firefox, in this job only. The action installs and asks for WebKit alone, for every project that uses it;
+      # here the fixtures are inspected once more by the inspector itself with WebKit and Firefox, so the Firefox
+      # pass has a run behind it (Linux; on macOS 27.2 Playwright's Firefox does not start). The step fails if
+      # Firefox does not run, a planted defect is missed, or anything else is reported.
+      - name: Install Firefox for the self-test
+        run: npx playwright install --with-deps firefox
+      - name: The fixtures again, in WebKit and Firefox
+        run: node scripts/fixture-test.js --need webkit,firefox
+      - name: Upload the reports of the Firefox run
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: itten-fixtures-engines
+          path: |
+            dist/fixtures/*/report.json
+            dist/fixtures/result.json
+          if-no-files-found: warn
+          overwrite: true
 
   checks:
     runs-on: ubuntu-24.04

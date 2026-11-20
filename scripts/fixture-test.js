@@ -158,8 +158,24 @@ export function score(spec, { page, twin, dPage, dTwin }, { write = true } = {})
   return result;
 }
 
+// The engines a set of reports was inspected in, and the ones asked for
+// that did not run, each with the reason the report gives. `text` is the
+// line a summary ends on, so a run with an engine missing never reads as a
+// run with all of them.
+export function enginesOf(reports) {
+  const ran = new Map(), notRun = new Map();
+  for (const r of Object.values(reports ?? {})) {
+    for (const [k, v] of Object.entries(r?.engines?.browsers ?? {})) ran.set(k, v);
+    for (const [k, v] of Object.entries(r?.engines?.notRun ?? {})) notRun.set(k, v);
+  }
+  for (const k of notRun.keys()) ran.delete(k);
+  const text = `engines run: ${[...ran.keys()].join(', ') || 'none'}${notRun.size ? `; not run: ${[...notRun].map(([k, v]) => `${k}, ${v}`).join('; ')}` : ''}`;
+  return { ran: Object.fromEntries(ran), notRun: Object.fromEntries(notRun), text };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  readArgs(process.argv.slice(2), { name: 'fixture-test.js', usage: 'node scripts/fixture-test.js [--full] [--from <report dir>]...', flags: { full: 'flag', from: 'list' } });
+  readArgs(process.argv.slice(2), { name: 'fixture-test.js', usage: 'node scripts/fixture-test.js [--full] [--need webkit,firefox] [--from <report dir>]...', flags: { full: 'flag', from: 'list', need: 'value' } });
+  const need = process.argv.flatMap((a, i) => (process.argv[i - 1] === '--need' ? a.split(',').map((x) => x.trim()).filter(Boolean) : []));
   const from = process.argv.flatMap((a, i) => (process.argv[i - 1] === '--from' ? [a] : []));
   const r = from.length ? fromAction(from) : await run({ full: process.argv.includes('--full'), quiet: false });
   for (const row of r.rows) console.log(`${row.caught ? 'caught' : 'MISSED'}  ${row.id}  ${row.check.padEnd(18)} ${row.title}  ${row.issues.join(' ')}`);
@@ -170,7 +186,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const s of r.still) console.log(`moving tiles on a still page: ${s}`);
   if (!bp.equal) console.log(`breakpoints found by the resize pass: test print ${bp.testPrint}, twin ${bp.twin}; the fixtures have ${bp.expected}`);
   console.log(`\nRecall ${r.caught}/${r.defects} = ${r.recall.toFixed(2)}. Precision ${r.truePositives}/${r.truePositives + r.falsePositives.length} = ${r.precision.toFixed(2)}. Clean twins: ${r.findingsOnTwin} findings.`);
+  // Which engines ran. With --need, one that did not run fails the test (the self-test asks for Firefox this way).
+  const eng = enginesOf(r.reports);
+  for (const n of need) if (!(n in eng.ran)) r.problems.push(`${n} was needed and did not run${eng.notRun[n] ? `: ${eng.notRun[n]}` : ' (it was not asked for)'}`);
+  for (const [k, rep] of Object.entries(r.reports ?? {})) for (const d of rep?.engines?.differences ?? []) console.log(`engine difference  ${k}  ${typeof d === 'string' ? d : JSON.stringify(d)}`);
   for (const p of r.problems) console.log(`FAIL  ${p}`);
+  console.log(`Engines: ${eng.text.replace(/^engines run: /, 'run: ')}${Object.keys(eng.ran).length ? ` (${Object.entries(eng.ran).map(([k, v]) => `${k} ${v}`).join(', ')})` : ''}.`);
   if (r.expected.length) console.log(`Expected on both pages, as info, and set aside: ${r.expected.map((x) => `${x.id} ${x.check}`).join(', ')}.`);
   process.exit(r.recall === 1 && r.falsePositives.length === 0 && ds.equal && bp.equal && !r.still.length && !r.problems.length ? 0 : 1);
 }
