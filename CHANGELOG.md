@@ -16,6 +16,15 @@ Behaviour changes. Read these before moving a pin:
 - The action's `fail-on` defaults to `warnings`, to match. Before, it was `errors`. A workflow that should fail on errors only sets `fail-on: errors`.
 - Fingerprints are `fp/2`: a spacing, type or radius finding is named by its property and elements, never by a measured value. A baseline written before is re-keyed as it is compared; nothing needs regenerating.
 
+Upgrading from 0.3.5, measured. Both versions inspected the same build of the same pages in quick mode on GitHub's runners (`compare-versions.yml`, 20 November 2026; 0.5.0 at commit e24ca43, before the tag):
+
+- neptune-fork, `/` and `/adams-challis/`, with its system file: nothing new, nothing gone, nothing changed in severity. 0 errors, 0 warnings and 4 info on `/`, 1 info on `/adams-challis/`, in both versions ([run 44748591038](https://github.com/atishaypahadiya/itten/actions/runs/44748591038)).
+- ITTEN's own test print and its clean twin: nothing new and nothing gone. The clean twin reports nothing in both. On the test print 4 of 55 findings are less severe: one `page-load` and three `frame-timing` findings go from warning to info, "timing unreliable", because the runner's browser draws in software (SwiftShader). 0.3.5 does not look at the renderer and reported them as warnings. 12 errors in both; 40 warnings and 3 info become 36 and 7 ([run 44748576342](https://github.com/atishaypahadiya/itten/actions/runs/44748576342)).
+
+So on these pages an upgrade brings no new finding. What changes is the exit code: with `--fail-on` now defaulting to `warning`, a page with warnings that passed under 0.3.5's default fails under 0.5.0 unless the workflow sets `fail-on`.
+
+`itten fix --dry-run` on neptune-fork's two pages proposed no edit: their five findings are `hairline-subpixel`, info, which has no fix class.
+
 New:
 
 - ITTEN as an Agent Skill: `skills/itten/`, installed with `gh skill install`. `scripts/setup.sh` asks before it installs the lockfile's Playwright, Chromium and WebKit. The submodule and the Action stay supported.
