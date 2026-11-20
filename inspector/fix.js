@@ -100,12 +100,29 @@ export async function planFix(f, ctx) {
   const { src, root, url, system, rootPx } = ctx;
   const guided = (cls, note, locations = []) => ({ class: cls, kind: 'guided', edits: [], note, locations });
   const sels = elementsOf(f);
-  const located = async (sel, prop) => {
-    const d = await declarationOf(src, sel, prop);
+  const at = async (from, sel, prop) => {
+    const d = await declarationOf(from, sel, prop);
     if (d.why) return { why: d.why };
-    const v = await valuePlace(src, root, url, d);
+    const v = await valuePlace(from, root, url, d);
     return v.why ? { why: v.why, file: v.file } : { ...v, d };
   };
+  // Where an element's value of a property is written. With ok, the place
+  // whose value passes it: a finding seen at several widths can hold
+  // elements that take the value at different ones (a rule in a media
+  // query), so the page is read at each width the finding was seen at
+  // (ctx.next opens the next) until one passes. Failing all, the first.
+  const srcs = [src];
+  const located = async (sel, prop, ok = null) => {
+    let first;
+    for (let i = 0; ; i++) {
+      if (i >= srcs.length) { const more = ok ? await ctx.next?.() : null; if (!more) break; srcs.push(more); }
+      const r = await at(srcs[i], sel, prop);
+      first ??= r;
+      if (!ok || (!r.why && ok(r))) return r;
+    }
+    return first;
+  };
+  const pxOf = (text) => { const m = text.match(/^(-?\d*\.?\d+)(px|rem)$/i); return m ? Math.abs(Number(m[1])) * (m[2].toLowerCase() === 'rem' ? rootPx : 1) : null; };
   const where = async (prop) => {
     const out = [];
     for (const sel of sels.slice(0, 8)) { const v = await located(sel, prop); out.push(v.why ? { selector: sel, note: v.why } : { selector: sel, file: v.file, line: v.line, column: v.column }); }
@@ -116,13 +133,23 @@ export async function planFix(f, ctx) {
     const props = f.check === 'text-resize' ? ['font-size'] : f.scale?.properties ?? [];
     const want = f.check === 'spacing-unit' ? f.scale?.value ?? null : null;
     const edits = new Map(), why = [];
-    for (const sel of sels) for (const prop of props) {
-      const v = await located(sel, prop);
-      if (v.why) { why.push(`${sel} ${prop}: ${v.why}`); continue; }
-      const m = v.text.match(/^(-?\d*\.?\d+)px$/i);
-      if (!m || (want !== null && Math.abs(Number(m[1]) - want) > 0.01)) { why.push(`${sel} ${prop}: the value is ${v.text}, not a px value a fix can convert`); continue; }
-      const key = `${v.file}:${v.offset}`;
-      if (!edits.has(key)) edits.set(key, { edit: { file: v.file, line: v.line, column: v.column, length: v.length, replace: `${num(Number(m[1]) / rootPx)}rem` }, sel });
+    const isPx = (t) => { const m = t.match(/^(-?\d*\.?\d+)px$/i); return m && (want === null || Math.abs(Number(m[1]) - want) <= 0.01) ? m : null; };
+    // The finding names the properties of all its elements together: on one
+    // element a side can hold another value, and is left, as long as a side
+    // of that element is converted.
+    for (const sel of sels) {
+      const not = [];
+      let done = 0;
+      for (const prop of props) {
+        const v = await located(sel, prop, (x) => !!isPx(x.text));
+        if (v.why) { not.push(`${sel} ${prop}: ${v.why}`); continue; }
+        const m = isPx(v.text);
+        if (!m) { not.push(`${sel} ${prop}: the value is ${v.text}, not a px value a fix can convert`); continue; }
+        done++;
+        const key = `${v.file}:${v.offset}`;
+        if (!edits.has(key)) edits.set(key, { edit: { file: v.file, line: v.line, column: v.column, length: v.length, replace: `${num(Number(m[1]) / rootPx)}rem` }, sel });
+      }
+      if (!done) why.push(...not);
     }
     if (why.length) return guided('px-to-rem', `Not every value can be converted: ${why.join('; ')}.`, await where(props[0] || 'font-size'));
     if (!edits.size) return guided('px-to-rem', 'No px value was found to convert.');
@@ -144,7 +171,7 @@ export async function planFix(f, ctx) {
     const stepEdits = new Map();
     let allFixed = sels.length > 0;
     for (const sel of sels) {
-      const p = await located(sel, 'font-size');
+      const p = await located(sel, 'font-size', (x) => { const px = pxOf(x.text); return px !== null && Math.abs(px - v) <= 0.01; });
       const m = p.why ? null : p.text.match(/^(-?\d*\.?\d+)(px|rem)$/i);
       if (!m || Math.abs(Number(m[1]) * (m[2].toLowerCase() === 'rem' ? rootPx : 1) - v) > 0.01) { allFixed = false; break; }
       stepEdits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: m[2].toLowerCase() === 'rem' ? `${num(within[0] / rootPx)}rem` : `${num(within[0])}px` });
@@ -158,7 +185,7 @@ export async function planFix(f, ctx) {
       edits.set(`${p.file}:${p.offset}`, { file: p.file, line: p.line, column: p.column, length: p.length, replace: `${num(nearest[0] / rootPx)}rem` });
     }
     const locations = await where('font-size');
-    if (why.length && !edits.size && unit) return guided('off-scale', `${v} px is off the type scale and is set in fixed units (${unit}). ${within.length ? `${within.join(' and ')} px are both within ${tol} px` : `No step is within ${tol} px (nearest ${nearestSteps(steps, v).join(' or ')} px)`}: which step it should be is a choice.`, locations);
+    if (why.length && !edits.size && unit) return guided('off-scale', `${v} px is off the type scale and is set in fixed units (${unit}). ${within.length === 1 ? `${within[0]} px is the only step within ${tol} px, but not every element's size could be found where it is written` : within.length ? `${within.join(' and ')} px are both within ${tol} px` : `No step is within ${tol} px (nearest ${nearestSteps(steps, v).join(' or ')} px)`}: which step it should be is a choice.`, locations);
     if (why.length) return guided('em-to-step', `Not every size can be moved to a step: ${why.join('; ')}.`, locations);
     if (nearest.length !== 1) return guided('em-to-step', `${v} px is as near ${nearest.join(' px as ')} px: which step is a choice.`, locations);
     return { class: 'em-to-step', kind: 'auto', edits: [...edits.values()], targets: sels, note: `A size compounded from em or %, ${v} px, to the nearest step, ${nearest[0]} px, in rem.` };
@@ -175,7 +202,7 @@ export async function planFix(f, ctx) {
     // in px or rem is moved to it, in the unit it is written in.
     const edits = new Map(), why = [];
     for (const sel of sels) for (const prop of props) {
-      const p = await located(sel, prop);
+      const p = await located(sel, prop, (x) => { const px = pxOf(x.text); return px !== null && Math.abs(px - v) <= 0.01; });
       if (p.why) { if (!/takes .* from no rule|comes from/.test(p.why)) why.push(`${sel} ${prop}: ${p.why}`); continue; }
       const m = p.text.match(/^(-?\d*\.?\d+)(px|rem)$/i);
       if (!m) { why.push(`${sel} ${prop}: set as ${p.text}`); continue; }
@@ -393,13 +420,16 @@ export async function fix(url, o = {}) {
     } else {
       for (const f of findings) {
         if (f.check === 'timed-out') continue;
-        const w = seenWidths({ x: f.seen?.light ?? Object.values(f.seen ?? {})[0] })[0] ?? 1440;
-        const { page, src } = await openAt(w);
+        const ws = seenWidths({ x: f.seen?.light ?? Object.values(f.seen ?? {})[0] });
+        const { page, src } = await openAt(ws[0] ?? 1440);
+        // The other widths the finding was seen at, opened only when a value is not found at the first.
+        const others = ws.slice(1).reverse(), rest = others.filter((_, i) => i % Math.ceil(others.length / 5) === 0), opened = [page];   // at most five, the widest first, spread over the rest
+        const next = async () => { if (!rest.length) return null; const x = await openAt(rest.shift()); opened.push(x.page); return x.src; };
         let plan;
         try {
           const px = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)).catch(() => rootPx);
-          plan = await planFix(f, { page, src, root, url, system: o.system, rootPx: px || rootPx });
-        } finally { await page.close(); }
+          plan = await planFix(f, { page, src, root, url, system: o.system, rootPx: px || rootPx, next });
+        } finally { for (const pg of opened) await pg.close().catch(() => {}); }
         const entry = { finding: { id: f.id, check: f.check, fingerprint: f.fingerprint, severity: f.severity, message: f.message }, class: plan.class, kind: plan.kind, note: plan.note, edits: plan.edits, ...(plan.locations?.length ? { locations: plan.locations } : {}) };
         result.fixes.push(entry);
         if (plan.kind === 'guided') { entry.status = 'guided'; result.summary.guided++; continue; }
