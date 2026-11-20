@@ -19,6 +19,9 @@
 //   overflow still an error, and nothing timing-based fails the run.
 // - Software renderer (SwiftShader): info, the renderer named, the overflow
 //   still an error.
+// - A repeat the server blocks: fixtures/late.html (a paragraph added 2.5 s
+//   after load) is a warning on three measurements; with its second load
+//   answered 503 it is info, measured once, and the run is partial.
 // - The clean twin: no findings.
 // - judge() alone, on each cause; and parity takes an unreliable finding's
 //   differences as notes.
@@ -69,9 +72,11 @@ export async function run({ quiet = true } = {}) {
   const { system } = loadSystem(join(ROOT, 'fixtures', 'itten.system.json'));
   const port = 5175 + Math.floor(Math.random() * 500);
   // The fixtures, with the loads of timing.html counted; from load number calmFrom on, its handler holds for 0 ms.
-  const counted = { n: 0, calmFrom: Infinity };
+  const counted = { n: 0, calmFrom: Infinity, late: 0, failLate: 0 };
   const server = createServer((req, res) => {
     const file = new URL(req.url, 'http://x').pathname.split('/').pop();
+    // late.html: its load number counted.failLate is answered 503.
+    if (file === 'late.html' && ++counted.late === counted.failLate) { res.writeHead(503); return res.end(); }
     let body;
     try { body = readFileSync(join(ROOT, 'fixtures', file), 'utf8'); } catch { res.writeHead(404); return res.end('Not found'); }
     if (file === 'timing.html' && ++counted.n > counted.calmFrom) body = body.replace('performance.now() - t < 80', 'performance.now() - t < 0');
@@ -133,6 +138,18 @@ export async function run({ quiet = true } = {}) {
     const soft = await go('timing.html', 'software', 0, { launchArgs: SOFTWARE });
     for (const f3 of read(soft, 'software renderer')) unreliable(f3, 'software renderer', /draws in software \(.*SwiftShader/, soft);
     if (soft.environment.timing?.software !== true) fails.push('software renderer: environment.timing.software is not true');
+
+    // A repeat the server blocks. fixtures/late.html adds a paragraph 2.5 s after load (page-load, late). Served
+    // every time, it is measured three times and is a warning. With its second load answered 503 it is info,
+    // measured once, and the run is partial and says why: it cannot pass as complete.
+    const lateOf = (r) => findingsOf(r).find((i) => i.fingerprint === 'page-load|late');
+    const late = await go('late.html', 'late', 0, { passes: ['light'] });
+    if (late.status !== 'complete' || lateOf(late)?.severity !== 'warning' || lateOf(late)?.timing?.tries !== 3) fails.push(`late content, served every time: ${late.status}, ${lateOf(late)?.severity}, ${JSON.stringify({ ...lateOf(late)?.timing, environment: undefined })}`);
+    counted.late = 0; counted.failLate = 2;
+    const cut = await go('late.html', 'late-blocked', 0, { passes: ['light'] });
+    counted.failLate = 0;
+    if (cut.status !== 'partial' || !/could not be measured a second and third time/.test(cut.reason ?? '')) fails.push(`a blocked repeat: the run is ${cut.status} (${cut.reason ?? 'no reason'}); it is partial and says the first load was measured once`);
+    if (lateOf(cut)?.severity !== 'info' || lateOf(cut)?.timing?.tries !== 1 || !/measured once/.test(lateOf(cut)?.timing?.causes?.[0] ?? '')) fails.push(`a blocked repeat: the late finding is ${lateOf(cut)?.severity}, ${JSON.stringify({ ...lateOf(cut)?.timing, environment: undefined })}`);
 
     const twin = await go('timing-clean.html', 'clean', 0);
     if (twin.status !== 'complete') fails.push(`clean twin: the run is ${twin.status}, so it would not exit 0`);

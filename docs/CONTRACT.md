@@ -198,7 +198,7 @@ On a machine that passes, the inspector measures once. Where that one measuremen
 - over it in some and not in others: `info`, "timing unreliable";
 - over it in none: there is no finding.
 
-The spread of the measurements, (max − min) / median, is recorded and gates nothing. A run on a loaded machine or a software renderer repeats nothing, and its timing findings are `info`.
+The spread of the measurements, (max − min) / median, is recorded and gates nothing. A run on a loaded machine or a software renderer repeats nothing, and its timing findings are `info`. Where the server fails a repeat of the watch load, the findings are `info` ("measured once, fewer than 3") and the run is `partial`, with the reason.
 
 **Relative timed verdicts** (two conditions compared in the same run, at least 5 repeats in alternating order) are the third part of the shared rule. ITTEN has none.
 

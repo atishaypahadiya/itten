@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A page that adds content late</title>
+<style>
+  body { margin: 0; padding: 2rem; font: 1rem/1.5rem system-ui, sans-serif; color: #111; background: #fff; }
+  p { margin: 0 0 1.5rem; max-width: 40rem; }
+</style>
+</head>
+<body>
+  <!-- scripts/timing-test.js. Planted: a paragraph added 2.5 s after load, once the page has gone still
+       (page-load, late: a timing finding from the first load). -->
+  <p>The page as it loads.</p>
+  <script>setTimeout(() => { const p = document.createElement('p'); p.textContent = 'A paragraph that arrives late.'; document.body.append(p); }, 2500);</script>
+</body>
+</html>

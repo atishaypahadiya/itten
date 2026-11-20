@@ -1092,7 +1092,13 @@ async function inspectRun(url, o = {}) {
               await slow(wpage);
               return watchLoad(wpage, url, o, T);
             })));
-          } catch (e) { if (!(e instanceof StepTimeout) && !(e instanceof Blocked)) throw e; break; } finally { await closeQuietly(c); }
+          } catch (e) {
+            if (!(e instanceof StepTimeout) && !(e instanceof Blocked)) throw e;
+            // The server failed a repeat: the findings it would have judged are info (fewer than three
+            // measurements), and the run says so and is partial, so it cannot pass as complete.
+            if (e instanceof Blocked) watched.repeatBlocked = e.message;
+            break;
+          } finally { await closeQuietly(c); }
         }
         log(`  the watch load timed something: measured ${watched.values.length} times`);
       }
@@ -1556,6 +1562,7 @@ async function inspectRun(url, o = {}) {
       health.dropped.length ? `the server failed ${plural(health.dropped.length, 'job')} twice, and ${health.dropped.length === 1 ? 'it was' : 'they were'} dropped with nothing measured: ${nameJobs(health.dropped)}` : '',
       nTimedOut ? `${nTimedOut} ${nTimedOut === 1 ? 'step' : 'steps'} timed out, and nothing after ${nTimedOut === 1 ? 'it' : 'them'} was measured at ${nTimedOut === 1 ? 'that width' : 'those widths'}` : '',
       watched.waited === false ? `no element matched --wait-for ${o.waitFor}, so the page was measured without it` : '',
+      watched.repeatBlocked ? `the first load could not be measured a second and third time (${watched.repeatBlocked}), so its timing findings are info` : '',
     ].filter(Boolean);
     const report = {
       schema: REPORT, specialist: 'itten', version: VERSION,
@@ -2186,8 +2193,11 @@ async function scriptFlashes(browser, url, w, each) {
     const frame = async () => {
       let timer;
       const done = new Promise((ok, no) => { cdp.once('Emulation.virtualTimeBudgetExpired', ok); timer = setTimeout(() => no(new Error('page time stopped advancing (a request that does not end)')), 5000); });
-      await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'pauseIfNetworkFetchesPending', budget: 1000 / FLASH_CLOCK.fps });
-      try { await done; } finally { clearTimeout(timer); }
+      done.catch(() => {});   // if the call below fails first, the timer's rejection has a handler
+      try {
+        await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'pauseIfNetworkFetchesPending', budget: 1000 / FLASH_CLOCK.fps });
+        await done;
+      } finally { clearTimeout(timer); }
       await page.evaluate(() => window.__ittenFlashClock?.step());
     };
     let loaded = false;
