@@ -42,7 +42,10 @@
 // - the timing lock is held outside the timed phases or missing in one, is
 //   left after a run or a signal, or a live lock is deleted (scripts/lock-test.js);
 // - a timing finding counts on a loaded machine or a software renderer, or
-//   on fewer than three close measurements (scripts/timing-test.js);
+//   when it was over its limit in only some of three measurements
+//   (scripts/timing-test.js);
+// - a script's flashes depend on the machine: not counted on the controlled
+//   clock, or not the same in two runs (scripts/flash-test.js);
 // - a run of one or two widths reports a value as fixed, or a run of three
 //   does not judge fluidity (scripts/fluid-test.js);
 // - a job the server failed is kept, not run again, or refuses the run
@@ -460,6 +463,13 @@ try {
   for (const f of await timingTest()) fail('Timing', f);
 } catch (e) {
   fail('Timing', `the timing test could not run: ${e.message.split('\n')[0]}`);
+}
+// A script's flashes, counted on a controlled clock (scripts/flash-test.js).
+try {
+  const { run: flashTest } = await import('./flash-test.js');
+  for (const f of await flashTest()) fail('Timing', f);
+} catch (e) {
+  fail('Timing', `the flash test could not run: ${e.message.split('\n')[0]}`);
 }
 
 // ------------------------------------------------------------------- Lock

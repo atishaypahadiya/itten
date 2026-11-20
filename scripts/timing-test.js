@@ -1,16 +1,20 @@
 // The timing rule (docs/CONTRACT.md, "Timing findings"; inspector/timing.js).
-// A finding that rests on a measured time counts only when it was measured
-// at least 3 times with a relative spread of at most 10%, with the 1-minute
-// load average below half the CPU count before and after, and no software
-// renderer. Otherwise it is info, "timing unreliable", with the environment
-// recorded, and it never fails a run.
+// ITTEN's timed verdicts are absolute (a measurement against a fixed limit),
+// so they keep the environment gate: the 1-minute load average below half
+// the CPU count before and after, and no software renderer. On a machine
+// that passes, the finding is measured 3 times: over its limit every time,
+// it counts; over it in some only, it is info, "timing unreliable". The
+// spread is recorded and gates nothing.
 // fixtures/timing.html has a scroll handler that holds the main thread for
 // 80 ms (frame-timing) and a band wider than the page (overflow, a layout
 // finding); its clean twin has neither. The load average is given to the
 // inspector (timingEnv), so the test does not depend on what else runs here.
-// - Quiet machine, GPU: the finding is measured 3 times. It is a warning when
-//   the spread is within 10%; when it is not, it is info and says so, and
-//   the environment is not blamed.
+// - Quiet machine, GPU: the finding is measured 3 times, is over its limit
+//   in all, and is a warning whatever the spread.
+// - A mix: the page holds the thread on its first loads and not when the
+//   motion pass measures again (the test's server changes the page), so the
+//   finding is over its limit in 1 of 3: info, and it says so. This is the
+//   control for the rule: with one measurement it would be a warning.
 // - Loaded machine: info, the load named, measured once (no repeats), the
 //   overflow still an error, and nothing timing-based fails the run.
 // - Software renderer (SwiftShader): info, the renderer named, the overflow
@@ -23,7 +27,8 @@
 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { start } from './serve.js';
+import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { inspect, loadSystem } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
 import { failing } from '../inspector/baseline.js';
@@ -43,9 +48,12 @@ export function unitTests() {
     if (reliable && (v.reason || v.causes)) fails.push(`judge: ${what} is reliable and still has a reason`);
   };
   t('three within 10% on a quiet machine', judge([100, 104, 109], quiet), true);
-  t('three spread 11%', judge([100, 104, 111.5], quiet), false, /spread 11%/);
-  t('two measurements', judge([100, 100], quiet), false, /measured 2 times, fewer than 3/);
-  t('one measurement', judge([100], quiet), false, /measured once/);
+  t('three over the limit, spread 40%', judge([100, 104, 140], quiet), true);
+  if (judge([100, 104, 140], quiet).spread !== 0.385) fails.push(`judge: the spread is not recorded (${judge([100, 104, 140], quiet).spread})`);
+  t('over the limit in 1 of 3', judge([100], quiet, 3), false, /over its limit in 1 of 3 measurements/);
+  t('over the limit in 2 of 3', judge([100, 100], quiet), false, /over its limit in 2 of 3 measurements/);
+  t('two measurements made', judge([100, 100], quiet, 2), false, /measured 2 times, fewer than 3/);
+  t('one measurement made', judge([100], quiet, 1), false, /measured once/);
   t('load at half the CPUs before', judge([100, 100, 100], { ...quiet, load: { before: 4, after: 0 } }), false, /load average was 4 before/);
   t('load above half the CPUs after', judge([100, 100, 100], { ...quiet, load: { before: 0, after: 5.5 } }), false, /5\.5 after/);
   t('SwiftShader', judge([100, 100, 100], { ...quiet, renderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)' }), false, /draws in software \(ANGLE \(Google/);
@@ -60,7 +68,17 @@ export async function run({ quiet = true } = {}) {
   const fails = unitTests();
   const { system } = loadSystem(join(ROOT, 'fixtures', 'itten.system.json'));
   const port = 5175 + Math.floor(Math.random() * 500);
-  const server = await start(port);
+  // The fixtures, with the loads of timing.html counted; from load number calmFrom on, its handler holds for 0 ms.
+  const counted = { n: 0, calmFrom: Infinity };
+  const server = createServer((req, res) => {
+    const file = new URL(req.url, 'http://x').pathname.split('/').pop();
+    let body;
+    try { body = readFileSync(join(ROOT, 'fixtures', file), 'utf8'); } catch { res.writeHead(404); return res.end('Not found'); }
+    if (file === 'timing.html' && ++counted.n > counted.calmFrom) body = body.replace('performance.now() - t < 80', 'performance.now() - t < 0');
+    res.writeHead(200, { 'Content-Type': file.endsWith('.css') ? 'text/css' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(body);
+  });
+  await new Promise((ok) => server.listen(port, '127.0.0.1', ok));
   try {
     const go = (page, name, load, extra = {}) => inspect(`http://127.0.0.1:${port}/fixtures/${page}`, {
       system, systemPath: 'fixtures/itten.system.json', quiet, out: join(ROOT, 'dist', 'fixtures', `timing-${name}`),
@@ -92,8 +110,17 @@ export async function run({ quiet = true } = {}) {
     const calm = await go('timing.html', 'quiet', 0);
     for (const f1 of read(calm, 'quiet machine')) {
       if (f1.timing?.values?.length !== 3) fails.push(`quiet machine: measured ${f1.timing?.values?.length} times, not 3`);
-      else if (f1.timing.reliable) { if (f1.severity !== 'warning' || f1.timing.spread > 0.1) fails.push(`quiet machine: reliable, yet ${f1.severity} with spread ${f1.timing.spread}`); }
-      else if (f1.severity !== 'info' || !(f1.timing.spread > 0.1) || f1.timing.causes.length !== 1 || !/spread/.test(f1.timing.causes[0])) fails.push(`quiet machine: unreliable for ${JSON.stringify(f1.timing.causes)} with spread ${f1.timing.spread}`);
+      else if (!f1.timing.reliable || f1.severity !== 'warning' || f1.timing.tries !== 3 || typeof f1.timing.spread !== 'number') fails.push(`quiet machine: over the limit in all three, yet ${f1.severity}, ${JSON.stringify({ ...f1.timing, environment: undefined })}`);
+    }
+    // A mix. The calm run's page loads were counted; its last four are the two repeats of the motion pass (each loads
+    // the page with and without reduced motion). Serve the handler without its hold from there on.
+    const loads = counted.n;
+    counted.n = 0; counted.calmFrom = loads - 4;
+    const mix = await go('timing.html', 'mix', 0);
+    counted.calmFrom = Infinity;
+    for (const fm of read(mix, 'a mix')) {
+      unreliable(fm, 'a mix', /over its limit in 1 of 3 measurements/, mix);
+      if (fm.timing?.tries !== 3 || fm.timing.values.length !== 1) fails.push(`a mix: ${fm.timing?.values?.length} of ${fm.timing?.tries} measurements over the limit, not 1 of 3`);
     }
     if (calm.environment.timing?.software !== false || calm.environment.timing.cpus !== 8) fails.push(`quiet machine: environment.timing is ${JSON.stringify(calm.environment.timing)}`);
 
@@ -117,7 +144,7 @@ export async function run({ quiet = true } = {}) {
     if (d.length) fails.push(`parity fails on a finding with unreliable timing: ${d[0].slice(0, 160)}`);
     if (!notes.some((n) => /frame-timing.*timing unreliable/.test(n))) fails.push('parity does not note the difference in a finding with unreliable timing');
   } finally {
-    server.close();
+    server.closeAllConnections?.(); server.close();
   }
   return fails;
 }
@@ -126,6 +153,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   readArgs(process.argv.slice(2), { name: 'timing-test.js', usage: 'node scripts/timing-test.js' });
   const fails = await run({ quiet: false });
   for (const f of fails) console.log(`FAIL  ${f}`);
-  console.log(fails.length ? `${fails.length} failure(s).` : 'Timing findings count only on three close measurements, a quiet machine and a GPU; otherwise they are info, with the reason and the environment.');
+  console.log(fails.length ? `${fails.length} failure(s).` : 'A timing finding counts on a quiet machine with a GPU when all three measurements are over its limit; over it in some only, or on a loaded machine or a software renderer, it is info, with the reason and the environment.');
   process.exit(fails.length ? 1 : 0);
 }

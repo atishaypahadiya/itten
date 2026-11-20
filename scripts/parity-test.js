@@ -51,8 +51,8 @@ const shape = (i) => ({
 //   from the contrast pass), including whether it is there at all: its value
 //   depends on the frame. 0.4 judges these across fixed frames.
 // - every field of a timing finding reported as unreliable in either run
-//   (`timing.reliable` false: a loaded machine, a software renderer, fewer
-//   than three measurements or too wide a spread), including whether it is
+//   (`timing.reliable` false: a loaded machine, a software renderer, or over
+//   its limit in only some of three measurements), including whether it is
 //   there at all;
 // These are returned in notes, with both values. Everything else must match
 // exactly, including every finding that is not over a moving background on

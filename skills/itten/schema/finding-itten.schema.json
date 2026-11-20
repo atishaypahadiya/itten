@@ -173,14 +173,18 @@
           "items": {
             "type": "number"
           },
-          "description": "What each measurement gave: ms, or a count."
+          "description": "What each measurement that was over the limit gave: ms, or a count."
+        },
+        "tries": {
+          "type": "integer",
+          "description": "How many measurements were made. The finding counts when every one was over the limit."
         },
         "spread": {
           "type": [
             "number",
             "null"
           ],
-          "description": "(max - min) / median of values."
+          "description": "(max - min) / median of values. Recorded; it gates nothing."
         },
         "environment": {
           "type": "object",
@@ -258,6 +262,17 @@
         true
       ],
       "description": "A contrast finding over pixels that changed between two frames. With `frames`, it was judged across the fixed frames and is the same every run; without, its value depends on the frame it was measured in."
+    },
+    "counted": {
+      "type": "object",
+      "description": "A script's flashes counted on the controlled clock, where timers and animation frames follow page time and not the machine's: the seconds of page time counted, the frames stepped, and the most colour changes in any one second. A count, the same on any machine; the timing rule does not apply.",
+      "required": ["seconds", "frames", "changes"],
+      "additionalProperties": false,
+      "properties": {
+        "seconds": { "type": "number" },
+        "frames": { "type": "integer" },
+        "changes": { "type": "integer" }
+      }
     },
     "frames": {
       "type": "object",

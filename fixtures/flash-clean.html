@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boxes a script switches, none more than three times a second</title>
+<style>
+  body { margin: 0; padding: 2rem; font: 1rem/1.5rem system-ui, sans-serif; color: #111; background: #fff; }
+  .box { width: 12.5rem; max-width: 100%; height: 7.5rem; margin: 0 0 2rem; background: #111; }
+  .box.on { background: #fff; }
+  .small { width: 4rem; height: 4rem; }
+</style>
+</head>
+<body>
+  <!-- scripts/flash-test.js. Boxes a script switches between black and white.
+       The clean twin: the first two boxes change every 500 ms, one flash a second. -->
+  <main>
+    <div class="box" id="timer" aria-hidden="true"></div>
+    <div class="box" id="frames" aria-hidden="true"></div>
+    <div class="box" id="slow" aria-hidden="true"></div>
+    <div class="box small" id="small" aria-hidden="true"></div>
+  </main>
+  <script>
+    const FAST = 500;   // ms between changes; two changes are one flash
+    const box = (id) => document.getElementById(id);
+    setInterval(() => box('timer').classList.toggle('on'), FAST);
+    setInterval(() => box('slow').classList.toggle('on'), 250);
+    setInterval(() => box('small').classList.toggle('on'), 125);
+    let was = null;
+    const frame = (t) => { const on = Math.floor(t / FAST) % 2 === 1; if (on !== was) { was = on; box('frames').classList.toggle('on', on); } requestAnimationFrame(frame); };
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

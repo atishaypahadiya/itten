@@ -105,7 +105,7 @@ Inside `--out`, `crops/` is deleted and created again at the start of every run,
 - **Same page, same machine.** The same findings, with the same ids, order, fingerprints and messages, whatever `--workers` is, and from shards once merged. This is tested on the fixtures, on one worker and on six, field by field.
 - **Fields that always differ.** The ones each finding lists in `measured` (frame counts, durations), and the report's `started`, `date`, `environment` and schedule timings.
 - **Findings that can differ between two runs of the same page:**
-  - the timing checks (`motion-timing`, `motion-layout`, `reduced-motion`, `flash`, `frame-timing`) on a loaded machine; the ones that rest on a measured time are then reported as info, timing unreliable (see Timing findings);
+  - `frame-timing` and the watch load's findings on a loaded machine, where they are reported as info, timing unreliable (see Timing findings); a script's flashes are counted on a controlled clock and do not vary;
   - contrast over a background that moves, which depends on the frame sampled;
   - anything the page itself varies.
 - **Different machines.** Fonts and text rendering differ by platform, so text measurements, and the findings that rest on them, can differ.
@@ -181,17 +181,30 @@ Behind text on a page that keeps drawing (a canvas or WebGL scene, a video, an a
 
 ## Timing findings
 
-Some findings rest on a measured time: long animation frames (`frame-timing`), a script's flashes counted over a second (`flash`, fingerprints ending `|script`), and from the watch load `page-load|late`, `page-load|never-still` and `page-load|busy`. The rule for them is shared with KERCKHOFFS and ERLANG.
+The rule is shared with KERCKHOFFS and ERLANG, in three parts.
 
-A timing finding counts only when all of these hold:
+**Counts are not timed.** Where a verdict can be judged on a count, it is, and the rule below does not apply to it. A script's flashes after load (`flash`, fingerprints ending `|script`) are counted on a controlled clock: in a browser context of its own, timers, `Date` and `performance.now()` follow DevTools virtual time ([`Emulation.setVirtualTimePolicy`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setVirtualTimePolicy)), granted one frame (1000/60 ms) at a time, and `requestAnimationFrame` callbacks are held and run once per granted frame. The page gets up to 10 s of page time to load, then 5 s (300 frames) are counted. The finding carries `counted`: `seconds`, `frames`, and `changes`, the most colour changes in any one second. It is the same on any machine and in every run, and it is an error on a loaded machine too. The motion checks that read declared values (`motion-timing`, `motion-layout`, `reduced-motion`, a CSS animation's `flash`) were never timed.
 
-- it was measured at least 3 times, and the relative spread of the measurements, (max − min) / median, is at most 10%;
+Virtual time alone was not enough: it puts timers and both clocks on the controlled clock, but animation frames kept arriving on the real one (0 to 3 a second, and differently in each run), so the frames are stepped by hand. It also cannot be switched off again on a page (the `advance` policy lets page time run away, 79,000 s in one second of real time in the test), and CSS animations keep running while it is paused. So it is used only in that context of its own, and frozen captures keep the frame clock. Measured against it, the wall clock gave the same counts on `fixtures/flash.html` in five runs each at no CPU throttle, 6× and 20× (`Emulation.setCPUThrottlingRate`), and on a variant doing fixed work every 25 ms: it was not seen to miscount. The count is on the controlled clock because that is exact by construction, not because the wall clock was caught out.
+
+**Absolute timed verdicts** are one measurement against a fixed limit. All of ITTEN's timed verdicts are of this kind: long animation frames (`frame-timing`), from the watch load `page-load|late`, `page-load|never-still` and `page-load|busy`, and a script's flashes that only a hover, a focus or a click starts, or that the controlled clock could not count (`motion.flashClock.counted` is then `false`, with the reason). They keep the environment gate, because steady load biases every measurement the same way and does not show as spread. A scroll handler doing a fixed amount of work measured 8, 8 and 8 ms a frame unthrottled; with the CPU throttled 20× it measured 143, 151 and 150 ms, a spread of 5%, with every frame long in all three measurements: three agreeing measurements of the load, not of the page. The gate:
+
 - the 1-minute load average was below half the CPU count before the timed phase and after it;
 - the browser was not drawing in software (the WebGL renderer, read from `WEBGL_debug_renderer_info`, names SwiftShader, llvmpipe or softpipe).
 
-Otherwise the finding is reported with severity `info`, and it never fails a run. In the `itten` extension it carries `timing`: `reliable: false`, `reason: "timing unreliable"`, `causes` (sentences: the renderer, the load, the count or the spread), `was` (the severity it would have had), `values` (each measurement, in ms or a count), `spread`, and `environment` (`cpus`, `load.before`, `load.after`, `renderer`). Its message ends with the causes. A timing finding that counts carries `timing` with `reliable: true`, its three values and their spread. The report's `environment.timing` gives the CPU count, the renderer, whether it is software, and the load before and after both timed phases; `notJudged` says how many findings were set aside.
+On a machine that passes, the inspector measures once. Where that one measurement raises a timing finding, the phase that timed it runs twice more, measuring only: the watch load for the `page-load` findings, the motion pass for the others. Then:
 
-The inspector measures once. Where that one measurement raises a timing finding and the machine allows a verdict (the load and the renderer pass), the phase that timed it runs twice more, measuring only: the watch load for the `page-load` findings, the motion pass for the others. A run on a loaded machine or a software renderer does not repeat anything. Layout, type and colour findings are not affected.
+- over its limit in all 3 measurements: the finding counts;
+- over it in some and not in others: `info`, "timing unreliable";
+- over it in none: there is no finding.
+
+The spread of the measurements, (max − min) / median, is recorded and gates nothing. A run on a loaded machine or a software renderer repeats nothing, and its timing findings are `info`.
+
+**Relative timed verdicts** (two conditions compared in the same run, at least 5 repeats in alternating order) are the third part of the shared rule. ITTEN has none.
+
+A timing finding that is `info` under this rule never fails a run. In the `itten` extension it carries `timing`: `reliable: false`, `reason: "timing unreliable"`, `causes` (sentences: the renderer, the load, or "over its limit in 1 of 3 measurements"), `was` (the severity it would have had), `values` (what each measurement over the limit gave, in ms or a count), `tries` (how many measurements were made), `spread`, and `environment` (`cpus`, `load.before`, `load.after`, `renderer`). Its message ends with the causes. A timing finding that counts carries `timing` with `reliable: true`, its three values and their spread. The report's `environment.timing` gives the CPU count, the renderer, whether it is software, and the load before and after both timed phases; `notJudged` says how many findings were set aside.
+
+Before this rule's revision (0.5, 20 November 2026) a finding also needed its three measurements within 10% of each other, and a script's flashes were read off the motion pass's clock and fell under the rule. Layout, type and colour findings are not affected.
 
 ## The timing lock
 

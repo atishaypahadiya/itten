@@ -1092,7 +1092,7 @@ async function inspectRun(url, o = {}) {
               await slow(wpage);
               return watchLoad(wpage, url, o, T);
             })));
-          } catch (e) { if (!(e instanceof StepTimeout)) throw e; break; } finally { await closeQuietly(c); }
+          } catch (e) { if (!(e instanceof StepTimeout) && !(e instanceof Blocked)) throw e; break; } finally { await closeQuietly(c); }
         }
         log(`  the watch load timed something: measured ${watched.values.length} times`);
       }
@@ -1191,6 +1191,7 @@ async function inspectRun(url, o = {}) {
       }
       if (raw.movingBackground) it.movingBackground = true;
       if (raw.frames && !it.frames) it.frames = raw.frames;
+      if (raw.counted && !it.counted) it.counted = raw.counted;
       const upgrade = !isNew && SEVERITY.indexOf(raw.severity) < SEVERITY.indexOf(it.severity);
       // The words broken at this pass, for the message (brokenWordMessage).
       if (raw.broken) {
@@ -1425,10 +1426,13 @@ async function inspectRun(url, o = {}) {
     if (passes.has('motion') && o.lock !== false) unlock = takeLock('motion', estimate(timings, pageKey, 'motion').s);
     const motionDone = phase('motion');
     const othersAtMotion = browser.contexts().length;
-    const timedValues = new Map(); // fingerprint -> what each motion pass measured
-    const noteTimed = (raw) => { if (timedIn(raw) === 'motion' && typeof raw.timed === 'number') { const k = raw.check + '|' + raw.key; if (!timedValues.has(k)) timedValues.set(k, []); timedValues.get(k).push(raw.timed); } };
+    const timedValues = new Map(); // fingerprint -> what each motion pass that raised the finding measured
+    let motionTries = 1;
+    const countedFlash = new Set(); // a script's flashes counted on the controlled clock: not timed
+    const noteTimed = (raw) => { if (timedIn(raw) === 'motion' && typeof raw.timed === 'number' && !countedFlash.has(raw.check + '|' + raw.key)) { const k = raw.check + '|' + raw.key; if (!timedValues.has(k)) timedValues.set(k, []); timedValues.get(k).push(raw.timed); } };
     loads.motion.before = tenv.now();
     const motionMerge = async (page, raw, pass) => {
+      if (raw.timed !== undefined && countedFlash.has(raw.check + '|' + raw.key)) return;
       noteTimed(raw);
       const r = { events: [] };
       await keep(page, r, [raw], pass);
@@ -1442,6 +1446,21 @@ async function inspectRun(url, o = {}) {
         }
       }
     };
+    // A script's flashes after load are counted first, on a controlled clock. If that cannot be done, the motion
+    // pass below still reads them off its own clock, under the timing rule.
+    let flashClock = null;
+    if (passes.has('motion') && o.flashClock !== false) try {
+      const w = keyWidths.at(-1);
+      flashClock = await within(TO.check, 'the script flash count', () => scriptFlashes(browser, url, w, async (page, raw) => {
+        countedFlash.add(raw.check + '|' + raw.key);
+        await motionMerge(page, raw, { w, mode: 'motion', label: `${w} px, motion`, dpr: 1 });
+      }));
+      log(`  ${w} px, script flashes: ${flashClock.seconds} s of page time on the controlled clock, ${plural(flashClock.findings, 'finding')}`);
+    } catch (e) {
+      flashClock = { counted: false, why: String(e.message || e).split('\n')[0] };
+      log(`  script flashes were not counted on the controlled clock (${flashClock.why}); the motion pass reads them off its own clock`);
+      for (const c of browser.contexts()) await closeQuietly(c);
+    }
     if (passes.has('motion')) try {
       motion = await within(TO.motion, 'the motion passes', () => motionPasses(browser, url, o, system, keyWidths.at(-1), motionMerge, log, T, watched.until));
     } catch (e) {
@@ -1451,11 +1470,12 @@ async function inspectRun(url, o = {}) {
       for (const c of browser.contexts()) await closeQuietly(c);
       motion = null;
     }
+    if (motion && flashClock) motion.flashClock = flashClock;
     // Where the motion pass timed a finding and the machine allows a
     // verdict, it runs twice more, measuring only.
     if (motion && timedValues.size && !environmentCauses({ cpus: tenv.cpus, load: { before: loads.motion.before, after: tenv.now() }, renderer: tenv.renderer }).length) {
       for (let k = 1; k < RUNS; k++) {
-        try { await within(TO.motion, 'the motion passes, again', () => motionPasses(browser, url, o, system, keyWidths.at(-1), async (page, raw) => noteTimed(raw), () => {}, T, watched.until)); }
+        try { await within(TO.motion, 'the motion passes, again', () => motionPasses(browser, url, o, system, keyWidths.at(-1), async (page, raw) => noteTimed(raw), () => {}, T, watched.until)); motionTries++; }
         catch (e) { if (!(e instanceof StepTimeout)) throw e; for (const c of browser.contexts()) await closeQuietly(c); break; }
       }
       log(`  motion timed ${plural(timedValues.size, 'finding')}: measured ${RUNS} times`);
@@ -1463,13 +1483,13 @@ async function inspectRun(url, o = {}) {
     if (passes.has('motion')) loads.motion.after = tenv.now();
     unlock();
     // The timing rule: a finding that rests on a measured time counts only
-    // when it was measured three times within 10% on a machine that was not
-    // loaded and did not draw in software. Otherwise it is info.
+    // on a machine that was not loaded and did not draw in software, and
+    // when all three measurements were over the limit. Otherwise it is info.
     for (const it of issues.values()) {
-      const ph = timedIn(it);
+      const ph = countedFlash.has(it.fingerprint) ? null : timedIn(it);
       if (!ph) continue;
       const values = ph === 'motion' ? timedValues.get(it.fingerprint) ?? [] : (watched.values ?? []).map((v) => v[it.fingerprint.split('|').at(-1)]);
-      const v = judge(values, { cpus: tenv.cpus, load: loads[ph], renderer: tenv.renderer });
+      const v = judge(values, { cpus: tenv.cpus, load: loads[ph], renderer: tenv.renderer }, ph === 'motion' ? motionTries : (watched.values ?? []).length || 1);
       it.timing = v;
       if (!v.reliable) {
         it.timing.was = it.severity;
@@ -2111,6 +2131,80 @@ async function calibrate(page, cdp, reference) {
   return cpu;
 }
 
+// Flashing driven by script: class or style changes, with the luminance
+// after each, counted in any one second. A count on the controlled clock
+// (scriptFlashes) carries `counted`; one read off the wall clock in the
+// motion pass carries `timed` and falls under the timing rule.
+export function flashToggles(toggles, { timed = false, counted = null } = {}) {
+  const out = [];
+  for (const t of toggles) {
+    const area = t.rect[2] * t.rect[3];
+    if (area < FLASH_AREA) continue;
+    let best = 0;
+    for (let i = 0; i < t.rec.length; i++) {
+      let n = 0;
+      for (let j = i + 1; j < t.rec.length && t.rec[j][0] - t.rec[i][0] <= 1000; j++) {
+        const [x, y] = [t.rec[j - 1][1], t.rec[j][1]];
+        if (Math.abs(x - y) >= 0.1 && Math.min(x, y) < 0.8) n++;
+      }
+      best = Math.max(best, n);
+    }
+    if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', ...(timed ? { timed: best } : {}), ...(counted ? { counted: { ...counted, changes: best } } : {}), count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
+      message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
+  }
+  return out;
+}
+
+// A script's flashes after load, counted on a controlled clock in a context
+// of its own, so the count is the same on any machine. Timers, Date and
+// performance.now follow DevTools virtual time (Emulation.setVirtualTimePolicy),
+// which is granted one frame (1000/60 ms) at a time; virtual time alone
+// leaves animation frames on the real clock, so requestAnimationFrame is
+// held and its callbacks are run once per granted frame. The page gets up to
+// FLASH_CLOCK.load page-seconds to finish loading, then FLASH_CLOCK.seconds
+// are counted. Virtual time cannot be switched off again on a page (the
+// 'advance' policy lets time run away), which is why this is not done on the
+// pages the other passes measure.
+export const FLASH_CLOCK = { seconds: 5, load: 10, fps: 60 };
+function flashClockInit() {
+  let held = [], next = 1;
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => { const id = next++; held.push([id, cb]); return id; };
+  window.cancelAnimationFrame = (id) => { held = held.filter(([i]) => i !== id); };
+  Object.defineProperty(window, '__ittenFlashClock', { value: { raf, step: () => { const h = held; held = []; const t = performance.now(); for (const [, cb] of h) { try { cb(t); } catch (e) { setTimeout(() => { throw e; }); } } } } });
+}
+async function scriptFlashes(browser, url, w, each) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: VIEW_H }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'no-preference' });
+  try {
+    await ctx.addInitScript(flashClockInit);
+    await ctx.addInitScript(motionInit);
+    const page = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'pause' });
+    // One frame of page time, then the held callbacks. A grant that the browser does not finish in 5 s of real time
+    // (a request that never ends holds virtual time) ends the count.
+    const frame = async () => {
+      let timer;
+      const done = new Promise((ok, no) => { cdp.once('Emulation.virtualTimeBudgetExpired', ok); timer = setTimeout(() => no(new Error('page time stopped advancing (a request that does not end)')), 5000); });
+      await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'pauseIfNetworkFetchesPending', budget: 1000 / FLASH_CLOCK.fps });
+      try { await done; } finally { clearTimeout(timer); }
+      await page.evaluate(() => window.__ittenFlashClock?.step());
+    };
+    let loaded = false;
+    const nav = page.goto(url, { waitUntil: 'load', timeout: 60000 }).then(() => { loaded = true; });
+    nav.catch(() => {});
+    for (let f = 0; f < FLASH_CLOCK.load * FLASH_CLOCK.fps && !loaded; f++) await frame().catch((e) => { if (!/Cannot find context|Execution context was destroyed|navigat/i.test(String(e.message))) throw e; });
+    if (!loaded) await Promise.race([nav, new Promise((ok) => setTimeout(ok, 5000))]);
+    if (!loaded) throw new Error(`the page did not finish loading in ${FLASH_CLOCK.load} s of page time`);
+    const frames = FLASH_CLOCK.seconds * FLASH_CLOCK.fps;
+    for (let f = 0; f < frames; f++) await frame();
+    const rep = await page.evaluate(motionReport);
+    const found = flashToggles(rep.toggles, { counted: { seconds: FLASH_CLOCK.seconds, frames } });
+    for (const raw of found) await each(page, raw);
+    return { counted: true, seconds: FLASH_CLOCK.seconds, frames, elements: rep.toggles.length, findings: found.length };
+  } finally { await ctx.close().catch(() => {}); }
+}
+
 async function motionPasses(browser, url, o, system, w, merge, log, T, until) {
   const out = { width: w, animations: 0, durations: [], easings: [], frames: {}, interactions: {}, cpu: null };
   const runs = {};
@@ -2373,23 +2467,9 @@ function judgeMotion(mode, rep, names, system, cpu) {
       }
     }
   }
-  // Flashing driven by script: class or style changes, with the luminance
-  // after each, counted in any one second.
-  for (const t of rep.toggles) {
-    const area = t.rect[2] * t.rect[3];
-    if (area < FLASH_AREA) continue;
-    let best = 0;
-    for (let i = 0; i < t.rec.length; i++) {
-      let n = 0;
-      for (let j = i + 1; j < t.rec.length && t.rec[j][0] - t.rec[i][0] <= 1000; j++) {
-        const [x, y] = [t.rec[j - 1][1], t.rec[j][1]];
-        if (Math.abs(x - y) >= 0.1 && Math.min(x, y) < 0.8) n++;
-      }
-      best = Math.max(best, n);
-    }
-    if (best / 2 > 3) out.push({ check: 'flash', severity: 'error', key: t.sel + '|script', timed: best, count: 1, elements: [{ sel: t.sel, label: t.label, rect: t.rect }], marks: [], crop: 'each',
-      message: `A script changes this element's colour ${best} times within one second, ${best / 2} flashes over ${Math.round(area)} px². More than three flashes a second over this much area can trigger seizures (WCAG 2.3.1).` });
-  }
+  // Flashing driven by script, as this pass's wall clock saw it. What the
+  // controlled clock already counted after load is dropped by the caller.
+  out.push(...flashToggles(rep.toggles, { timed: true }));
   // Long animation frames while hovering, focusing, clicking or scrolling,
   // at full speed and on the reference device. The browser reports a frame
   // as a long animation frame when it takes over 50 ms, three times the

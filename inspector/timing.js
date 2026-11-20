@@ -1,24 +1,31 @@
 // When a timing-based finding counts (docs/CONTRACT.md, "Timing findings").
-// The rule is shared with KERCKHOFFS and ERLANG: a finding that rests on a
-// measured time counts only if it was measured at least 3 times with a
-// relative spread of at most 10%, the 1-minute load average was below half
-// the CPU count before and after, and the browser was not drawing in
-// software. Otherwise it is reported as info with the reason "timing
-// unreliable" and the environment recorded, and it never fails a run.
+// The rule is shared with KERCKHOFFS and ERLANG. ITTEN's timed verdicts are
+// absolute: one measurement against a fixed limit. Such a verdict keeps the
+// environment gate, because steady load biases every measurement the same
+// way and does not show as spread: the 1-minute load average must be below
+// half the CPU count before and after, and the browser must not draw in
+// software. On a machine that passes, the finding is measured 3 times: over
+// its limit every time, it is a finding; over it in some and not in others,
+// it is info, "timing unreliable". (Over it in none, there is no finding to
+// judge.) The spread of the measurements is recorded and gates nothing.
+// A verdict that can be judged on a count is not timed at all: a script's
+// flashes are counted on a controlled clock (inspect.js, scriptFlashes).
 
 export const REASON = 'timing unreliable';
-export const RUNS = 3, SPREAD = 0.1;
+export const RUNS = 3;
 
 // SwiftShader, llvmpipe and softpipe draw WebGL on the CPUs.
 export const isSoftware = (renderer) => /swiftshader|llvmpipe|softpipe|software/i.test(renderer ?? '');
 
 // The findings that rest on a measured time, and the phase that times them:
-// long frames and a script's flashes (the motion pass); what the page adds
+// long frames, and a script's flashes that only an interaction starts (the
+// motion pass); what the page adds
 // after it went still, a page that never goes still, and a network that
 // does not go quiet (the watch load).
 export function timedIn(f) {
   const fp = f.fingerprint ?? `${f.check}|${f.key}`;
   if (f.check === 'frame-timing') return 'motion';
+  // Only a flash the controlled clock did not count: one a hover, a focus or a click starts (inspect.js).
   if (f.check === 'flash' && /\|script$/.test(fp)) return 'motion';
   if (f.check === 'page-load' && /\|(never-still|late|busy)$/.test(fp)) return 'benchmark';
   return null;
@@ -43,13 +50,15 @@ export function environmentCauses(env) {
   return out;
 }
 
-// The verdict for one finding's measurements.
-export function judge(values, env) {
+// The verdict for one finding. values: what each measurement that was over
+// the limit measured; tries: how many measurements were made.
+export function judge(values, env, tries = RUNS) {
   const causes = environmentCauses(env);
   const vals = values.filter((v) => typeof v === 'number' && Number.isFinite(v));
   const spread = spreadOf(vals);
   // A run that cannot count is not repeated, so its count is not a cause of its own.
-  if (causes.length) { /* the environment says enough */ } else if (vals.length < RUNS) causes.push(`measured ${vals.length === 1 ? 'once' : `${vals.length} times`}, fewer than ${RUNS}`);
-  else if (spread > SPREAD) causes.push(`its ${vals.length} measurements spread ${Math.round(spread * 100)}%, more than ${SPREAD * 100}%`);
-  return { reliable: !causes.length, ...(causes.length ? { reason: REASON, causes } : {}), values: vals, spread: spread === null || !Number.isFinite(spread) ? null : Math.round(spread * 1000) / 1000, environment: env };
+  if (causes.length) { /* the environment says enough */ }
+  else if (tries < RUNS) causes.push(`measured ${tries === 1 ? 'once' : `${tries} times`}, fewer than ${RUNS}`);
+  else if (vals.length < tries) causes.push(`over its limit in ${vals.length} of ${tries} measurements`);
+  return { reliable: !causes.length, ...(causes.length ? { reason: REASON, causes } : {}), values: vals, tries, spread: spread === null || !Number.isFinite(spread) ? null : Math.round(spread * 1000) / 1000, environment: env };
 }
