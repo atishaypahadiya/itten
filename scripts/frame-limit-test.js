@@ -14,7 +14,11 @@
 //   them, and the job after it was measured. Nothing else is reported, and
 //   only the overflow fails the run.
 // - The run takes far less than the check limit it used to wait for.
+// - The script flash count on the same page: abandoned at the same limit,
+//   one info finding names the step and the motion pass's clock that read
+//   the flashes instead, and the run is complete.
 // - The twin: complete, judged across the fixed frames, the overflow only.
+// - The test's port: a taken one is drawn again (startFree in serve.js).
 // - The control: the same page with the fixed frames off is complete and
 //   has no such finding, so the wait is the frame clock's, not the page's.
 // Usage: node scripts/frame-limit-test.js
@@ -22,7 +26,8 @@
 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { start } from './serve.js';
+import { start, startFree } from './serve.js';
+import { createServer } from 'node:http';
 import { inspect, FRAMES, TIMEOUTS } from '../inspector/inspect.js';
 import { findingsOf } from '../inspector/finding.js';
 import { failing } from '../inspector/baseline.js';
@@ -34,8 +39,15 @@ const LIMIT = 2;
 export async function run({ quiet = true } = {}) {
   const fails = [];
   if (!(TIMEOUTS.frame > 0 && TIMEOUTS.frame < TIMEOUTS.check)) fails.push(`the frame step's limit is ${TIMEOUTS.frame} s, not below the check limit of ${TIMEOUTS.check} s`);
-  const port = 6300 + Math.floor(Math.random() * 300);
-  const server = await start(port);
+  // A port another process holds is not a failure of the test: another is drawn. The control: with every port of
+  // the range taken, the helper gives up with the collision, and start() alone rejects on a taken port.
+  const taken = createServer();
+  await new Promise((ok) => taken.listen(0, '127.0.0.1', ok));
+  const held = taken.address().port;
+  if (!(await start(held).then((s) => { s.close(); return false; }, (e) => e.code === 'EADDRINUSE'))) fails.push('start() on a port in use does not reject with the collision');
+  if (!(await startFree(held, 1).then(({ server: s }) => { s.close(); return false; }, (e) => e.code === 'EADDRINUSE'))) fails.push('startFree() with only a taken port to draw from does not give up with the collision');
+  taken.close();
+  const { server, port } = await startFree(6300, 300);
   try {
     const go = (page, name, extra = {}) => inspect(`http://127.0.0.1:${port}/fixtures/${page}`, {
       quiet, out: join(ROOT, 'dist', 'fixtures', `frame-limit-${name}`), widths: [320, 768, 1024], keyWidths: [768], passes: ['light', 'contrast'],
@@ -68,6 +80,23 @@ export async function run({ quiet = true } = {}) {
     if (twin.status !== 'complete') fails.push(`the twin: the run is ${twin.status} (${twin.reason ?? ''})`);
     if (findingsOf(twin).some((i) => i.check !== 'overflow')) fails.push(`the twin: ${findingsOf(twin).filter((i) => i.check !== 'overflow').map((i) => i.fingerprint).join('; ')}`);
     if (!(twin.drawing ?? []).length || !(twin.drawing ?? []).every((x) => x.frames?.count === FRAMES.count)) fails.push(`the twin: its ground was not judged across the fixed frames: ${JSON.stringify((twin.drawing ?? []).map((x) => x.frames))}`);
+
+    // The script flash count on the same page: its controlled clock is paused while a callback runs, so the wait
+    // never ends there either. The count is abandoned at the limit, an info finding names the step and the clock
+    // that read the flashes instead, and the run stays complete: nothing was left unmeasured.
+    const fl = await go('frame-wait.html', 'flash', { passes: ['light', 'motion'], timingEnv: { cpus: 8, load: () => 0 } });
+    const ff = findingsOf(fl).find((i) => i.fingerprint === 'flash|controlled-clock');
+    if (fl.status !== 'complete') fails.push(`the flash count: the run is ${fl.status} (${fl.reason ?? ''}), not complete`);
+    if (fl.motion?.flashClock?.counted !== false) fails.push(`the flash count: motion.flashClock is ${JSON.stringify(fl.motion?.flashClock)}`);
+    if (!ff) fails.push(`the flash count: no finding says the count was abandoned (${findingsOf(fl).map((i) => i.fingerprint).join('; ')})`);
+    else {
+      if (ff.severity !== 'info' || ff.check !== 'flash') fails.push(`the flash count: the finding is ${ff.check}, ${ff.severity}`);
+      if (ff.abandoned?.step !== 'the script flash count' || ff.abandoned.limit !== LIMIT) fails.push(`the flash count: abandoned is ${JSON.stringify(ff.abandoned)}`);
+      if (!/The script flash count was abandoned \(768 px, motion\).*did not return within 2 s on the controlled clock.*read on the motion pass's own clock/.test(ff.message)) fails.push(`the flash count: the message is "${ff.message.slice(0, 200)}"`);
+      if (ff.timing) fails.push('the flash count: the finding carries a timing verdict');
+    }
+    if (findingsOf(fl).some((i) => i.check === 'timed-out')) fails.push('the flash count: a timed-out finding is reported, which would make the run partial');
+    if (findingsOf(twin).some((i) => i.fingerprint === 'flash|controlled-clock')) fails.push('the twin: the flash count is reported as abandoned');
 
     const off = await go('frame-wait.html', 'off', { fixedFrames: false });
     if (off.status !== 'complete' || findingsOf(off).some((i) => i.check === 'timed-out')) fails.push(`the control: with the fixed frames off the run is ${off.status} with ${findingsOf(off).filter((i) => i.check === 'timed-out').length} timed-out findings; the page itself does not hang`);

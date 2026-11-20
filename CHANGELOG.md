@@ -2,17 +2,42 @@
 
 What changed in each version of ITTEN. Rule IDs refer to `protocol/03-craft.md`; check names to `protocol/04-inspect.md`.
 
-## 0.5 · not released
+## 0.5.0 · 20 November 2026
 
-Behaviour changes:
+ITTEN as an Agent Skill, a fast tier, `itten fix`, work packets, mutation testing, and the rules shared with KERCKHOFFS and ERLANG. 0.4 was never released on its own: its three parts (the skill, the fast tier, `itten fix`) are in this release. The board, the set skill and "Part of a set" are not; they moved to 0.5.x (`ROADMAP.md`).
+
+Behaviour changes. Read these before moving a pin:
 
 - The inspector's `--fail-on` defaults to `warning`: a run with an error or a warning exits 1, and info never fails a run. Before, the default was `never`. Exit codes are shared across the set: 0, 1, 2 (refused), 3 (partial), 64 (bad usage); see `docs/CONTRACT.md`, "Exit codes".
 - Exit codes follow the shared table. 75: nothing was judged and trying again may work (the page gave no answer, the connection was reset, or it answered 5xx, 408, 425 or 429); before, an unreachable page exited 2 and a page that answered 503 was inspected as if the error were the page. 70: the run failed inside the tool (before, 2). 64: a system file that is not valid (before, 2). 2 is left for a guard that declines to run. Precedence: 70, then 1, then 75, then 3; a run whose every job after the first load was dropped is partial, marked `blocked`, and exits 1 or 3.
 - A script's flashes are counted on a controlled clock and no longer fall under the timing rule: the finding is an error on a loaded machine or a software renderer too, where before it was info. It carries `counted`.
 - A timing finding counts when all three measurements are over its limit, on a machine that passes the load and renderer gates. The 10% spread gate is gone (the spread is still recorded); a finding over its limit in only some of the three is info, "timing unreliable".
-- A `timed-out` finding can be `info`: a step with a limit of its own (a step of the frame clock, 10 s) that was abandoned while the rest of its width was measured. The run is partial, as with any timed-out finding; before, such a page held its contrast pass for the full check limit and the report did not say so.
+- A `timed-out` finding can be `info`: a step with a limit of its own (a step of the frame clock, 10 s) that was abandoned while the rest of its width was measured. The run is partial, as with any timed-out finding; before, such a page held its contrast pass for the full check limit and the report did not say so. Where the script flash count is abandoned the same way, an info `flash` finding says so and the run stays complete: the motion pass reads the flashes on its own clock.
 - The action's `fail-on` defaults to `warnings`, to match. Before, it was `errors`. A workflow that should fail on errors only sets `fail-on: errors`.
 - Fingerprints are `fp/2`: a spacing, type or radius finding is named by its property and elements, never by a measured value. A baseline written before is re-keyed as it is compared; nothing needs regenerating.
+
+New:
+
+- ITTEN as an Agent Skill: `skills/itten/`, installed with `gh skill install`. `scripts/setup.sh` asks before it installs the lockfile's Playwright, Chromium and WebKit. The submodule and the Action stay supported.
+- The fast tier, `--fast`: the changed page at 320, 768 and 1440 px in one engine, layout and text checks only, in seconds.
+- `itten fix` (`inspector/fix.js`): six classes of finding fixed in the project's source and inspected again: px to rem, a compounded `em` size to its step, a value one step off the scale (within the system file's `tolerance`, 1 px by default), a no-break space before a separator, `text-wrap`, and the reduced-motion guard. A fix that leaves its finding or brings a new one is reverted. Anything else is guided: its place in the source and a note. Build output, files git ignores and `.git` are never edited. `--dry-run` plans without writing; `--apply` checks fixes given in a file.
+- Work packets (`inspector/packets.js`): a run's findings grouped by root cause, each with its files and owners (CODEOWNERS), marked mechanical or not, and marked when it shares no file with another packet.
+- Mutation testing (`scripts/mutation-test.js`): seeded defects planted in a clean page, recall reported per check against floors, and the fixable ones run through `itten fix`.
+- Contrast over a moving background is judged across twelve fixed frames on a frame clock, so it is the same in every run; the finding lists each frame's values (`itten.frames`).
+- Frozen captures: every screenshot and crop holds the page first, and each crop names the frame it was held at.
+- The timing lock (`itten-timing-lock/1`): a file held while ITTEN times anything, so a load generator on the same machine can keep off.
+- The server's health: a job whose load the server failed is run again once, then dropped; the run is partial and names it.
+- Fluidity is unknown below three widths, so a run of one or two widths no longer reads every `clamp()` as a fixed value. The full sweep measures every width quick mode does.
+- `line-start` reads blocks narrower than 4 em.
+- Every command reads its arguments strictly: an unknown flag exits 64 and runs nothing.
+- The comparison workflow takes a full commit as a version, to measure `main` before it is tagged.
+
+Fixed:
+
+- An edit through a symbolic link that points at nothing, or into `.git`, is refused, and an encoded `..` in a URL names no file.
+- A page that answered 503 was inspected as if the error page were the page.
+- `itten fix` made a whole fix guided when the finding's elements took their value at different widths or on different sides.
+- A frame callback that waits on the clock held a width's contrast pass for the full check limit.
 
 ## 0.3.5 · 17 November 2026
 

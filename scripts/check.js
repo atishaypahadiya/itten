@@ -539,6 +539,14 @@ try {
 } catch (e) {
   fail('CI', `the CI test could not run: ${e.message.split('\n')[0]}`);
 }
+// The monthly telemetry workflow: when it runs, what it may do, and its two
+// steps with a local folder and a stand-in gh (scripts/telemetry-test.js).
+try {
+  const { run: telemetryTest } = await import('./telemetry-test.js');
+  for (const f of telemetryTest()) fail('CI', f);
+} catch (e) {
+  fail('CI', `the telemetry test could not run: ${e.message.split('\n')[0]}`);
+}
 
 // ----------------------------------------------------------------- Health
 // The page server's health (scripts/health-test.js).

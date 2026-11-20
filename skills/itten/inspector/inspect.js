@@ -1484,6 +1484,14 @@ async function inspectRun(url, o = {}) {
     } catch (e) {
       flashClock = { counted: false, why: String(e.message || e).split('\n')[0] };
       log(`  script flashes were not counted on the controlled clock (${flashClock.why}); the motion pass reads them off its own clock`);
+      // Out of time: said as a finding. Nothing is left unmeasured (the motion pass reads the flashes), so the
+      // run stays complete; what changes is the clock, and with it whether a flash counts on a loaded machine.
+      if (e instanceof StepTimeout) {
+        const w = keyWidths.at(-1), label = `${w} px, motion`, frame = e.step === FRAME_STEP;
+        issues.set('flash|controlled-clock', { id: nextId(), fingerprint: 'flash|controlled-clock', check: 'flash', severity: 'info', count: 1, elements: [], seen: { motion: [w] }, crops: [], first: label,
+          abandoned: { step: 'the script flash count', limit: Math.round(e.ms / 1000) },
+          message: `The script flash count was abandoned (${label}): ${frame ? `a frame callback of the page did not return within ${Math.round(e.ms / 1000)} s on the controlled clock, where page time is paused while a callback runs, so a callback that waits on performance.now() or Date.now() never ends` : `it did not finish within ${Math.round(e.ms / 1000)} s`}. A script's flashes were read on the motion pass's own clock instead, under the timing rule: on a loaded machine or a software renderer such a flash is info, not an error.` });
+      }
       for (const c of browser.contexts()) await closeQuietly(c);
     }
     if (passes.has('motion')) try {

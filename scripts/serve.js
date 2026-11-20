@@ -42,7 +42,18 @@ export function start(port = 4173, dir = null) {
       res.end('Not found');
     }
   });
-  return new Promise((ok) => server.listen(port, '127.0.0.1', () => ok(server)));
+  // A port in use rejects, so a caller can try another (startFree).
+  return new Promise((ok, no) => { server.once('error', no); server.listen(port, '127.0.0.1', () => { server.off('error', no); ok(server); }); });
+}
+
+// start() on a port drawn from [from, from + span), trying another when one is taken. Returns { server, port }.
+export async function startFree(from, span = 300, dir = null, tries = 8) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    const port = from + Math.floor(Math.random() * span);
+    try { return { server: await start(port, dir), port }; } catch (e) { if (e.code !== 'EADDRINUSE') throw e; last = e; }
+  }
+  throw last;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

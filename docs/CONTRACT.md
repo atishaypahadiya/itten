@@ -1,6 +1,6 @@
 # Contract
 
-What the ITTEN inspector needs, what it does while it runs, and what it leaves behind. This describes ITTEN 0.3.5 with `--version`, which was added after 0.3.5 and ships in the next release. Where the roadmap changes something, the change is noted.
+What the ITTEN inspector needs, what it does while it runs, and what it leaves behind. This describes ITTEN 0.5.0. Where the roadmap changes something, the change is noted.
 
 ## Invocation
 
@@ -152,6 +152,8 @@ The rule shared with KERCKHOFFS and ERLANG: a specialist's own tests run at leas
 
 ITTEN runs its self-test on every push and every pull request, with no path filter. `main` requires the `checks` and `fixtures` jobs, and a required check must report on every commit: a workflow filtered out by `paths-ignore` reports nothing, so a Markdown-only pull request could never merge. `scripts/ci-test.js` fails if a filter is added.
 
+**Known limits: what has never run on GitHub.** Two paths are tested only inside this repository. A pull request from a fork gets the job summary and no comment, since its token cannot write one: `scripts/action-test.js` runs the report step against a stand-in API with a fork's event, but no real fork has opened a pull request against a project that uses the action. The monthly override telemetry (`.github/workflows/telemetry.yml`, the first of each month): `scripts/telemetry-test.js` checks that it is scheduled once a month, asks for `contents: read` and `issues: write` only, and runs its two steps as written, the first on local test repositories and the second with a stand-in `gh` (an issue opened, edited, or neither). That GitHub starts the schedule, and the issue as GitHub stores it, are untested until the first scheduled run.
+
 ## The server's health
 
 A run that measures a page the server failed to send measures an error state. The first load of a run (the watch load) says what the server sends: the requests it answered, and the ones that failed there too, which are the page's own (a missing file fails on every load, and is reported as `page-load`).
@@ -201,7 +203,7 @@ On a machine that passes, the inspector measures once. Where that one measuremen
 
 The spread of the measurements, (max − min) / median, is recorded and gates nothing. A run on a loaded machine or a software renderer repeats nothing, and its timing findings are `info`. Where the server fails a repeat of the watch load, the findings are `info` ("measured once, fewer than 3") and the run is `partial`, with the reason.
 
-**Known limit.** The controlled clock counts for 5 s after load and touches nothing. Flashing that a script starts only on a hover, a focus or a click is therefore not counted there: the motion pass sees it on its own clock, as an absolute timed verdict under the gate above, so on a loaded machine or a software renderer it is `info`. Counting it would mean running the whole motion pass on the controlled clock; the wall-clock control above found no miscount, so this stays. The same holds when the count's own step runs out of its limit (a callback that waits on the clock, which is paused while the callback runs): the count ends and the motion pass reads the flashes.
+**Known limit.** The controlled clock counts for 5 s after load and touches nothing. Flashing that a script starts only on a hover, a focus or a click is therefore not counted there: the motion pass sees it on its own clock, as an absolute timed verdict under the gate above, so on a loaded machine or a software renderer it is `info`. Counting it would mean running the whole motion pass on the controlled clock; the wall-clock control above found no miscount, so this stays. The same holds when the count's own step runs out of its limit (a callback that waits on the clock, which is paused while the callback runs): the count ends, the motion pass reads the flashes, and one `flash` finding of severity `info` says so (fingerprint `flash|controlled-clock`, `itten.abandoned: { step, limit }`), naming the step and the clock that was used instead. The run stays `complete`: nothing was left unmeasured.
 
 **Relative timed verdicts** (two conditions compared in the same run, at least 5 repeats in alternating order) are the third part of the shared rule. ITTEN has none.
 

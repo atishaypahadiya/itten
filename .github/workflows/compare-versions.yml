@@ -1,6 +1,7 @@
 # Measures one site with two ITTEN versions and lists what the newer one finds that the older one does not,
 # so an upgrade can be judged before a project moves its pin, and heavy sweeps run on GitHub's machines instead
-# of a shared one. One job per version, page and mode, each with ITTEN checked out at its tag, the site built
+# of a shared one. One job per version, page and mode, each with ITTEN checked out at its tag (or at a full
+# commit, to measure main before it is tagged), the site built
 # and served from the same commit; then scripts/compare-versions.mjs on all of them. Reports, crops and the
 # comparison (new.md, with the crops of every finding it lists) are uploaded as artifacts.
 #
@@ -37,10 +38,10 @@ on:
         required: false
         default: ''
       version-a:
-        description: 'Older ITTEN tag, such as v0.3.4'
+        description: 'Older ITTEN version: a tag such as v0.3.4, or a full commit'
         required: true
       version-b:
-        description: 'Newer ITTEN tag, such as v0.3.5'
+        description: 'Newer ITTEN version: a tag such as v0.3.5, or a full commit (main before it is tagged)'
         required: true
       modes:
         description: 'quick, full, or both'
@@ -105,7 +106,9 @@ jobs:
             // Everything here reaches a checkout, a path or an artifact name: plain names only. No leading "-"
             // (git would read it as an option), no ".." (a ref cannot hold one; a path would leave the checkout),
             // no absolute paths.
-            const tag = /^v\d+\.\d+\.\d+$/;
+            // A version is a tag, or a full commit of this repository (to measure main before it is tagged).
+            const tag = /^(v\d+\.\d+\.\d+|[0-9a-f]{40})$/;
+            const refOf = (v) => (/^v/.test(v) ? `refs/tags/${v}` : v);
             const repo = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/;
             const ref = (x) => /^[A-Za-z0-9][\w.\/-]*$/.test(x) && !x.includes("..");
             const rel = (x) => x === "" || x === "." || (/^[\w][\w.\/-]*$/.test(x) && !x.split("/").includes(".."));
@@ -116,7 +119,7 @@ jobs:
               !/^[a-z]+(,[a-z]+)*$/.test(e.ENGINES) && "engines", !/^([1-9][0-9]{0,2})?$/.test(e.WORKERS) && "workers"].filter(Boolean);
             if (bad.length) { console.error("bad inputs: " + bad.join(", ")); process.exit(64); }
             const include = [];
-            for (const version of [e.VERSION_A, e.VERSION_B]) for (const mode of modes) for (const p of pages) include.push({ version, mode, path: pageName(p), page: slug(pageName(p)) });
+            for (const version of [e.VERSION_A, e.VERSION_B]) for (const mode of modes) for (const p of pages) include.push({ version, ref: refOf(version), mode, path: pageName(p), page: slug(pageName(p)) });
             const config = { siteRepo: e.SITE_REPO, siteRef: e.SITE_REF, build: e.BUILD, serveDir: e.SERVE_DIR, system: e.SYSTEM, a: e.VERSION_A, b: e.VERSION_B, engines: e.ENGINES, workers: e.WORKERS };
             appendFileSync(e.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nconfig=${JSON.stringify(config)}\n`);
             console.log(`${include.length} jobs: ${[e.VERSION_A, e.VERSION_B].join(" and ")}, ${modes.join(" and ")}, ${pages.length} page${pages.length === 1 ? "" : "s"} of ${e.SITE_REPO} at ${e.SITE_REF}`);
@@ -141,9 +144,18 @@ jobs:
       - name: ITTEN at ${{ matrix.version }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ matrix.version }}
+          ref: ${{ matrix.ref }}
           path: itten
           persist-credentials: false
+          fetch-depth: 0
+      # A commit given by its hash must be on a branch of this repository. A hash that exists only in a fork (GitHub
+      # serves those through the parent) would run code nobody with write access here has pushed.
+      - name: The commit is on a branch of this repository
+        if: ${{ !startsWith(matrix.version, 'v') }}
+        working-directory: itten
+        run: |
+          if [ -z "$(git branch -r --contains HEAD)" ]; then echo "$VERSION is on no branch of this repository"; exit 64; fi
+          git branch -r --contains HEAD | head -5
       - name: The site
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

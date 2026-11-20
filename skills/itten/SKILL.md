@@ -4,7 +4,7 @@ description: Inspects a rendered web page up close for design detail, against th
 license: MIT
 compatibility: Node 20 or later and npm. Setup downloads Playwright and its Chromium and WebKit builds (about 600 MB), once, with the user's agreement.
 metadata:
-  version: "0.3.5"
+  version: "0.5.0"
 ---
 
 # ITTEN

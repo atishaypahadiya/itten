@@ -116,7 +116,7 @@ jobs:
           persist-credentials: false
       # Build the site here if it needs building, for example:
       # - run: npm ci && npm run build
-      - uses: atishaypahadiya/itten@v0.3.5  # or pin the release's commit SHA
+      - uses: atishaypahadiya/itten@v0.5.0  # or pin the release's commit SHA
         with:
           static-dir: dist
           pages: |
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: atishaypahadiya/itten@v0.3.5
+      - uses: atishaypahadiya/itten@v0.5.0
         with:
           static-dir: dist
           mode: full
@@ -189,7 +189,7 @@ jobs:
         with:
           pattern: itten-shard-*
           path: itten-shards
-      - uses: atishaypahadiya/itten@v0.3.5
+      - uses: atishaypahadiya/itten@v0.5.0
         with:
           static-dir: dist
           mode: full
