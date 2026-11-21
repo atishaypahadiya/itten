@@ -68,7 +68,8 @@ const TAKER = `function (a) {
   const marks = (this.getAttribute('data-itten-ignore') || '').split(/\\s+/);
   const ignored = marks.includes(a.check) || marks.includes('all');
   const cls = typeof this.className === 'string' && this.className.trim() ? '.' + this.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
-  return { rendered: this.getClientRects().length > 0, carries: listed || (a.v !== null && Math.abs(px - a.v) <= 0.01 && !ignored), name: this.id ? '#' + this.id : this.tagName.toLowerCase() + cls };
+  const own = a.own.some((s) => { try { return this.matches(s); } catch { return false; } });
+  return { own, rendered: this.getClientRects().length > 0, carries: listed || (a.v !== null && Math.abs(px - a.v) <= 0.01 && !ignored), name: this.id ? '#' + this.id : this.tagName.toLowerCase() + cls };
 }`;
 // The steps within the tolerance of a value. An off-scale value is moved
 // mechanically only when there is exactly one.
@@ -149,7 +150,7 @@ export async function planFix(f, ctx) {
   const tooWide = (selector, b) => `${selector} matches ${b.matches} element${b.matches === 1 ? '' : 's'} and ${b.without} of them ${b.without === 1 ? 'does' : 'do'} not have this finding (${b.examples.join(', ')}${b.without > b.examples.length ? ', …' : ''}); at most ${allow} may`;
   // For a declaration the fixer adds: every drawn element the rule matches.
   // Names come from the page: cut short, and with no control characters, before they are written anywhere.
-  const clean = (t) => String(t ?? '').replace(/\p{Cc}/gu, ' ').slice(0, 60);
+  const clean = (t) => (typeof t === 'string' ? t : '').replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ').slice(0, 60);
   // Null when the selector cannot be asked of the page, or does not match
   // the element being fixed (a nested or relative selector, a pseudo-element):
   // the reach is unknown, and an unknown reach is too wide.
@@ -172,9 +173,15 @@ export async function planFix(f, ctx) {
   const valueReach = async (places, v) => {
     for (const { p, prop } of places) {
       const selector = p.d.rule.selectorList.text;
-      const t = await takersOf(src, p.d, prop, TAKER, { carriers, prop, v: v ?? null, check: f.check });
+      const t = await takersOf(src, p.d, prop, TAKER, { carriers, own: sels, prop, v: v ?? null, check: f.check });
       if (!t) return `${clean(selector)} (${p.file}:${p.line}) matches more elements than a fix reads (400), or cannot be asked of the page`;
-      const drawn = t.filter((x) => x && x.rendered === true), without = drawn.filter((x) => x.carries !== true);
+      // The reach is known only when every element was described, and the
+      // finding's own element is among them: a nested selector or a
+      // pseudo-element asked of the page on its own matches nothing, and a
+      // reach of nothing is not a narrow reach.
+      const read = t.every((x) => x && typeof x.rendered === 'boolean' && typeof x.carries === 'boolean' && typeof x.own === 'boolean');
+      if (!read || !t.some((x) => x.own)) return `${clean(selector)} (${p.file}:${p.line}) cannot be asked of the page (a nested selector or a pseudo-element), so how far it reaches is unknown`;
+      const drawn = t.filter((x) => x.rendered), without = drawn.filter((x) => !x.carries);
       if (without.length > allow) return `${tooWide(clean(selector), { matches: drawn.length, without: without.length, examples: without.slice(0, 4).map((x) => clean(x?.name)) })} (${p.file}:${p.line})`;
     }
     return null;
@@ -315,7 +322,7 @@ export async function planFix(f, ctx) {
         // A rule sets text-wrap already: its value is changed there, or nowhere.
         const v = await valuePlace(src, root, url, d);
         if (v.why) return guided('text-wrap', `${sel}: ${v.why}.`, [{ selector: sel }]);
-        if (v.text === value) { coveredBy.push(`${d.rule.selectorList.text} (${v.file}:${v.line})`); continue; }
+        if (v.text === value) { coveredBy.push(`${clean(d.rule.selectorList.text)} (${v.file}:${v.line})`); continue; }
         const selector = d.rule.selectorList.text, out = await outside(d.rule), b = await reachOf(selector, sel);
         if (out) return narrower(sel, [`${clean(selector)} sets text-wrap only under ${clean(out)}, and the finding is also seen outside it`]);
         if (!b) return narrower(sel, [unread(selector)]);
@@ -334,7 +341,7 @@ export async function planFix(f, ctx) {
         if (await outside({ media: r.conditions.map((text) => ({ text })) })) continue;
         by = r; break;
       }
-      if (by) { coveredBy.push(`${by.selector} (the fix for ${by.id})`); continue; }
+      if (by) { coveredBy.push(`${clean(by.selector)} (the fix for ${by.id})`); continue; }
       // Otherwise the declaration goes to a rule that applies wherever the
       // finding was seen and reaches little else: of those, the one that
       // reaches the most elements with the finding (so two findings one rule
@@ -391,6 +398,8 @@ export async function planFix(f, ctx) {
     const place = await placeOf(src, root, url, found.rule.header, found.rule.style.range);
     if (place.why) return guided('reduced-motion', `${sel}: ${place.why}.`, [{ selector: sel }]);
     const selector = found.rule.selectorList.text;
+    // A nested selector means nothing written at the top level of the file.
+    if (selector.includes('&') || (found.rule.nestingSelectors ?? []).length) return guided('reduced-motion', `${f.message} The rule that starts it is nested, and its guard cannot be written beside it mechanically.`, [{ selector: sel }]);
     const text = place.text;
     const lines = text.split('\n');
     const endLine = text.endsWith('\n') ? lines.length : lines.length;

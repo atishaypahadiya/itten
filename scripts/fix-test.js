@@ -204,9 +204,12 @@ export async function run({ quiet = true } = {}) {
           if (x.edits.length !== 1 || x.edits[0].file !== 'reach/style.css' || !re.test(css[x.edits[0].line - 1])) fails.push(`reach: the fix for ${sel} edits ${x.edits.map((e) => `${e.file}:${e.line} (${css[e.line - 1]})`).join(', ')}, not the rule ${re}`);
         } else if (x.edits.length || !re.test(x.note)) fails.push(`reach: the ${status} fix for ${sel} has ${x.edits.length} edits and says: ${x.note}`);
       }
-      if (dry.fixes.length !== want.length) fails.push(`reach: ${dry.fixes.length} findings, not ${want.length}: ${dry.fixes.filter((x) => !want.some(([s]) => x.finding.fingerprint.endsWith(`|${s}`))).map((x) => x.finding.fingerprint).join('; ')}`);
+      // A value one step off the scale whose rule is nested: the step is known, the reach is not.
+      const deep = dry.fixes.find((x) => x.finding.fingerprint === 'type-scale|font-size|#deep > div');
+      if (deep?.status !== 'guided' || deep.edits.length || !/16 px is the only step within 1 px, but a narrower rule is needed: & > div \(reach\/style\.css:\d+\) cannot be asked of the page/.test(deep.note)) fails.push(`reach: the size set by a nested rule is ${deep?.status}: ${deep?.note}`);
+      if (dry.fixes.length !== want.length + 1) fails.push(`reach: ${dry.fixes.length} findings, not ${want.length + 1}: ${dry.fixes.filter((x) => x !== deep && !want.some(([s]) => x.finding.fingerprint.endsWith(`|${s}`))).map((x) => x.finding.fingerprint).join('; ')}`);
       if (dry.fixes.some((x) => /#cells/.test(x.finding.fingerprint) && !/tr:nth-of-type\(1\) > td:nth-of-type\(1\)$/.test(x.finding.fingerprint))) fails.push('reach: a cell that holds one number or one word is reported');
-      if (dry.summary.planned !== 5 || dry.summary.covered !== 1 || dry.summary.guided !== 4) fails.push(`reach: the dry run's summary is ${JSON.stringify(dry.summary)}`);
+      if (dry.summary.planned !== 5 || dry.summary.covered !== 1 || dry.summary.guided !== 5) fails.push(`reach: the dry run's summary is ${JSON.stringify(dry.summary)}`);
       if (!same(tree(join(site, 'reach')), was)) fails.push('reach: a dry run wrote to the page');
       // The control: with no allowance the block among five is planned (on the widest rule, which then covers the
       // most findings), so the allowance is what holds it.
@@ -214,7 +217,7 @@ export async function run({ quiet = true } = {}) {
       const wide = loose.fixes.find((x) => x.finding.fingerprint === 'text-wrap-pretty|#wide > div:nth-of-type(1)');
       if (wide?.status !== 'planned' || wide.edits.length !== 1) fails.push(`reach: without an allowance the fix for the block among five is ${wide?.status}, not planned (the control)`);
       const real = await fix(url('reach/index.html'), opts('reach'));
-      if (real.summary.kept !== 5 || real.summary.covered !== 1 || real.summary.guided !== 4 || real.summary.reverted) fails.push(`reach: the run's summary is ${JSON.stringify(real.summary)}: ${real.fixes.filter((x) => x.reason).map((x) => x.reason).join('; ')}`);
+      if (real.summary.kept !== 5 || real.summary.covered !== 1 || real.summary.guided !== 5 || real.summary.reverted) fails.push(`reach: the run's summary is ${JSON.stringify(real.summary)}: ${real.fixes.filter((x) => x.reason).map((x) => x.reason).join('; ')}`);
       const now = tree(join(site, 'reach')), twin = tree(join(FIX, 'reach', 'twin'));
       if (!same(now, twin)) fails.push(`reach: the fixed files differ from twin/ in ${differ(now, twin).join(', ')}`);
       if (readFileSync(join(site, 'base.css'), 'utf8') !== baseWas) fails.push('reach: the shared stylesheet was edited, through the universal rule');
