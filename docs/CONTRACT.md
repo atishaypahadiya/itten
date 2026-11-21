@@ -60,7 +60,9 @@ In the `--out` directory:
 
 Progress and a summary go to stdout, errors to stderr.
 
-A second-opinion engine that fails to launch, or fails partway through, is recorded in `engines.notRun` and does not make the run `partial`. Check `engines.notRun` as well as `status`.
+A second-opinion engine that is not installed, fails to launch, or fails partway through is recorded in `engines.notRun` with the reason, and does not make the run `partial`. Check `engines.notRun` as well as `status`. `engines.browsers` lists the engines that ran, with their versions. ITTEN's own check ends on a line that names both (`Passed (engines run: chromium, webkit; not run: firefox, not installed (npx playwright install firefox))`), and `scripts/fixture-test.js --need webkit,firefox` fails when a named engine did not run.
+
+**Known limit: where each engine has been run.** Where each engine has been run (21 November 2026): Chromium and WebKit on macOS 27.2 and on Linux (`ubuntu-24.04`, GitHub's runners); Firefox on Linux only, and only in ITTEN's own self-test, where the fixtures are inspected with WebKit and Firefox on every push. Playwright's Firefox 159 does not start on macOS 27.2 ("Could not find profile folder"), and no run of ITTEN's Firefox pass on a Mac, or on a project's own pages, is on record. The action asks for WebKit only (`ITTEN.md`).
 
 ## Exit codes
 

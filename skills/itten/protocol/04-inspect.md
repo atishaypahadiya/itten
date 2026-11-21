@@ -11,6 +11,8 @@ npm install --save-dev playwright
 npx playwright install chromium webkit firefox
 ```
 
+An engine that is not installed or does not start is not an error: the run continues, and the report's `engines.notRun` names it with the reason. Read that field before saying a page was checked in an engine. Where each engine has been run (21 November 2026): Chromium and WebKit on macOS 27.2 and on Linux (`ubuntu-24.04`, GitHub's runners); Firefox on Linux only, and only in ITTEN's own self-test, where the fixtures are inspected with WebKit and Firefox on every push. Playwright's Firefox 159 does not start on macOS 27.2 ("Could not find profile folder"), and no run of ITTEN's Firefox pass on a Mac, or on a project's own pages, is on record.
+
 Then, with the page served locally or deployed:
 
 ```sh

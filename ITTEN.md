@@ -68,7 +68,9 @@ npm install --save-dev playwright
 npx playwright install chromium webkit firefox
 ```
 
-WebKit and Firefox give a second opinion on layout. If either is missing, the report says so and the run continues.
+WebKit and Firefox give a second opinion on layout. If either is missing or does not start, the run continues, and the report says which engine did not run and why (`engines.notRun`); a run with an engine missing is not a run with all of them, so read that field.
+
+Where each engine has been run (21 November 2026): Chromium and WebKit on macOS 27.2 and on Linux (`ubuntu-24.04`, GitHub's runners); Firefox on Linux only, and only in ITTEN's own self-test, where the fixtures are inspected with WebKit and Firefox on every push. Playwright's Firefox 159 does not start on macOS 27.2 ("Could not find profile folder"), and no run of ITTEN's Firefox pass on a Mac, or on a project's own pages, is on record.
 
 ## Run the inspector
 
@@ -202,7 +204,7 @@ The baseline holds the findings the project has accepted for now, each logged as
 
 Permissions. The comment needs `pull-requests: write`, given to the job as above; nothing else needs more than `contents: read`. A pull request from a fork runs with a read-only token, so it gets the job summary and no comment, and the run does not fail for that. Every third-party action the ITTEN action uses is pinned by commit SHA; pin ITTEN the same way if your policy asks for it.
 
-The action installs Chromium and WebKit with Playwright and caches them between runs. Firefox is not installed in CI. It is tested on `ubuntu-24.04` runners.
+The action installs Chromium and WebKit with Playwright and caches them between runs, and asks for WebKit as the only second-opinion engine: a project that uses the action gets no Firefox pass. It is tested on `ubuntu-24.04` runners. ITTEN's own self-test installs Firefox as well and inspects the fixtures with it; that is the only place the Firefox pass runs.
 
 ## Overrides
 

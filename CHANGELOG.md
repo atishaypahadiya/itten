@@ -41,6 +41,9 @@ New:
 - `line-start` reads blocks narrower than 4 em.
 - Every command reads its arguments strictly: an unknown flag exits 64 and runs nothing.
 - The comparison workflow takes a full commit as a version, to measure `main` before it is tagged.
+- The check's last line names the engines the fixtures ran in and the ones that did not, with the reason; a check with an engine missing no longer ends on a bare "Passed". ITTEN's self-test now inspects the fixtures with Firefox as well as WebKit.
+
+Known limit: Firefox. No run of the Firefox pass is on record before 21 November 2026: the action installs and asks for WebKit only, and every local check on macOS 27.2, where ITTEN is developed, recorded Firefox as not run (not installed in the folder the checks use; and Playwright's Firefox 159, installed elsewhere on the same Mac, does not start: "Could not find profile folder"). It now runs on Linux in ITTEN's self-test, on the fixtures only: on its first run (21 November 2026, [run 44866499180](https://github.com/atishaypahadiya/itten/actions/runs/44866499180)) it launched, finished the layout and resize passes, and reported the same 16 findings on the test print as WebKit and nothing on the clean twin, with the fixture test at recall 49/49 and precision 57/57 (one hairline is drawn crisp in Firefox and blurred in the other two, which the report records as an engine difference). No run on a Mac, or on a project's own pages, is on record.
 
 Fixed:
 

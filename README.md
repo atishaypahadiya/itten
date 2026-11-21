@@ -42,7 +42,7 @@ Node 20 or later.
 
 ```sh
 npm install                      # Playwright, the only dependency
-npx playwright install chromium webkit firefox  # once
+npx playwright install chromium webkit firefox  # once; Firefox does not start on macOS 27.2 (see below)
 scripts/setup.sh                 # once: links the hygiene patterns (below)
 npm run check                    # everything below; exits 1 on any failure
 npm run check:full               # the same with the 41-width fixture sweep
@@ -52,6 +52,8 @@ npm run inspect -- --version      # the version and the commit it runs from
 npm run fix -- <url> --root <dir>  # mechanical fixes, each checked again (docs/CONTRACT.md, Fixes)
 npm run serve                    # fixtures at http://127.0.0.1:4173/fixtures/
 ```
+
+The check's last line names the engines the fixtures ran in and the ones that did not run, with the reason, for example `Passed (engines run: chromium, webkit; not run: firefox, not installed (npx playwright install firefox))`. Where each engine has been run (21 November 2026): Chromium and WebKit on macOS 27.2 and on Linux (`ubuntu-24.04`, GitHub's runners); Firefox on Linux only, and only in ITTEN's own self-test, where the fixtures are inspected with WebKit and Firefox on every push. Playwright's Firefox 159 does not start on macOS 27.2 ("Could not find profile folder"), and no run of ITTEN's Firefox pass on a Mac, or on a project's own pages, is on record.
 
 `npm run check` fails when:
 
