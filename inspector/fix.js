@@ -148,22 +148,34 @@ export async function planFix(f, ctx) {
   const carriers = [...new Set((ctx.findings ?? [f]).filter((x) => x.check === f.check).flatMap(elementsOf))];
   const tooWide = (selector, b) => `${selector} matches ${b.matches} element${b.matches === 1 ? '' : 's'} and ${b.without} of them ${b.without === 1 ? 'does' : 'do'} not have this finding (${b.examples.join(', ')}${b.without > b.examples.length ? ', …' : ''}); at most ${allow} may`;
   // For a declaration the fixer adds: every drawn element the rule matches.
-  const reachOf = (selector) => ctx.page.evaluate(({ selector, carriers }) => {
-    const all = (s) => { try { return [...document.querySelectorAll(s)]; } catch { return []; } };
-    const name = (e) => { const cls = typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : ''; const t = (e.textContent || '').trim().replace(/\s+/g, ' '); return (e.id ? '#' + e.id : e.tagName.toLowerCase() + cls) + (t ? ` "${t.length > 24 ? t.slice(0, 23) + '…' : t}"` : ''); };
-    const els = all(selector).filter((e) => e.getClientRects().length);
-    const carry = new Set(carriers.flatMap(all));
-    const without = els.filter((e) => !carry.has(e));
-    return { matches: els.length, with: els.length - without.length, without: without.length, examples: without.slice(0, 4).map(name) };
-  }, { selector, carriers });
+  // Names come from the page: cut short, and with no control characters, before they are written anywhere.
+  const clean = (t) => String(t ?? '').replace(/\p{Cc}/gu, ' ').slice(0, 60);
+  // Null when the selector cannot be asked of the page, or does not match
+  // the element being fixed (a nested or relative selector, a pseudo-element):
+  // the reach is unknown, and an unknown reach is too wide.
+  const reachOf = async (selector, sel) => {
+    const r = await ctx.page.evaluate(({ selector, carriers, sel }) => {
+      const all = (s) => { try { return [...document.querySelectorAll(s)]; } catch { return null; } };
+      const name = (e) => { const cls = typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : ''; const t = (e.textContent || '').trim().replace(/\s+/g, ' '); return (e.id ? '#' + e.id : e.tagName.toLowerCase() + cls) + (t ? ` "${t.length > 24 ? t.slice(0, 23) + '…' : t}"` : ''); };
+      const matched = all(selector), own = all(sel);
+      if (!matched || !own || !own.length || !own.every((e) => matched.includes(e))) return null;
+      const els = matched.filter((e) => e.getClientRects().length);
+      const carry = new Set(carriers.flatMap((s) => all(s) ?? []));
+      const without = els.filter((e) => !carry.has(e));
+      return { matches: els.length, with: els.length - without.length, without: without.length, examples: without.slice(0, 4).map(name) };
+    }, { selector, carriers, sel });
+    if (!r || !Number.isInteger(r.matches) || !Number.isInteger(r.with) || !Number.isInteger(r.without) || !Array.isArray(r.examples)) return null;
+    return { matches: r.matches, with: r.with, without: r.without, examples: r.examples.slice(0, 4).map(clean) };
+  };
+  const unread = (selector) => `${clean(selector)} cannot be asked of the page (a nested selector or a pseudo-element), so how far it reaches is unknown`;
   // For a value the fixer changes: the drawn elements that take it from that declaration.
   const valueReach = async (places, v) => {
     for (const { p, prop } of places) {
       const selector = p.d.rule.selectorList.text;
       const t = await takersOf(src, p.d, prop, TAKER, { carriers, prop, v: v ?? null, check: f.check });
-      if (!t) return `${selector} (${p.file}:${p.line}) matches more elements than a fix reads (400)`;
-      const drawn = t.filter((x) => x.rendered), without = drawn.filter((x) => !x.carries);
-      if (without.length > allow) return `${tooWide(selector, { matches: drawn.length, without: without.length, examples: without.slice(0, 4).map((x) => x.name) })} (${p.file}:${p.line})`;
+      if (!t) return `${clean(selector)} (${p.file}:${p.line}) matches more elements than a fix reads (400), or cannot be asked of the page`;
+      const drawn = t.filter((x) => x && x.rendered === true), without = drawn.filter((x) => x.carries !== true);
+      if (without.length > allow) return `${tooWide(clean(selector), { matches: drawn.length, without: without.length, examples: without.slice(0, 4).map((x) => clean(x?.name)) })} (${p.file}:${p.line})`;
     }
     return null;
   };
@@ -304,9 +316,10 @@ export async function planFix(f, ctx) {
         const v = await valuePlace(src, root, url, d);
         if (v.why) return guided('text-wrap', `${sel}: ${v.why}.`, [{ selector: sel }]);
         if (v.text === value) { coveredBy.push(`${d.rule.selectorList.text} (${v.file}:${v.line})`); continue; }
-        const selector = d.rule.selectorList.text, out = await outside(d.rule), b = await reachOf(selector);
-        if (out) return narrower(sel, [`${selector} sets text-wrap only under ${out}, and the finding is also seen outside it`]);
-        if (b.without > allow) return narrower(sel, [tooWide(selector, b)]);
+        const selector = d.rule.selectorList.text, out = await outside(d.rule), b = await reachOf(selector, sel);
+        if (out) return narrower(sel, [`${clean(selector)} sets text-wrap only under ${clean(out)}, and the finding is also seen outside it`]);
+        if (!b) return narrower(sel, [unread(selector)]);
+        if (b.without > allow) return narrower(sel, [tooWide(clean(selector), b)]);
         edits.push({ file: v.file, line: v.line, column: v.column, length: v.length, replace: value });
         rules.push({ selector, conditions: conditionsOf(d.rule), value });
         continue;
@@ -329,12 +342,14 @@ export async function planFix(f, ctx) {
       // highest precedence.
       const why = [];
       let best = null;
-      for (const rule of [...m.rules].reverse()) {
+      // The twenty rules of highest precedence are looked at; a page cannot make this unbounded.
+      for (const rule of [...m.rules].reverse().slice(0, 20)) {
         const selector = rule.selectorList.text;
         const out = await outside(rule);
-        if (out) { why.push(`${selector} applies only under ${out}, and the finding is also seen outside it`); continue; }
-        const b = await reachOf(selector);
-        if (b.without > allow) { why.push(tooWide(selector, b)); continue; }
+        if (out) { why.push(`${clean(selector)} applies only under ${clean(out)}, and the finding is also seen outside it`); continue; }
+        const b = await reachOf(selector, sel);
+        if (!b) { why.push(unread(selector)); continue; }
+        if (b.without > allow) { why.push(tooWide(clean(selector), b)); continue; }
         if (!best || b.with > best.b.with) best = { rule, b };
       }
       let ins = null;

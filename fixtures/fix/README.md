@@ -15,7 +15,7 @@ nothing of that class and nothing new, and a second `itten fix` changes nothing.
 one leaves its finding, and one clears it but brings an overflow. Given with `--apply`, both must be reverted, the
 page left as it was, and both reported.
 
-`reach/` is not a class. `reach/page/` plants nine short last lines, each where `text-wrap` may or may not be
+`reach/` is not a class. `reach/page/` plants ten short last lines, each where `text-wrap` may or may not be
 written, and `reach/twin/` is the page as `itten fix` must leave it:
 
 - one of five `.note` blocks: guided, the rule reaches four without the finding (the allowance is 2);
@@ -24,6 +24,8 @@ written, and `reach/twin/` is the page as `itten fix` must leave it:
 - a line that wraps only under `@media (max-width: 480px)`: written inside that media query;
 - a block seen at every width whose last rule is inside a media query: written on its base rule;
 - a block whose only rule is inside a media query: guided;
+- a block whose only rule is nested (`& > div`), a selector the page cannot be asked on its own: guided, its
+  reach unknown;
 - two `.dup` blocks, the second with a narrower rule of its own: written once on `.dup`, the second `covered`;
 - a table cell holding a sentence: a finding, written on its class. The cells that hold one number or one word
   are decoys and must not be reported.

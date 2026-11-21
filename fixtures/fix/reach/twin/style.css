@@ -6,6 +6,7 @@
 .based { max-width: 240px; text-wrap: pretty; }
 .dup { max-width: 240px; text-wrap: pretty; }
 .dup.narrow { font-weight: 400; }
+#nest { max-width: 240px; > div { font-weight: 400; } }
 table { border-collapse: collapse; }
 td { vertical-align: top; padding: 0; }
 .said { width: 240px; text-wrap: pretty; }

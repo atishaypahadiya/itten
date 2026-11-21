@@ -191,6 +191,7 @@ export async function run({ quiet = true } = {}) {
         ['#under > div', 'planned', /^  \.under \{/],
         ['#base > div', 'planned', /^\.based \{/],
         ['#only > div', 'guided', /\.only applies only under @media \(max-width: 480px\), and the finding is also seen outside it/],
+        ['#nest > div', 'guided', /& > div cannot be asked of the page \(a nested selector or a pseudo-element\), so how far it reaches is unknown/],
         ['#twice > div:nth-of-type(1)', 'planned', /^\.dup \{/],
         ['#twice > div:nth-of-type(2)', 'covered', /already written for this element: \.dup \(the fix for i\d+\)/],
         ['#cells > tbody > tr:nth-of-type(1) > td:nth-of-type(1)', 'planned', /^\.said \{/],
@@ -205,7 +206,7 @@ export async function run({ quiet = true } = {}) {
       }
       if (dry.fixes.length !== want.length) fails.push(`reach: ${dry.fixes.length} findings, not ${want.length}: ${dry.fixes.filter((x) => !want.some(([s]) => x.finding.fingerprint.endsWith(`|${s}`))).map((x) => x.finding.fingerprint).join('; ')}`);
       if (dry.fixes.some((x) => /#cells/.test(x.finding.fingerprint) && !/tr:nth-of-type\(1\) > td:nth-of-type\(1\)$/.test(x.finding.fingerprint))) fails.push('reach: a cell that holds one number or one word is reported');
-      if (dry.summary.planned !== 5 || dry.summary.covered !== 1 || dry.summary.guided !== 3) fails.push(`reach: the dry run's summary is ${JSON.stringify(dry.summary)}`);
+      if (dry.summary.planned !== 5 || dry.summary.covered !== 1 || dry.summary.guided !== 4) fails.push(`reach: the dry run's summary is ${JSON.stringify(dry.summary)}`);
       if (!same(tree(join(site, 'reach')), was)) fails.push('reach: a dry run wrote to the page');
       // The control: with no allowance the block among five is planned (on the widest rule, which then covers the
       // most findings), so the allowance is what holds it.
@@ -213,7 +214,7 @@ export async function run({ quiet = true } = {}) {
       const wide = loose.fixes.find((x) => x.finding.fingerprint === 'text-wrap-pretty|#wide > div:nth-of-type(1)');
       if (wide?.status !== 'planned' || wide.edits.length !== 1) fails.push(`reach: without an allowance the fix for the block among five is ${wide?.status}, not planned (the control)`);
       const real = await fix(url('reach/index.html'), opts('reach'));
-      if (real.summary.kept !== 5 || real.summary.covered !== 1 || real.summary.guided !== 3 || real.summary.reverted) fails.push(`reach: the run's summary is ${JSON.stringify(real.summary)}: ${real.fixes.filter((x) => x.reason).map((x) => x.reason).join('; ')}`);
+      if (real.summary.kept !== 5 || real.summary.covered !== 1 || real.summary.guided !== 4 || real.summary.reverted) fails.push(`reach: the run's summary is ${JSON.stringify(real.summary)}: ${real.fixes.filter((x) => x.reason).map((x) => x.reason).join('; ')}`);
       const now = tree(join(site, 'reach')), twin = tree(join(FIX, 'reach', 'twin'));
       if (!same(now, twin)) fails.push(`reach: the fixed files differ from twin/ in ${differ(now, twin).join(', ')}`);
       if (readFileSync(join(site, 'base.css'), 'utf8') !== baseWas) fails.push('reach: the shared stylesheet was edited, through the universal rule');
