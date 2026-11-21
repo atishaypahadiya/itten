@@ -168,6 +168,8 @@ export async function planFix(f, ctx) {
     if (!r || !Number.isInteger(r.matches) || !Number.isInteger(r.with) || !Number.isInteger(r.without) || !Array.isArray(r.examples)) return null;
     return { matches: r.matches, with: r.with, without: r.without, examples: r.examples.slice(0, 4).map(clean) };
   };
+  // A nested rule's selector means something only inside its parent: its reach is never read.
+  const nested = (rule) => rule.selectorList.text.includes('&') || (rule.nestingSelectors ?? []).length > 0;
   const unread = (selector) => `${clean(selector)} cannot be asked of the page (a nested selector or a pseudo-element), so how far it reaches is unknown`;
   // For a value the fixer changes: the drawn elements that take it from that declaration.
   const valueReach = async (places, v) => {
@@ -180,7 +182,7 @@ export async function planFix(f, ctx) {
       // pseudo-element asked of the page on its own matches nothing, and a
       // reach of nothing is not a narrow reach.
       const read = t.every((x) => x && typeof x.rendered === 'boolean' && typeof x.carries === 'boolean' && typeof x.own === 'boolean');
-      if (!read || !t.some((x) => x.own)) return `${clean(selector)} (${p.file}:${p.line}) cannot be asked of the page (a nested selector or a pseudo-element), so how far it reaches is unknown`;
+      if (nested(p.d.rule) || !read || !t.some((x) => x.own)) return `${clean(selector)} (${p.file}:${p.line}) cannot be asked of the page (a nested selector or a pseudo-element), so how far it reaches is unknown`;
       const drawn = t.filter((x) => x.rendered), without = drawn.filter((x) => !x.carries);
       if (without.length > allow) return `${tooWide(clean(selector), { matches: drawn.length, without: without.length, examples: without.slice(0, 4).map((x) => clean(x?.name)) })} (${p.file}:${p.line})`;
     }
@@ -325,7 +327,7 @@ export async function planFix(f, ctx) {
         if (v.text === value) { coveredBy.push(`${clean(d.rule.selectorList.text)} (${v.file}:${v.line})`); continue; }
         const selector = d.rule.selectorList.text, out = await outside(d.rule), b = await reachOf(selector, sel);
         if (out) return narrower(sel, [`${clean(selector)} sets text-wrap only under ${clean(out)}, and the finding is also seen outside it`]);
-        if (!b) return narrower(sel, [unread(selector)]);
+        if (!b || nested(d.rule)) return narrower(sel, [unread(selector)]);
         if (b.without > allow) return narrower(sel, [tooWide(clean(selector), b)]);
         edits.push({ file: v.file, line: v.line, column: v.column, length: v.length, replace: value });
         rules.push({ selector, conditions: conditionsOf(d.rule), value });
@@ -355,7 +357,7 @@ export async function planFix(f, ctx) {
         const out = await outside(rule);
         if (out) { why.push(`${clean(selector)} applies only under ${clean(out)}, and the finding is also seen outside it`); continue; }
         const b = await reachOf(selector, sel);
-        if (!b) { why.push(unread(selector)); continue; }
+        if (!b || nested(rule)) { why.push(unread(selector)); continue; }
         if (b.without > allow) { why.push(tooWide(clean(selector), b)); continue; }
         if (!best || b.with > best.b.with) best = { rule, b };
       }
@@ -399,7 +401,7 @@ export async function planFix(f, ctx) {
     if (place.why) return guided('reduced-motion', `${sel}: ${place.why}.`, [{ selector: sel }]);
     const selector = found.rule.selectorList.text;
     // A nested selector means nothing written at the top level of the file.
-    if (selector.includes('&') || (found.rule.nestingSelectors ?? []).length) return guided('reduced-motion', `${f.message} The rule that starts it is nested, and its guard cannot be written beside it mechanically.`, [{ selector: sel }]);
+    if (nested(found.rule)) return guided('reduced-motion', `${f.message} The rule that starts it is nested, and its guard cannot be written beside it mechanically.`, [{ selector: sel }]);
     const text = place.text;
     const lines = text.split('\n');
     const endLine = text.endsWith('\n') ? lines.length : lines.length;
